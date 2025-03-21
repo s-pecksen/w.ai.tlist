@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Waitlist</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .form-section {
+            flex: 1;
+            padding: 20px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        .waitlist-section {
+            flex: 2;
+            padding: 20px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            margin-top: 10px;
+        }
+        input, select, textarea {
+            margin-bottom: 10px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .high {
+            background-color: #ffdddd;
+        }
+        .medium {
+            background-color: #ffffcc;
+        }
+        .low {
+            background-color: #ddffdd;
+        }
+        .scheduled {
+            text-decoration: line-through;
+            color: #888;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Patient Waitlist Manager</h1>
+    
+    <div class="container">
+        <div class="form-section">
+            <h2>Add Patient to Waitlist</h2>
+            <form action="/add_patient" method="post">
+                <label for="name">Patient Name:</label>
+                <input type="text" id="name" name="name" required>
+                
+                <label for="phone">Phone Number:</label>
+                <input type="tel" id="phone" name="phone" required>
+                
+                <label for="email">Email (optional):</label>
+                <input type="email" id="email" name="email">
+                
+                <label for="reason">Reason for Visit:</label>
+                <textarea id="reason" name="reason" rows="3"></textarea>
+                
+                <label for="urgency">Urgency:</label>
+                <select id="urgency" name="urgency">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                </select>
+                
+                <button type="submit">Add to Waitlist</button>
+            </form>
+        </div>
+        
+        <div class="waitlist-section">
+            <h2>Current Waitlist</h2>
+            {% if waitlist %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Contact</th>
+                            <th>Reason</th>
+                            <th>Urgency</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for patient in waitlist %}
+                            <tr class="{% if patient.status == 'scheduled' %}scheduled{% else %}{{ patient.urgency }}{% endif %}">
+                                <td>{{ patient.name }}</td>
+                                <td>
+                                    {{ patient.phone }}<br>
+                                    {% if patient.email %}
+                                        {{ patient.email }}
+                                    {% endif %}
+                                </td>
+                                <td>{{ patient.reason }}</td>
+                                <td>{{ patient.urgency|capitalize }}</td>
+                                <td class="action-buttons">
+                                    {% if patient.status == 'waiting' %}
+                                        <form action="/schedule_patient/{{ patient.id }}" method="post">
+                                            <button type="submit">Schedule</button>
+                                        </form>
+                                    {% endif %}
+                                    <form action="/remove_patient/{{ patient.id }}" method="post">
+                                        <button type="submit" style="background-color: #f44336;">Remove</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No patients on the waitlist.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
