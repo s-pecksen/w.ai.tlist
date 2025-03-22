@@ -81,6 +81,14 @@
             display: flex;
             gap: 5px;
         }
+        tr.emergency {
+            background-color: #ffdddd !important;
+            font-weight: bold;
+        }
+        .wait-time {
+            font-size: 0.9em;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -99,7 +107,41 @@
                 <label for="email">Email (optional):</label>
                 <input type="email" id="email" name="email">
                 
-                <label for="reason">Reason for Visit:</label>
+                <label for="appointment_type">Appointment Type:</label>
+                <select id="appointment_type" name="appointment_type" required>
+                    <option value="cleaning">Regular Cleaning</option>
+                    <option value="deep_cleaning">Deep Cleaning</option>
+                    <option value="xray">X-Ray</option>
+                    <option value="filling">Filling</option>
+                    <option value="emergency">Emergency Visit</option>
+                    <option value="consultation">Consultation</option>
+                </select>
+
+                <label for="duration">Appointment Duration:</label>
+                <select id="duration" name="duration" required>
+                    <option value="30">30 minutes</option>
+                    <option value="45">45 minutes</option>
+                    <option value="60">1 hour</option>
+                    <option value="90">1.5 hours</option>
+                    <option value="120">2 hours</option>
+                </select>
+
+                <label for="hygienist">Preferred Hygienist:</label>
+                <select id="hygienist" name="hygienist" required>
+                    <option value="">No Preference</option>
+                    <option value="sarah">Sarah</option>
+                    <option value="michael">Michael</option>
+                    <option value="jessica">Jessica</option>
+                    <option value="david">David</option>
+                </select>
+
+                <label for="needs_dentist">Requires Dentist?</label>
+                <select id="needs_dentist" name="needs_dentist" required>
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                </select>
+                
+                <label for="reason">Additional Notes:</label>
                 <textarea id="reason" name="reason" rows="3"></textarea>
                 
                 <label for="urgency">Urgency:</label>
@@ -121,22 +163,43 @@
                         <tr>
                             <th>Name</th>
                             <th>Contact</th>
-                            <th>Reason</th>
+                            <th>Appointment Details</th>
+                            <th>Wait Time</th>
                             <th>Urgency</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for patient in waitlist %}
-                            <tr class="{% if patient.status == 'scheduled' %}scheduled{% else %}{{ patient.urgency }}{% endif %}">
-                                <td>{{ patient.name }}</td>
+                            <tr class="{% if patient.status == 'scheduled' %}scheduled{% else %}{{ patient.urgency }}{% endif %} {% if patient.appointment_type == 'emergency' %}high{% endif %}">
+                                <td>
+                                    {{ patient.name }}
+                                    {% if patient.appointment_type == 'emergency' %}
+                                        <br><span style="color: red; font-weight: bold;">[EMERGENCY]</span>
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {{ patient.phone }}<br>
                                     {% if patient.email %}
                                         {{ patient.email }}
                                     {% endif %}
                                 </td>
-                                <td>{{ patient.reason }}</td>
+                                <td>
+                                    <strong>Type:</strong> {{ patient.appointment_type|replace('_', ' ')|capitalize }}<br>
+                                    <strong>Duration:</strong> {{ patient.duration }} mins<br>
+                                    <strong>Hygienist:</strong> {{ patient.hygienist|capitalize if patient.hygienist else 'No Preference' }}<br>
+                                    <strong>Needs Dentist:</strong> {{ 'Yes' if patient.needs_dentist else 'No' }}<br>
+                                    {% if patient.reason %}
+                                        <strong>Notes:</strong> {{ patient.reason }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if patient.status == 'waiting' %}
+                                        {{ patient.wait_time }}
+                                    {% else %}
+                                        Scheduled
+                                    {% endif %}
+                                </td>
                                 <td>{{ patient.urgency|capitalize }}</td>
                                 <td class="action-buttons">
                                     {% if patient.status == 'waiting' %}
