@@ -160,8 +160,11 @@ def validate_duration(value):
     return value if str(value) in valid_durations else '30'
 
 def validate_hygienist(value):
-    valid_hygienists = ['', 'sarah', 'michael', 'jessica', 'david']
-    return value.lower() if value.lower() in valid_hygienists else ''
+    valid_hygienists = ['no preference', '', 'sarah', 'michael', 'jessica', 'david']
+    # Convert empty string or None to 'no preference'
+    if not value or value.lower() == 'no preference':
+        return 'no preference'
+    return value.lower() if value.lower() in valid_hygienists else 'no preference'
 
 def validate_urgency(value):
     valid_urgency = ['low', 'medium', 'high']

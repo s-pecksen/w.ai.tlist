@@ -254,7 +254,7 @@
 
                 <label for="hygienist">Preferred Hygienist:</label>
                 <select id="hygienist" name="hygienist" required>
-                    <option value="">No Preference</option>
+                    <option value="no preference">No Preference</option>
                     <option value="sarah">Sarah</option>
                     <option value="michael">Michael</option>
                     <option value="jessica">Jessica</option>
@@ -313,7 +313,7 @@
                                 <td>
                                     <strong>Type:</strong> {{ patient.appointment_type|replace('_', ' ')|capitalize }}<br>
                                     <strong>Duration:</strong> {{ patient.duration }} mins<br>
-                                    <strong>Hygienist:</strong> {{ patient.hygienist|capitalize if patient.hygienist else 'No Preference' }}<br>
+                                    <strong>Hygienist:</strong> {{ patient.hygienist|capitalize if patient.hygienist != 'no preference' else 'No Preference' }}<br>
                                     <strong>Needs Dentist:</strong> {{ 'Yes' if patient.needs_dentist else 'No' }}<br>
                                     {% if patient.reason %}
                                         <strong>Notes:</strong> {{ patient.reason }}
