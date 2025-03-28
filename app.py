@@ -47,15 +47,40 @@ class Patient(Base):
     encrypted_data = Column(String)
     created_at = Column(DateTime)
 
+# Add this helper function to convert wait time to minutes
+def wait_time_to_minutes(wait_time_str):
+    total_minutes = 0
+    if 'days' in wait_time_str:
+        days = int(wait_time_str.split('days')[0].strip())
+        total_minutes += days * 24 * 60
+        remaining = wait_time_str.split(',')[1].strip()
+    else:
+        remaining = wait_time_str
+        
+    if 'hours' in remaining:
+        hours = int(remaining.split('hours')[0].strip())
+        total_minutes += hours * 60
+        if ',' in remaining:
+            remaining = remaining.split(',')[1].strip()
+    
+    if 'minutes' in remaining:
+        minutes = int(remaining.split('minutes')[0].strip())
+        total_minutes += minutes
+        
+    return total_minutes
+
 @app.route('/')
 def index():
-    # Sort waitlist: emergencies first, then by timestamp
+    # Update wait times first
+    update_wait_times()
+    
+    # Sort waitlist: emergencies first, then by wait time (longest first), then scheduled last
     sorted_waitlist = sorted(
         waitlist,
         key=lambda x: (
             x['status'] == 'scheduled',  # Scheduled patients last
             x['appointment_type'] != 'emergency',  # Emergencies first
-            x['timestamp']  # Then by timestamp
+            -wait_time_to_minutes(x['wait_time'])  # Sort by wait time (negative for descending order)
         )
     )
     return render_template('index.html', waitlist=sorted_waitlist)
@@ -193,5 +218,52 @@ def upload_csv():
             
     return redirect(url_for('index'))
 
+def load_initial_csv():
+    try:
+        csv_path = 'Tests/Sample CSV - Sheet1.csv'
+        df = pd.read_csv(csv_path)
+        
+        for _, row in df.iterrows():
+            # Parse the datetime from the CSV
+            try:
+                # Try multiple date formats to handle different possibilities
+                for date_format in [
+                    '%m/%d/%y %I:%M %p',    # 2/25/25 1:00 PM
+                    '%m/%d/%Y %H:%M:%S %p'  # 2/25/2025 16:00:00 PM
+                ]:
+                    try:
+                        entry_time = datetime.strptime(row['Date Time Entered'], date_format)
+                        break
+                    except ValueError:
+                        continue
+            except Exception as e:
+                print(f"Error parsing date for {row['name']}: {str(e)}")
+                entry_time = datetime.now()  # Fallback to current time if parsing fails
+            
+            patient = {
+                'id': len(waitlist) + 1,
+                'name': row.get('name', ''),
+                'phone': row.get('phone', ''),
+                'email': row.get('email', ''),
+                'appointment_type': validate_appointment_type(row.get('appointment_type', 'consultation')),
+                'duration': validate_duration(row.get('duration', '30')),
+                'hygienist': validate_hygienist(row.get('hygienist', '')),
+                'needs_dentist': validate_needs_dentist(row.get('needs_dentist', False)),
+                'reason': row.get('reason', ''),
+                'urgency': validate_urgency(row.get('urgency', 'medium')),
+                'status': 'waiting',
+                'timestamp': entry_time,  # Use the parsed datetime
+                'wait_time': '0 minutes'  # This will be updated by update_wait_times()
+            }
+            waitlist.append(patient)
+            
+        # Update wait times for all loaded patients
+        update_wait_times()
+        print(f"Successfully loaded {len(df)} patients from CSV file")
+    except Exception as e:
+        print(f"Error loading initial CSV file: {str(e)}")
+
 if __name__ == '__main__':
+    # Load initial data before starting the server
+    load_initial_csv()
     app.run(debug=True, host="0.0.0.0", port=7776)
