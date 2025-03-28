@@ -235,12 +235,13 @@
                 
                 <label for="appointment_type">Appointment Type:</label>
                 <select id="appointment_type" name="appointment_type" required>
-                    <option value="cleaning">Regular Cleaning</option>
-                    <option value="deep_cleaning">Deep Cleaning</option>
-                    <option value="xray">X-Ray</option>
-                    <option value="filling">Filling</option>
-                    <option value="emergency">Emergency Visit</option>
-                    <option value="consultation">Consultation</option>
+                    <option value="" disabled selected>Enter Appointment Type</option>
+                    <option value="hygiene">Hygiene</option>
+                    <option value="recall">Recall</option>
+                    <option value="resto">Resto</option>
+                    <option value="spec exam">Spec Exam</option>
+                    <option value="emerg exam">Emerg Exam</option>
+                    <option value="custom">Custom Appointment</option>
                 </select>
 
                 <label for="duration">Appointment Duration:</label>
@@ -311,7 +312,11 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <strong>Type:</strong> {{ patient.appointment_type|replace('_', ' ')|capitalize }}<br>
+                                    <strong>Type:</strong> {% if patient.appointment_type == 'custom' %}
+                                                        Custom: {{ patient.reason }}
+                                                      {% else %}
+                                                        {{ patient.appointment_type|replace('_', ' ')|title }}
+                                                      {% endif %}<br>
                                     <strong>Duration:</strong> {{ patient.duration }} mins<br>
                                     <strong>Hygienist:</strong> {{ patient.hygienist|capitalize if patient.hygienist != 'no preference' else 'No Preference' }}<br>
                                     <strong>Needs Dentist:</strong> {{ 'Yes' if patient.needs_dentist else 'No' }}<br>
@@ -346,5 +351,21 @@
             {% endif %}
         </div>
     </div>
+
+    <!-- Add JavaScript to handle the reason field visibility -->
+    <script>
+        document.getElementById('appointment_type').addEventListener('change', function() {
+            const reasonLabel = document.querySelector('label[for="reason"]');
+            const reasonField = document.getElementById('reason');
+            
+            if (this.value === 'custom') {
+                reasonLabel.textContent = 'Custom Appointment Type:*';
+                reasonField.required = true;
+            } else {
+                reasonLabel.textContent = 'Additional Notes:';
+                reasonField.required = false;
+            }
+        });
+    </script>
 </body>
 </html>

@@ -152,8 +152,8 @@ def remove_patient(patient_id):
 
 # Add these helper functions
 def validate_appointment_type(value):
-    valid_types = ['cleaning', 'deep_cleaning', 'xray', 'filling', 'emergency', 'consultation']
-    return value if value in valid_types else 'consultation'
+    valid_types = ['hygiene', 'recall', 'resto', 'spec exam', 'emerg exam', 'custom']
+    return value.lower() if value.lower() in valid_types else 'hygiene'
 
 def validate_duration(value):
     valid_durations = ['30', '45', '60', '90', '120']
