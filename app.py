@@ -9,6 +9,7 @@ import os
 import pandas as pd
 import csv
 from io import StringIO
+from hygienist_manager import HygienistManager
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
