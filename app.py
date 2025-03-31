@@ -9,10 +9,16 @@ import os
 import pandas as pd
 import csv
 from io import StringIO
-from hygienist_manager import HygienistManager
+from provider_manager import ProviderManager
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+
+# Make sure to add this for flash messages to work
+app.config['SESSION_TYPE'] = 'filesystem'
+
+# Initialize the ProviderManager
+provider_manager = ProviderManager()
 
 # Create Base before any classes that need to inherit from it
 Base = declarative_base()
@@ -75,6 +81,13 @@ def index():
     # Update wait times first
     update_wait_times()
     
+    # Get all providers (not just active ones)
+    all_providers = provider_manager.get_provider_list()
+    active_providers = provider_manager.get_active_providers()
+    
+    # Check if we have any providers at all
+    has_providers = len(all_providers) > 0
+    
     # Sort waitlist: emergencies first, then by wait time (longest first), then scheduled last
     sorted_waitlist = sorted(
         waitlist,
@@ -84,7 +97,17 @@ def index():
             -wait_time_to_minutes(x['wait_time'])  # Sort by wait time (negative for descending order)
         )
     )
-    return render_template('index.html', waitlist=sorted_waitlist)
+    
+    # Show a different message if there are providers but they're all inactive
+    if not has_providers:
+        flash('Please upload a list of Provider names to proceed', 'warning')
+    elif not active_providers:
+        flash('All providers are currently marked as inactive. Please activate at least one provider.', 'warning')
+    
+    return render_template('index.html', 
+                          waitlist=sorted_waitlist, 
+                          providers=active_providers,
+                          has_providers=has_providers)
 
 @app.route('/add_patient', methods=['POST'])
 def add_patient():
@@ -95,7 +118,7 @@ def add_patient():
     urgency = request.form.get('urgency')
     appointment_type = request.form.get('appointment_type')
     duration = request.form.get('duration')
-    hygienist = request.form.get('hygienist')
+    provider = request.form.get('provider')
     needs_dentist = request.form.get('needs_dentist') == 'yes'
     
     if name and phone:  # Basic validation
@@ -108,7 +131,7 @@ def add_patient():
             'urgency': urgency,
             'appointment_type': appointment_type,
             'duration': duration,
-            'hygienist': hygienist,
+            'provider': provider,
             'needs_dentist': needs_dentist,
             'status': 'waiting',
             'timestamp': datetime.now(),  # Add timestamp
@@ -160,12 +183,21 @@ def validate_duration(value):
     valid_durations = ['30', '45', '60', '90', '120']
     return value if str(value) in valid_durations else '30'
 
-def validate_hygienist(value):
-    valid_hygienists = ['no preference', '', 'sarah', 'michael', 'jessica', 'david']
+def validate_provider(value):
+    # Get the list of valid providers from the provider manager
+    valid_providers = ['no preference'] + provider_manager.get_active_providers()
+    
     # Convert empty string or None to 'no preference'
     if not value or value.lower() == 'no preference':
         return 'no preference'
-    return value.lower() if value.lower() in valid_hygienists else 'no preference'
+    
+    # Check if the provided value is in our list (case-insensitive)
+    for provider in valid_providers:
+        if provider.lower() == value.lower():
+            return provider.lower()
+    
+    # Default to 'no preference' if not found
+    return 'no preference'
 
 def validate_urgency(value):
     valid_urgency = ['low', 'medium', 'high']
@@ -178,6 +210,11 @@ def validate_needs_dentist(value):
 
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
+    # Check if we have providers
+    if not provider_manager.get_active_providers():
+        flash('Please add providers before uploading patient data', 'warning')
+        return redirect(url_for('index'))
+    
     if 'csv_file' not in request.files:
         return redirect(url_for('index'))
     
@@ -206,7 +243,7 @@ def upload_csv():
                     'email': row.get('email', ''),
                     'appointment_type': validate_appointment_type(row.get('appointment_type', 'consultation')),
                     'duration': validate_duration(row.get('duration', '30')),
-                    'hygienist': validate_hygienist(row.get('hygienist', '')),
+                    'provider': validate_provider(row.get('provider', '')),
                     'needs_dentist': validate_needs_dentist(row.get('needs_dentist', False)),
                     'reason': row.get('reason', ''),
                     'urgency': validate_urgency(row.get('urgency', 'medium')),
@@ -221,6 +258,96 @@ def upload_csv():
             flash('Error processing CSV file')
             
     return redirect(url_for('index'))
+
+@app.route('/providers', methods=['GET'])
+def list_providers():
+    providers = provider_manager.get_provider_list()
+    return render_template('providers.html', providers=providers)
+
+@app.route('/providers/add', methods=['POST'])
+def add_provider():
+    first_name = request.form.get('first_name')
+    last_initial = request.form.get('last_initial')
+    
+    if first_name:
+        # Set is_active to True by default
+        success = provider_manager.add_provider(first_name, last_initial, is_active=True)
+        if success:
+            flash('Provider added successfully', 'success')
+        else:
+            flash('Provider already exists', 'danger')
+    else:
+        flash('First name is required', 'danger')
+        
+    return redirect(url_for('list_providers'))
+
+@app.route('/providers/remove', methods=['POST'])
+def remove_provider():
+    first_name = request.form.get('first_name')
+    last_initial = request.form.get('last_initial')
+    
+    if provider_manager.remove_provider(first_name, last_initial):
+        flash('Provider removed successfully')
+    else:
+        flash('Provider not found')
+        
+    return redirect(url_for('list_providers'))
+
+@app.route('/providers/upload_csv', methods=['POST'])
+def upload_providers_csv():
+    if 'provider_csv' not in request.files:
+        flash('No file part', 'danger')
+        return redirect(url_for('list_providers'))
+    
+    file = request.files['provider_csv']
+    
+    if file.filename == '':
+        flash('No selected file', 'danger')
+        return redirect(url_for('list_providers'))
+    
+    if file and file.filename.endswith('.csv'):
+        try:
+            # Process the uploaded CSV
+            stream = StringIO(file.stream.read().decode("UTF8"), newline=None)
+            csv_data = csv.reader(stream)
+            
+            # Skip header row if exists
+            header = next(csv_data, None)
+            
+            count = 0
+            for row in csv_data:
+                if len(row) >= 1 and row[0].strip():
+                    # Format: name, is_active (optional)
+                    name_parts = row[0].strip().split()
+                    first_name = name_parts[0]
+                    last_initial = name_parts[1] if len(name_parts) > 1 else None
+                    
+                    # Set is_active to True by default if not specified
+                    is_active = True
+                    if len(row) >= 2:
+                        is_active = row[1].lower() in ['true', 'yes', '1', 'y', 't']
+                    
+                    if provider_manager.add_provider(first_name, last_initial, is_active):
+                        count += 1
+            
+            if count > 0:
+                flash(f'Successfully added {count} providers', 'success')
+            else:
+                flash('No new providers were added', 'info')
+                
+        except Exception as e:
+            flash(f'Error processing CSV: {str(e)}', 'danger')
+    
+    return redirect(url_for('list_providers'))
+
+@app.route('/providers/toggle_active/<provider_name>', methods=['POST'])
+def toggle_provider_active(provider_name):
+    success = provider_manager.toggle_provider_active(provider_name)
+    if success:
+        flash(f'Provider status updated successfully', 'success')
+    else:
+        flash('Provider not found', 'danger')
+    return redirect(url_for('list_providers'))
 
 def load_initial_csv():
     try:
@@ -251,7 +378,7 @@ def load_initial_csv():
                 'email': row.get('email', ''),
                 'appointment_type': validate_appointment_type(row.get('appointment_type', 'consultation')),
                 'duration': validate_duration(row.get('duration', '30')),
-                'hygienist': validate_hygienist(row.get('hygienist', '')),
+                'provider': validate_provider(row.get('provider', '')),
                 'needs_dentist': validate_needs_dentist(row.get('needs_dentist', False)),
                 'reason': row.get('reason', ''),
                 'urgency': validate_urgency(row.get('urgency', 'medium')),
@@ -267,7 +394,27 @@ def load_initial_csv():
     except Exception as e:
         print(f"Error loading initial CSV file: {str(e)}")
 
+def process_cancelled_appointment(cancelled_appointment, waitlist):
+    # Get the provider from the cancelled appointment
+    cancelled_provider = cancelled_appointment.get('provider')
+    
+    eligible_patients = []
+    for patient in waitlist:
+        patient_preference = patient.get('provider', '')
+        
+        # Use provider_manager to check if this is a match
+        if provider_manager.is_provider_match(cancelled_provider, patient_preference):
+            eligible_patients.append(patient)
+    
+    return eligible_patients
+
 if __name__ == '__main__':
+    # Ensure provider.csv exists (even if empty)
+    if not os.path.exists('provider.csv'):
+        with open('provider.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['name', 'is_active'])
+    
     # Load initial data before starting the server
     load_initial_csv()
     app.run(debug=True, host="0.0.0.0", port=7776)

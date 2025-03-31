@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Providers{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Manage Providers</h1>
+    
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Add Provider</h5>
+                    <form action="{{ url_for('add_provider') }}" method="post">
+                        <div class="mb-3">
+                            <label for="first_name" class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="first_name" name="first_name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="last_initial" class="form-label">Last Initial (Optional)</label>
+                            <input type="text" class="form-control" id="last_initial" name="last_initial" maxlength="1">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add Provider</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Current Providers
+                </div>
+                <ul class="list-group list-group-flush">
+                    {% if providers %}
+                        {% for provider in providers %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ provider.name }}
+                                <div>
+                                    <form action="{{ url_for('toggle_provider_active', provider_name=provider.name) }}" method="post" class="d-inline">
+                                        {% if provider.is_active %}
+                                            <button type="submit" class="btn btn-sm btn-success">Active</button>
+                                        {% else %}
+                                            <button type="submit" class="btn btn-sm btn-secondary">Inactive</button>
+                                        {% endif %}
+                                    </form>
+                                    
+                                    <form action="{{ url_for('remove_provider') }}" method="post" class="d-inline">
+                                        <input type="hidden" name="first_name" value="{{ provider.name }}">
+                                        <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                                    </form>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    {% else %}
+                        <li class="list-group-item">No providers found. Add one to get started.</li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Upload Providers CSV</h5>
+                    <form action="{{ url_for('upload_providers_csv') }}" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="provider_csv" class="form-label">Select CSV File</label>
+                            <input type="file" class="form-control" id="provider_csv" name="provider_csv" accept=".csv" required>
+                            <div class="form-text">CSV should have columns: name, is_active</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Upload Providers</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

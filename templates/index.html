@@ -1,288 +1,134 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Patient Waitlist</title>
-    <style>
-        :root {
-            --primary-blue: #4AA4DE;
-            --secondary-blue: #87C5E8;
-            --light-blue: #EBF5FB;
-            --dark-blue: #2C7BB5;
-            --neutral-gray: #667788;
-            --white: #FFFFFF;
-        }
+{% extends "base.html" %}
 
-        body {
-            font-family: 'Montserrat', sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 40px;
-            background-color: var(--light-blue);
-            color: #334455;
-        }
+{% block title %}Home - Waitlist Manager{% endblock %}
 
-        h1, h2 {
-            color: var(--dark-blue);
-            font-weight: 600;
-        }
-
-        h1 {
-            font-size: 2.2em;
-            margin-bottom: 1.5em;
-            text-align: center;
-        }
-
-        .container {
-            display: flex;
-            gap: 30px;
-        }
-
-        .form-section, .waitlist-section {
-            background-color: var(--white);
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-            padding: 30px;
-        }
-
-        .form-section {
-            flex: 1;
-        }
-
-        .waitlist-section {
-            flex: 2;
-        }
-
-        form {
-            display: flex;
-            flex-direction: column;
-        }
-
-        label {
-            margin-top: 15px;
-            margin-bottom: 5px;
-            color: var(--neutral-gray);
-            font-weight: 500;
-        }
-
-        input, select, textarea {
-            margin-bottom: 15px;
-            padding: 12px;
-            border: 1px solid #DDE2E8;
-            border-radius: 8px;
-            font-family: 'Open Sans', sans-serif;
-            transition: border-color 0.3s ease;
-        }
-
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: var(--primary-blue);
-            box-shadow: 0 0 0 3px rgba(74, 164, 222, 0.1);
-        }
-
-        button {
-            padding: 12px 20px;
-            background-color: var(--primary-blue);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-top: 15px;
-            font-weight: 600;
-            transition: background-color 0.3s ease;
-        }
-
-        button:hover {
-            background-color: var(--dark-blue);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-            margin-top: 20px;
-        }
-
-        th, td {
-            padding: 15px;
-            text-align: left;
-            border-bottom: 1px solid #EEF0F3;
-        }
-
-        th {
-            background-color: var(--light-blue);
-            color: var(--dark-blue);
-            font-weight: 600;
-        }
-
-        tr:hover {
-            background-color: rgba(235, 245, 251, 0.5);
-        }
-
-        .high {
-            background-color: rgba(255, 221, 221, 0.3);
-        }
-
-        .medium {
-            background-color: rgba(255, 255, 204, 0.3);
-        }
-
-        .low {
-            background-color: rgba(221, 255, 221, 0.3);
-        }
-
-        .scheduled {
-            text-decoration: line-through;
-            color: var(--neutral-gray);
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 8px;
-        }
-
-        .action-buttons button[style*="background-color: #f44336"] {
-            background-color: #FF6B6B;
-        }
-
-        .action-buttons button[style*="background-color: #f44336"]:hover {
-            background-color: #E64545;
-        }
-
-        tr.emergency {
-            background-color: rgba(255, 107, 107, 0.1);
-            font-weight: 500;
-        }
-
-        .wait-time {
-            font-size: 0.9em;
-            color: var(--neutral-gray);
-        }
-
-        .csv-upload {
-            background-color: var(--light-blue);
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 25px;
-        }
-
-        .csv-upload h3 {
-            color: var(--dark-blue);
-            margin-top: 0;
-            font-size: 1.1em;
-        }
-
-        .csv-help {
-            display: block;
-            color: var(--neutral-gray);
-            font-size: 0.85em;
-            margin-top: 10px;
-            line-height: 1.4;
-        }
-
-        .form-divider {
-            height: 1px;
-            background-color: #DDE2E8;
-            margin: 25px 0;
-        }
-
-        input[type="file"] {
-            width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-            border: 2px dashed var(--secondary-blue);
-            border-radius: 8px;
-            background-color: var(--white);
-        }
-
-        input[type="file"]:hover {
-            border-color: var(--primary-blue);
-        }
-    </style>
-</head>
-<body>
+{% block content %}
+<div class="container">
     <h1>Patient Waitlist Manager</h1>
     
-    <div class="container">
-        <div class="form-section">
-            <h2>Add Patient to Waitlist</h2>
-            <div class="csv-upload">
-                <h3>Bulk Upload Patients</h3>
-                <form action="/upload_csv" method="post" enctype="multipart/form-data">
-                    <label for="csv_file">Upload CSV File:</label>
-                    <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
-                    <button type="submit">Upload Patients</button>
-                </form>
-                <small class="csv-help">
-                    CSV should include columns: name, phone, email, appointment_type, duration, 
-                    hygienist, needs_dentist, reason, urgency
-                </small>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Add Patient</h5>
+                    <div class="form-section">
+                        <h2>Add Patient to Waitlist</h2>
+                        
+                        {% if not has_providers %}
+                        <div class="alert alert-warning" role="alert">
+                            <h4 class="alert-heading">No Providers Found</h4>
+                            <p>You need to add providers before you can add patients to the waitlist.</p>
+                            <hr>
+                            <p class="mb-0">Please visit the <a href="{{ url_for('list_providers') }}">Manage Providers</a> page to add providers.</p>
+                        </div>
+                        {% else %}
+                        <div class="csv-upload">
+                            <form action="/upload_csv" method="post" enctype="multipart/form-data">
+                                <div class="mb-3">
+                                    <label for="csv_file">Upload CSV File:</label>
+                                    <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
+                                </div>
+                                <button type="submit">Upload Patients</button>
+                            </form>
+                            <small class="csv-help">
+                                CSV should include columns: name, phone, email, appointment_type, duration, 
+                                provider, needs_dentist, reason, urgency
+                            </small>
+                        </div>
+                        <div class="form-divider"></div>
+                        <form action="/add_patient" method="post">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Name</label>
+                                <input type="text" class="form-control" id="name" name="name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="phone" class="form-label">Phone</label>
+                                <input type="tel" class="form-control" id="phone" name="phone" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email (optional):</label>
+                                <input type="email" class="form-control" id="email" name="email">
+                            </div>
+                            <div class="mb-3">
+                                <label for="appointment_type">Appointment Type:</label>
+                                <select id="appointment_type" name="appointment_type" required>
+                                    <option value="" disabled selected>Enter Appointment Type</option>
+                                    <option value="hygiene">Hygiene</option>
+                                    <option value="recall">Recall</option>
+                                    <option value="resto">Resto</option>
+                                    <option value="spec exam">Spec Exam</option>
+                                    <option value="emerg exam">Emerg Exam</option>
+                                    <option value="custom">Custom Appointment</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="duration">Appointment Duration:</label>
+                                <select id="duration" name="duration" required>
+                                    <option value="30">30 minutes</option>
+                                    <option value="45">45 minutes</option>
+                                    <option value="60">1 hour</option>
+                                    <option value="90">1.5 hours</option>
+                                    <option value="120">2 hours</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="provider">Preferred Provider:</label>
+                                <select id="provider" name="provider" required>
+                                    <option value="no preference">No Preference</option>
+                                    {% for provider_name in providers %}
+                                        <option value="{{ provider_name|lower }}">{{ provider_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="needs_dentist">Requires Dentist?</label>
+                                <select id="needs_dentist" name="needs_dentist" required>
+                                    <option value="no">No</option>
+                                    <option value="yes">Yes</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="reason">Additional Notes:</label>
+                                <textarea id="reason" name="reason" rows="3"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="urgency">Urgency:</label>
+                                <select id="urgency" name="urgency">
+                                    <option value="low">Low</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                            </div>
+                            <button type="submit">Add to Waitlist</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
-            <div class="form-divider"></div>
-            <form action="/add_patient" method="post">
-                <label for="name">Patient Name:</label>
-                <input type="text" id="name" name="name" required>
-                
-                <label for="phone">Phone Number:</label>
-                <input type="tel" id="phone" name="phone" required>
-                
-                <label for="email">Email (optional):</label>
-                <input type="email" id="email" name="email">
-                
-                <label for="appointment_type">Appointment Type:</label>
-                <select id="appointment_type" name="appointment_type" required>
-                    <option value="" disabled selected>Enter Appointment Type</option>
-                    <option value="hygiene">Hygiene</option>
-                    <option value="recall">Recall</option>
-                    <option value="resto">Resto</option>
-                    <option value="spec exam">Spec Exam</option>
-                    <option value="emerg exam">Emerg Exam</option>
-                    <option value="custom">Custom Appointment</option>
-                </select>
-
-                <label for="duration">Appointment Duration:</label>
-                <select id="duration" name="duration" required>
-                    <option value="30">30 minutes</option>
-                    <option value="45">45 minutes</option>
-                    <option value="60">1 hour</option>
-                    <option value="90">1.5 hours</option>
-                    <option value="120">2 hours</option>
-                </select>
-
-                <label for="hygienist">Preferred Hygienist:</label>
-                <select id="hygienist" name="hygienist" required>
-                    <option value="no preference">No Preference</option>
-                    <option value="sarah">Sarah</option>
-                    <option value="michael">Michael</option>
-                    <option value="jessica">Jessica</option>
-                    <option value="david">David</option>
-                </select>
-
-                <label for="needs_dentist">Requires Dentist?</label>
-                <select id="needs_dentist" name="needs_dentist" required>
-                    <option value="no">No</option>
-                    <option value="yes">Yes</option>
-                </select>
-                
-                <label for="reason">Additional Notes:</label>
-                <textarea id="reason" name="reason" rows="3"></textarea>
-                
-                <label for="urgency">Urgency:</label>
-                <select id="urgency" name="urgency">
-                    <option value="low">Low</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="high">High</option>
-                </select>
-                
-                <button type="submit">Add to Waitlist</button>
-            </form>
         </div>
         
-        <div class="waitlist-section">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Bulk Upload Patients</h5>
+                    <form action="/upload_csv" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="csv_file">Upload CSV File:</label>
+                            <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
+                        </div>
+                        <button type="submit">Upload Patients</button>
+                    </form>
+                    <small class="csv-help">
+                        CSV should include columns: name, phone, email, appointment_type, duration, 
+                        provider, needs_dentist, reason, urgency
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
             <h2>Current Waitlist</h2>
             {% if waitlist %}
                 <table>
@@ -318,7 +164,7 @@
                                                         {{ patient.appointment_type|replace('_', ' ')|title }}
                                                       {% endif %}<br>
                                     <strong>Duration:</strong> {{ patient.duration }} mins<br>
-                                    <strong>Hygienist:</strong> {{ patient.hygienist|capitalize if patient.hygienist != 'no preference' else 'No Preference' }}<br>
+                                    <strong>Provider:</strong> {{ patient.provider|capitalize if patient.provider != 'no preference' else 'No Preference' }}<br>
                                     <strong>Needs Dentist:</strong> {{ 'Yes' if patient.needs_dentist else 'No' }}<br>
                                     {% if patient.reason %}
                                         <strong>Notes:</strong> {{ patient.reason }}
@@ -351,21 +197,21 @@
             {% endif %}
         </div>
     </div>
+</div>
 
-    <!-- Add JavaScript to handle the reason field visibility -->
-    <script>
-        document.getElementById('appointment_type').addEventListener('change', function() {
-            const reasonLabel = document.querySelector('label[for="reason"]');
-            const reasonField = document.getElementById('reason');
-            
-            if (this.value === 'custom') {
-                reasonLabel.textContent = 'Custom Appointment Type:*';
-                reasonField.required = true;
-            } else {
-                reasonLabel.textContent = 'Additional Notes:';
-                reasonField.required = false;
-            }
-        });
-    </script>
-</body>
-</html>
+<!-- Add JavaScript to handle the reason field visibility -->
+<script>
+    document.getElementById('appointment_type').addEventListener('change', function() {
+        const reasonLabel = document.querySelector('label[for="reason"]');
+        const reasonField = document.getElementById('reason');
+        
+        if (this.value === 'custom') {
+            reasonLabel.textContent = 'Custom Appointment Type:*';
+            reasonField.required = true;
+        } else {
+            reasonLabel.textContent = 'Additional Notes:';
+            reasonField.required = false;
+        }
+    });
+</script>
+{% endblock %}
