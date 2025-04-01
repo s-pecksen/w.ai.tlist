@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Cancelled Appointments{% endblock %}
+
+{% block head %}
+{{ super() }}
+<!-- Add Flatpickr for date/time selection -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+<style>
+    .date-time-container {
+        position: relative;
+    }
+    .calendar-icon {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+    }
+    .eligibility-match {
+        background-color: #d1e7dd;
+    }
+    .eligibility-mismatch {
+        background-color: #f8d7da;
+    }
+    .eligibility-neutral {
+        background-color: #fff3cd;
+    }
+    .patient-match-indicator {
+        width: 12px;
+        height: 12px;
+        display: inline-block;
+        border-radius: 50%;
+        margin-right: 5px;
+    }
+    .match-perfect {
+        background-color: #198754;
+    }
+    .match-partial {
+        background-color: #fd7e14;
+    }
+    .match-none {
+        background-color: #dc3545;
+    }
+    .patient-details {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+    .compatibility-score {
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="mb-4">Manage Cancelled Appointments</h1>
+    
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Add Cancelled Appointment</h5>
+                    <form action="{{ url_for('add_cancelled_appointment') }}" method="post">
+                        <div class="mb-3">
+                            <label for="provider" class="form-label">Provider</label>
+                            <select class="form-select" id="provider" name="provider" required>
+                                <option value="" selected disabled>Select Provider</option>
+                                {% for provider in providers %}
+                                    <option value="{{ provider.name }}">{{ provider.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="date_time" class="form-label">Date and Time</label>
+                            <div class="date-time-container">
+                                <input type="text" class="form-control" id="date_time" name="date_time" placeholder="Click to select date and time" required>
+                                <i class="bi bi-calendar calendar-icon"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="duration" class="form-label">Duration</label>
+                            <select class="form-select" id="duration" name="duration" required>
+                                <option value="30">30 minutes</option>
+                                <option value="45">45 minutes</option>
+                                <option value="60">1 hour</option>
+                                <option value="90">1.5 hours</option>
+                                <option value="120">2 hours</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="notes" class="form-label">Notes (Optional)</label>
+                            <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Find Matching Patients</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Upcoming Cancelled Appointments</h5>
+                </div>
+                <ul class="list-group list-group-flush">
+                    {% if cancelled_appointments %}
+                        {% for appointment in cancelled_appointments %}
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <strong>{{ appointment.provider }}</strong><br>
+                                        {{ appointment.date_time.strftime('%a, %b %d, %Y at %I:%M %p') }}<br>
+                                        Duration: {{ appointment.duration }} minutes
+                                    </div>
+                                    <div>
+                                        {% if appointment.matched_patient %}
+                                            <span class="badge bg-success">Matched: {{ appointment.matched_patient.name }}</span>
+                                        {% else %}
+                                            <form action="{{ url_for('find_matches_for_appointment', appointment_id=appointment.id) }}" method="post">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary">Find Matches</button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    {% else %}
+                        <li class="list-group-item text-center">No cancelled appointments</li>
+                    {% endif %}
+                </ul>
+            </div>
+            
+            <!-- Add a legend to explain the matching -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Patient Matching Legend</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <span class="patient-match-indicator match-perfect"></span>
+                        <strong>Perfect Match:</strong> Provider preference and appointment duration match
+                    </div>
+                    <div class="mb-2">
+                        <span class="patient-match-indicator match-partial"></span>
+                        <strong>Partial Match:</strong> Patient accepts any provider or duration is flexible
+                    </div>
+                    <div>
+                        <span class="patient-match-indicator match-none"></span>
+                        <strong>No Match:</strong> Patient not eligible for this appointment
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {% if eligible_patients and current_appointment %}
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Eligible Patients for Cancelled Appointment</h5>
+                    <p class="mb-0">{{ current_appointment.provider }} on 
+                    {{ current_appointment.date_time.strftime('%a, %b %d, %Y at %I:%M %p') }} for 
+                    {{ current_appointment.duration }} minutes</p>
+                </div>
+                <div class="card-body">
+                    {% if eligible_patients|length > 0 %}
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Match</th>
+                                <th>Patient</th>
+                                <th>Contact Information</th>
+                                <th>Wait Time</th>
+                                <th>Appointment Details</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for patient in eligible_patients %}
+                            <tr class="
+                                {% if patient.match_score == 'perfect' %}eligibility-match
+                                {% elif patient.match_score == 'partial' %}eligibility-neutral
+                                {% else %}eligibility-mismatch{% endif %}
+                            ">
+                                <td>
+                                    <span class="patient-match-indicator 
+                                        {% if patient.match_score == 'perfect' %}match-perfect
+                                        {% elif patient.match_score == 'partial' %}match-partial
+                                        {% else %}match-none{% endif %}">
+                                    </span>
+                                    <span class="compatibility-score">
+                                        {% if patient.match_score == 'perfect' %}Perfect
+                                        {% elif patient.match_score == 'partial' %}Partial
+                                        {% else %}Low{% endif %}
+                                    </span>
+                                </td>
+                                <td>{{ patient.name }}</td>
+                                <td>
+                                    {{ patient.phone }}<br>
+                                    <small>{{ patient.email or "No email" }}</small>
+                                </td>
+                                <td>{{ patient.wait_time }}</td>
+                                <td>
+                                    <div class="patient-details">
+                                        <div><strong>Type:</strong> {{ patient.appointment_type }}</div>
+                                        <div><strong>Duration:</strong> {{ patient.duration }} min</div>
+                                        <div><strong>Provider:</strong> 
+                                            {% if patient.provider == current_appointment.provider %}
+                                                <span class="text-success">{{ patient.provider }}</span>
+                                            {% elif patient.provider == 'no preference' %}
+                                                <span class="text-muted">No preference</span>
+                                            {% else %}
+                                                <span class="text-danger">{{ patient.provider }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if patient.match_score == 'perfect' or patient.match_score == 'partial' %}
+                                    <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=current_appointment.id) }}" method="post">
+                                        <button type="submit" class="btn btn-sm btn-success">Assign</button>
+                                    </form>
+                                    {% else %}
+                                    <button class="btn btn-sm btn-secondary" disabled title="Patient not eligible">Not Eligible</button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="alert alert-info">
+                        No eligible patients found for this appointment.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize flatpickr for date/time selection
+        flatpickr("#date_time", {
+            enableTime: true,
+            dateFormat: "Y-m-d H:i",
+            minDate: "today",
+            time_24hr: false,
+            minuteIncrement: 15,
+            // Disable times that conflict with existing appointments
+            disable: [
+                {% if appointment_conflicts %}
+                    {% for conflict in appointment_conflicts %}
+                        {
+                            from: "{{ conflict.start }}",
+                            to: "{{ conflict.end }}"
+                        },
+                    {% endfor %}
+                {% endif %}
+            ]
+        });
+        
+        // Make the calendar icon also open the date picker
+        document.querySelector('.calendar-icon').addEventListener('click', function() {
+            document.getElementById('date_time')._flatpickr.open();
+        });
+    });
+</script>
+{% endblock %} 

@@ -1,0 +1,57 @@
+id,name,phone,email,reason,urgency,appointment_type,duration,provider,needs_dentist,status,timestamp,wait_time
+120e5e83-17a6-4942-a334-8937596fbf26,John Smith,555-123-4567,john.smith@email.com,Regular checkup,low,hygiene,30,no preference,False,waiting,2025-03-31T10:31:02.472923,23 minutes
+237d3614-24f1-43b6-805e-116ca8ee773c,Jane Doe,555-234-5678,jane.doe@email.com,Severe toothache,high,hygiene,60,no preference,True,waiting,2025-03-31T10:31:02.475811,23 minutes
+511b9e6e-3b9e-4000-9aff-ec8357d80f11,Bob Wilson,555-345-6789,bob.wilson@email.com,Deep cleaning needed,medium,hygiene,90,no preference,True,waiting,2025-03-31T10:31:02.477659,23 minutes
+553889d8-6eb1-4895-9379-11b518783df3,Maria Garcia,555-456-7890,maria@email.com,Cavity filling,medium,hygiene,45,no preference,True,waiting,2025-03-31T10:31:02.479474,23 minutes
+3ada6253-c295-495b-a231-21eddac54e78,Tom Johnson,555-567-8901,tom@email.com,nan,low,hygiene,30,no preference,False,waiting,2025-03-31T10:31:02.480980,23 minutes
+57b05fb2-1bf3-48b5-8a4b-427d069df025,Sarah Brown,555-678-9012,S.brown@hotmail.com,New patient consultation,medium,hygiene,60,no preference,True,waiting,2025-03-31T10:31:02.482510,23 minutes
+15681d91-2679-44cf-8a83-cd06eb4c656d,Mike Davis,555-789-0123,mike@email.com,Broken tooth,high,hygiene,45,no preference,True,waiting,2025-03-31T10:31:02.483971,23 minutes
+f7f24ca0-829e-45fa-9617-74a859e6bace,Lisa Chen,555-890-1234,lisa@email.com,Regular cleaning,low,hygiene,30,no preference,False,waiting,2025-03-31T10:31:02.485905,23 minutes
+c2737c78-a305-4fd0-b969-735fad69af65,John Smith,555-123-4567,john.smith@email.com,Regular checkup,low,hygiene,30,no preference,False,waiting,2025-03-31T10:31:51.517108,22 minutes
+0dc96a0d-7dd6-4b23-aab9-04888a911214,Jane Doe,555-234-5678,jane.doe@email.com,Severe toothache,high,hygiene,60,no preference,True,waiting,2025-03-31T10:31:51.520044,22 minutes
+137261e2-2565-41bd-bc12-ee3ce661bf18,Bob Wilson,555-345-6789,bob.wilson@email.com,Deep cleaning needed,medium,hygiene,90,no preference,True,waiting,2025-03-31T10:31:51.521841,22 minutes
+c3768e19-09b7-4819-8754-f0baff688708,Maria Garcia,555-456-7890,maria@email.com,Cavity filling,medium,hygiene,45,no preference,True,waiting,2025-03-31T10:31:51.523886,22 minutes
+33d947f9-86ac-466b-82df-16cd4a383bc2,Tom Johnson,555-567-8901,tom@email.com,nan,low,hygiene,30,no preference,False,waiting,2025-03-31T10:31:51.525486,22 minutes
+82002c6f-d969-4ccf-a57e-f0405e296b66,Sarah Brown,555-678-9012,S.brown@hotmail.com,New patient consultation,medium,hygiene,60,no preference,True,waiting,2025-03-31T10:31:51.527445,22 minutes
+6d1229ff-8705-48d8-8cd3-a9be8f183903,Mike Davis,555-789-0123,mike@email.com,Broken tooth,high,hygiene,45,no preference,True,waiting,2025-03-31T10:31:51.529008,22 minutes
+88b5fbec-0bad-494f-8567-7df0159107fb,Lisa Chen,555-890-1234,lisa@email.com,Regular cleaning,low,hygiene,30,no preference,False,waiting,2025-03-31T10:31:51.530406,22 minutes
+f3dcdde9-b55d-43d1-a5f7-def1f9d47a09,John Smith,555-123-4567,john.smith@email.com,Regular checkup,low,hygiene,30,no preference,False,waiting,2025-03-31T10:31:53.482758,22 minutes
+aea74629-e26c-4711-921d-c6a170c0f962,Jane Doe,555-234-5678,jane.doe@email.com,Severe toothache,high,hygiene,60,no preference,True,waiting,2025-03-31T10:31:53.486440,22 minutes
+73db0216-f739-45ad-a63d-ee0184b88682,Bob Wilson,555-345-6789,bob.wilson@email.com,Deep cleaning needed,medium,hygiene,90,no preference,True,waiting,2025-03-31T10:31:53.489127,22 minutes
+23b2fb30-7d52-47f6-a468-36e9bd8fa279,Maria Garcia,555-456-7890,maria@email.com,Cavity filling,medium,hygiene,45,no preference,True,waiting,2025-03-31T10:31:53.491387,22 minutes
+1d5d93f1-02bc-4826-bad3-34dc7a9c19ce,Tom Johnson,555-567-8901,tom@email.com,nan,low,hygiene,30,no preference,False,waiting,2025-03-31T10:31:53.492855,22 minutes
+f5e35470-ea1f-423d-b68d-53f2996c765a,Sarah Brown,555-678-9012,S.brown@hotmail.com,New patient consultation,medium,hygiene,60,no preference,True,waiting,2025-03-31T10:31:53.494895,22 minutes
+87c96d98-cc9f-442d-933a-edd966b2e699,Mike Davis,555-789-0123,mike@email.com,Broken tooth,high,hygiene,45,no preference,True,scheduled,2025-03-31T10:31:53.496920,0 minutes
+87515168-21f3-4224-9b81-ecfdd6c9cea4,Lisa Chen,555-890-1234,lisa@email.com,Regular cleaning,low,hygiene,30,no preference,False,scheduled,2025-03-31T10:31:53.498718,11 minutes
+d72a8ea0-dbd8-4f96-bf57-540f2fbf89be,John Smith,555-123-4567,john.smith@email.com,Regular checkup,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:07.250187,0 minutes
+558aed92-1bb4-4d71-a72e-b28d1a280786,Jane Doe,555-234-5678,jane.doe@email.com,Severe toothache,high,hygiene,60,no preference,True,waiting,2025-03-31T10:54:07.253875,0 minutes
+9f63f2d7-b1c7-4e7d-b82a-50e3bad4397d,Bob Wilson,555-345-6789,bob.wilson@email.com,Deep cleaning needed,medium,hygiene,90,no preference,True,waiting,2025-03-31T10:54:07.256469,0 minutes
+c9d9ca45-6be9-4f2c-ac87-220a794409b6,Maria Garcia,555-456-7890,maria@email.com,Cavity filling,medium,hygiene,45,no preference,True,waiting,2025-03-31T10:54:07.258299,0 minutes
+324008f8-e5a0-4e39-a156-e7ff4c7577b6,Tom Johnson,555-567-8901,tom@email.com,nan,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:07.259982,0 minutes
+72a1c518-c0bc-4430-8b5f-0aa4f94fa86e,Sarah Brown,555-678-9012,S.brown@hotmail.com,New patient consultation,medium,hygiene,60,no preference,True,waiting,2025-03-31T10:54:07.261876,0 minutes
+909ff213-9b46-4426-9543-5ee0a4613671,Mike Davis,555-789-0123,mike@email.com,Broken tooth,high,hygiene,45,no preference,True,waiting,2025-03-31T10:54:07.264351,0 minutes
+4b039e65-a37a-4363-8341-b6c943333158,Lisa Chen,555-890-1234,lisa@email.com,Regular cleaning,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:07.266528,0 minutes
+d6393e59-be0a-4512-9013-0de431e47677,John Smith,555-123-4567,john.smith@email.com,Regular checkup,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:09.485863,0 minutes
+882254c5-81ee-4998-a7b4-e38a44843948,Jane Doe,555-234-5678,jane.doe@email.com,Severe toothache,high,hygiene,60,no preference,True,waiting,2025-03-31T10:54:09.490097,0 minutes
+5193b02a-beee-4024-8d76-68ea9c782cac,Bob Wilson,555-345-6789,bob.wilson@email.com,Deep cleaning needed,medium,hygiene,90,no preference,True,waiting,2025-03-31T10:54:09.492770,0 minutes
+88729f26-f027-4108-81ae-1eed6fb35ee6,Maria Garcia,555-456-7890,maria@email.com,Cavity filling,medium,hygiene,45,no preference,True,waiting,2025-03-31T10:54:09.495623,0 minutes
+c33d3537-22cb-4b6c-a355-0c2375791a23,Tom Johnson,555-567-8901,tom@email.com,nan,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:09.497844,0 minutes
+bede4c77-3215-4489-9761-2bdef3d95930,Sarah Brown,555-678-9012,S.brown@hotmail.com,New patient consultation,medium,hygiene,60,no preference,True,waiting,2025-03-31T10:54:09.500498,0 minutes
+48cf25bf-c755-4983-9f53-1596e23319ef,Mike Davis,555-789-0123,mike@email.com,Broken tooth,high,hygiene,45,no preference,True,waiting,2025-03-31T10:54:09.503519,0 minutes
+a1c66712-818d-4241-93ca-c40bd5d011f3,Lisa Chen,555-890-1234,lisa@email.com,Regular cleaning,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:09.507077,0 minutes
+69c0f0fe-c07c-4bb1-bbf5-6eab16bfa904,John Smith,555-123-4567,john.smith@email.com,Regular checkup,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:17.513977,0 minutes
+0568db01-6701-4074-b497-7adee1c1efa5,Jane Doe,555-234-5678,jane.doe@email.com,Severe toothache,high,hygiene,60,no preference,True,waiting,2025-03-31T10:54:17.517587,0 minutes
+e3dea03b-70df-4a6a-b741-aa757de23f2b,Bob Wilson,555-345-6789,bob.wilson@email.com,Deep cleaning needed,medium,hygiene,90,no preference,True,waiting,2025-03-31T10:54:17.520420,0 minutes
+d5ff065a-8ddd-4f5c-801d-605d784ef528,Maria Garcia,555-456-7890,maria@email.com,Cavity filling,medium,hygiene,45,no preference,True,waiting,2025-03-31T10:54:17.522831,0 minutes
+651f116e-f4dd-49bf-9d50-11ada897c585,Tom Johnson,555-567-8901,tom@email.com,nan,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:17.525107,0 minutes
+ec88d945-6f98-4df9-b417-05914e059f3b,Sarah Brown,555-678-9012,S.brown@hotmail.com,New patient consultation,medium,hygiene,60,no preference,True,waiting,2025-03-31T10:54:17.527733,0 minutes
+1799d736-47c0-4aff-9bd5-1cff308b085e,Mike Davis,555-789-0123,mike@email.com,Broken tooth,high,hygiene,45,no preference,True,waiting,2025-03-31T10:54:17.530156,0 minutes
+22422d12-2700-47ef-829c-1c3c5191ca35,Lisa Chen,555-890-1234,lisa@email.com,Regular cleaning,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:17.532714,0 minutes
+e91486e1-4b17-45e3-9d3e-486230948a9c,John Smith,555-123-4567,john.smith@email.com,Regular checkup,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:19.508854,0 minutes
+567c0b71-7b9d-43ec-87bf-a4f9f02ddfa5,Jane Doe,555-234-5678,jane.doe@email.com,Severe toothache,high,hygiene,60,no preference,True,waiting,2025-03-31T10:54:19.513745,0 minutes
+86488480-029e-4a74-8d41-d55d760fa1bd,Bob Wilson,555-345-6789,bob.wilson@email.com,Deep cleaning needed,medium,hygiene,90,no preference,True,waiting,2025-03-31T10:54:19.516460,0 minutes
+a9d33a63-132a-41f4-a5f7-4b4171ca7f62,Maria Garcia,555-456-7890,maria@email.com,Cavity filling,medium,hygiene,45,no preference,True,waiting,2025-03-31T10:54:19.518776,0 minutes
+c63f4840-ba64-4dbc-afce-4b89d827e87b,Tom Johnson,555-567-8901,tom@email.com,nan,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:19.521339,0 minutes
+51a47ef1-77df-4f09-bcfb-c3be6813f5b3,Sarah Brown,555-678-9012,S.brown@hotmail.com,New patient consultation,medium,hygiene,60,no preference,True,waiting,2025-03-31T10:54:19.523764,0 minutes
+15e23e2e-eef3-4e20-bb25-046e1512d174,Mike Davis,555-789-0123,mike@email.com,Broken tooth,high,hygiene,45,no preference,True,waiting,2025-03-31T10:54:19.526730,0 minutes
+9c099580-253b-4e07-b099-e5af55c829a2,Lisa Chen,555-890-1234,lisa@email.com,Regular cleaning,low,hygiene,30,no preference,False,waiting,2025-03-31T10:54:19.529232,0 minutes

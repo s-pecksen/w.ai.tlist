@@ -23,12 +23,12 @@
                         </div>
                         {% else %}
                         <div class="csv-upload">
-                            <form action="/upload_csv" method="post" enctype="multipart/form-data">
+                            <form method="POST" action="{{ url_for('upload_csv') }}" enctype="multipart/form-data">
                                 <div class="mb-3">
                                     <label for="csv_file">Upload CSV File:</label>
                                     <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
                                 </div>
-                                <button type="submit">Upload Patients</button>
+                                <button type="submit">Upload Patient CSV</button>
                             </form>
                             <small class="csv-help">
                                 CSV should include columns: name, phone, email, appointment_type, duration, 
@@ -110,7 +110,7 @@
         <div class="col-md-6">
             <div class="card">
                 <div class="card-body">
-                    <h5 class="card-title">Bulk Upload Patients</h5>
+                    <h5 class="card-title">Manually Upload Patients</h5>
                     <form action="/upload_csv" method="post" enctype="multipart/form-data">
                         <div class="mb-3">
                             <label for="csv_file">Upload CSV File:</label>
