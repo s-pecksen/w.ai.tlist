@@ -24,32 +24,32 @@ app.config['SESSION_TYPE'] = 'filesystem'
 # Initialize the ProviderManager
 provider_manager = ProviderManager()
 
-# Define paths BEFORE initializing the manager
-test_csv_path = 'Tests/patient_waitlist.csv'
+# Define paths
+# test_csv_path = 'Tests/patient_waitlist.csv' # Removed test path
 backup_dir = 'waitlist_backups'
 
-# --- Pre-initialization: Seed backup from test file if needed ---
-try:
-    os.makedirs(backup_dir, exist_ok=True) # Ensure backup dir exists
-    existing_backups = glob.glob(os.path.join(backup_dir, 'waitlist_*.csv'))
+# --- Remove Pre-initialization: Seed backup from test file ---
+# try:
+#     os.makedirs(backup_dir, exist_ok=True) # Ensure backup dir exists
+#     existing_backups = glob.glob(os.path.join(backup_dir, 'waitlist_*.csv'))
+#
+#     if not existing_backups and os.path.exists(test_csv_path):
+#         # Backup directory is empty, and test file exists
+#         print(f"No backups found. Initializing from test file: {test_csv_path}")
+#         now = datetime.now()
+#         timestamp_str = now.strftime("%Y%m%d_%H%M%S")
+#         destination_filename = f"waitlist_{timestamp_str}.csv"
+#         destination_path = os.path.join(backup_dir, destination_filename)
+#
+#         # Copy the test file to the backup directory with a timestamp
+#         shutil.copy2(test_csv_path, destination_path)
+#         print(f"Copied test file to: {destination_path}")
+#
+# except Exception as e:
+#     print(f"Error during pre-initialization seeding: {e}")
+# --- End Pre-initialization Removal ---
 
-    if not existing_backups and os.path.exists(test_csv_path):
-        # Backup directory is empty, and test file exists
-        print(f"No backups found. Initializing from test file: {test_csv_path}")
-        now = datetime.now()
-        timestamp_str = now.strftime("%Y%m%d_%H%M%S")
-        destination_filename = f"waitlist_{timestamp_str}.csv"
-        destination_path = os.path.join(backup_dir, destination_filename)
-
-        # Copy the test file to the backup directory with a timestamp
-        shutil.copy2(test_csv_path, destination_path)
-        print(f"Copied test file to: {destination_path}")
-
-except Exception as e:
-    print(f"Error during pre-initialization seeding: {e}")
-# --- End Pre-initialization ---
-
-# Initialize PatientWaitlistManager - It will now load the test file if copied above
+# Initialize PatientWaitlistManager - It will now load the latest backup from backup_dir
 waitlist_manager = PatientWaitlistManager("ClinicWaitlistApp", backup_dir=backup_dir)
 
 # Create Base before any classes that need to inherit from it
@@ -333,10 +333,16 @@ def upload_csv():
                  provider_value = row.get('hygienist') or row.get('provider', '') # Check both
 
                  # --- Try parsing the timestamp ---
-                 datetime_str = row.get('Date Time Entered', '').strip()
+                 datetime_str = row.get('date_time_entered', '').strip()
                  parsed_timestamp = None
                  if datetime_str:
-                     possible_formats = ['%m/%d/%Y %H:%M:%S', '%m/%d/%y %I:%M %p', '%m/%d/%Y %I:%M %p'] # Added multiple formats
+                     # Add %# format for potential missing leading zeros on Windows
+                     possible_formats = [
+                         '%m/%d/%Y %H:%M:%S',    # Standard MM/DD/YYYY HH:MM:SS
+                         '%#m/%#d/%Y %#H:%M:%S', # Attempt M/D/YYYY H:MM:SS (Windows?)
+                         '%m/%d/%y %I:%M %p',    # MM/DD/YY HH:MM AM/PM
+                         '%m/%d/%Y %I:%M %p'     # MM/DD/YYYY HH:MM AM/PM
+                     ]
                      for fmt in possible_formats:
                          try:
                              parsed_timestamp = datetime.strptime(datetime_str, fmt)
@@ -530,7 +536,7 @@ def add_cancelled_appointment():
     
     # Parse date_time
     try:
-        date_time = datetime.strptime(date_time_str, '%Y-%m-%d %H:%M')
+        date_time = datetime.strptime(date_time_str, '%m/%d/%Y %H:%M:%S')
     except ValueError:
         flash('Invalid date/time format', 'danger')
         return redirect(url_for('list_cancelled_appointments'))

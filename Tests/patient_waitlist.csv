@@ -1,9 +1,0 @@
-name,phone,email,appointment_type,duration,hygienist_preference,hygienist,needs_dentist,reason,urgency,date_time_entered
-John Smith,555-123-4567,john.smith@email.com,cleaning,30,yes,Shannon,no,Regular checkup,low,2/25/25 1:00 PM
-Jane Doe,555-234-5678,jane.doe@email.com,emergency,60,yes,Kaitlin,yes,Severe toothache,high,2/25/2025 16:00:00 PM
-Bob Wilson,555-345-6789,bob.wilson@email.com,deep_cleaning,90,no,,yes,Deep cleaning needed,medium,3/25/2025 16:00:00 PM
-Maria Garcia,555-456-7890,maria@email.com,filling,45,yes,Adrienne,yes,Cavity filling,medium,2/01/2025 16:00:00 PM
-Tom Johnson,555-567-8901,tom@email.com,xray,30,yes,Maylee,no,,low,3/13/2025 16:00:00 PM
-Sarah Brown,555-678-9012,S.brown@hotmail.com,consultation,60,yes,Kathy,yes,New patient consultation,medium,2/10/2025 16:00:00 PM
-Mike Davis,555-789-0123,mike@email.com,emergency,45,no,,yes,Broken tooth,high,2/08/2025 16:00:00 PM
-Lisa Chen,555-890-1234,lisa@email.com,cleaning,30,yes,Ramneet,no,Regular cleaning,low,2/03/2025 16:00:00 PM
