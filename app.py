@@ -225,11 +225,15 @@ def remove_patient(patient_id):
 
 # Add these helper functions
 def validate_appointment_type(value):
-    valid_types = ['hygiene', 'recall', 'resto', 'spec exam', 'emerg exam', 'custom', 'cleaning', 'deep_cleaning', 'filling', 'xray', 'consultation', 'emergency']
-    return str(value).lower() if str(value).lower() in valid_types else 'consultation' # Default to consultation
+    # Updated valid types based on user request
+    valid_types = ['hygiene', 'recall', 'resto', 'x-ray', 'np_spec', 'spec_exam', 'emergency_exam', 'rct', 'custom'] 
+    value_str = str(value).lower().strip()
+    # Defaulting to 'hygiene' as a common type if the provided one isn't valid
+    return value_str if value_str in valid_types else 'hygiene' 
 
 def validate_duration(value):
-    valid_durations = ['30', '45', '60', '90', '120']
+    # Use the updated list of durations from the HTML forms
+    valid_durations = ['30', '60', '70', '90', '120'] 
     return str(value) if str(value) in valid_durations else '30'
 
 def validate_provider(value):
@@ -749,11 +753,14 @@ def find_eligible_patients(cancelled_appointment):
             patient_copy['match_score'] = match_score # Keep score for consistency if needed later
             eligible_patients.append(patient_copy)
             
-    # Sort the perfect matches by wait time (longest first)
+    # Sort the perfect matches first by Urgency (High > Medium > Low), then by wait time (longest first)
     def sort_key(patient):
-        # No need to sort by score value anymore, just wait time
-        # Use get with default for wait_time
-        return -wait_time_to_minutes(patient.get('wait_time', '0 minutes'))
+        urgency = patient.get('urgency', 'medium').lower()
+        # Assign lower numbers to higher priorities for sorting
+        urgency_priority = {'high': 0, 'medium': 1, 'low': 2}.get(urgency, 1) # Default to medium priority
+        # Use negative wait time for descending order (longest wait first)
+        wait_minutes = -wait_time_to_minutes(patient.get('wait_time', '0 minutes')) 
+        return (urgency_priority, wait_minutes)
         
     eligible_patients.sort(key=sort_key)
     return eligible_patients
