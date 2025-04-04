@@ -77,32 +77,30 @@ class PatientWaitlistManager:
                     original_timestamp_str = row.get('timestamp', '') # Get original string
                     if 'timestamp' in row and row['timestamp']:
                         try:
+                            # Attempt ISO format first
                             row['timestamp'] = datetime.datetime.fromisoformat(original_timestamp_str)
                         except ValueError:
+                            # Fallback to trying other formats if needed (example)
+                            # Or simply default to now if parsing fails broadly
+                            print(f"Warning: Could not parse timestamp '{original_timestamp_str}' as ISO format for row: {row.get('name')}. Using current time.")
                             row['timestamp'] = datetime.datetime.now() # Fallback
                     else: # Handle case where timestamp column might be missing or empty
                          row['timestamp'] = datetime.datetime.now() # Fallback if column missing/empty
 
-                    # Convert needs_dentist to boolean
-                    if 'needs_dentist' in row:
-                         row['needs_dentist'] = str(row['needs_dentist']).lower() in ['true', 'yes', '1', 'y']
-                    else:
-                         row['needs_dentist'] = False # Default if column missing
-
                     # Ensure required fields exist, provide defaults if necessary
                     row.setdefault('id', str(uuid.uuid4()))
-                    row.setdefault('name', 'Unknown')
-                    row.setdefault('phone', 'N/A')
-                    row.setdefault('email', '')
-                    row.setdefault('reason', '')
-                    row.setdefault('urgency', 'medium')
-                    row.setdefault('appointment_type', 'consultation')
-                    row.setdefault('duration', '30')
-                    row.setdefault('provider', 'no preference')
-                    row.setdefault('status', 'waiting')
-                    row.setdefault('wait_time', '0 minutes')
-                    if 'timestamp' not in row:
-                       row['timestamp'] = datetime.datetime.now()
+                    row.setdefault('name', row.get('name', 'Unknown')) # Use actual name if present
+                    row.setdefault('phone', row.get('phone', 'N/A')) # Use actual phone if present
+                    row.setdefault('email', row.get('email', ''))
+                    row.setdefault('reason', row.get('reason', ''))
+                    row.setdefault('urgency', row.get('urgency', 'medium'))
+                    row.setdefault('appointment_type', row.get('appointment_type', 'consultation'))
+                    row.setdefault('duration', row.get('duration', '30'))
+                    # Use 'provider' column if present, otherwise default
+                    row.setdefault('provider', row.get('provider', 'no preference'))
+                    row.setdefault('status', 'waiting') # Default status if not in CSV
+                    row.setdefault('wait_time', '0 minutes') # Default wait_time if not in CSV
+                    # Timestamp is handled above
 
                     patients.append(row)
             return patients
@@ -118,25 +116,19 @@ class PatientWaitlistManager:
         file_path = self._get_timestamped_filename()
         try:
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                # Define standard headers, excluding 'needs_dentist'
+                fieldnames = [
+                    'id', 'name', 'phone', 'email', 'reason', 'urgency',
+                    'appointment_type', 'duration', 'provider', # Removed 'needs_dentist'
+                    'status', 'timestamp', 'wait_time'
+                ]
                 if not self.patients:
-                    # Define headers even for empty file
-                    fieldnames = [
-                        'id', 'name', 'phone', 'email', 'reason', 'urgency',
-                        'appointment_type', 'duration', 'provider', 'needs_dentist',
-                        'status', 'timestamp', 'wait_time'
-                    ]
+                    # Write headers even for empty file
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
                     print(f"Saved empty waitlist backup to: {file_path}")
                     return
 
-                # Use fieldnames from the first patient dict keys
-                # Ensure consistent order - define standard headers
-                fieldnames = [
-                    'id', 'name', 'phone', 'email', 'reason', 'urgency',
-                    'appointment_type', 'duration', 'provider', 'needs_dentist',
-                    'status', 'timestamp', 'wait_time'
-                ]
                 # Ensure all patient dicts have all keys for DictWriter
                 writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
                 writer.writeheader()
@@ -146,8 +138,8 @@ class PatientWaitlistManager:
                     # Convert datetime to ISO format string for CSV
                     if isinstance(patient_copy.get('timestamp'), datetime.datetime):
                         patient_copy['timestamp'] = patient_copy['timestamp'].isoformat()
-                    # Ensure boolean is saved as string
-                    patient_copy['needs_dentist'] = str(patient_copy.get('needs_dentist', False))
+                    # Removed needs_dentist string conversion
+                    # patient_copy['needs_dentist'] = str(patient_copy.get('needs_dentist', False))
 
                     # Write only the defined fieldnames
                     writer.writerow({k: patient_copy.get(k, '') for k in fieldnames})
@@ -159,7 +151,7 @@ class PatientWaitlistManager:
     def add_patient(self, name: str, phone: str, email: str = "",
                    reason: str = "", urgency: str = "medium",
                    appointment_type: str = "consultation", duration: str = "30",
-                   provider: str = "no preference", needs_dentist: bool = False,
+                   provider: str = "no preference", # Removed needs_dentist
                    timestamp: Optional[datetime.datetime] = None) -> Optional[Dict[str, Any]]:
         """Adds a new patient and triggers a timestamped backup."""
         try:
@@ -171,7 +163,7 @@ class PatientWaitlistManager:
                 'name': name, 'phone': phone, 'email': email, 'reason': reason,
                 'urgency': urgency, 'appointment_type': appointment_type,
                 'duration': str(duration), # Ensure duration is string
-                'provider': provider, 'needs_dentist': needs_dentist,
+                'provider': provider, # Removed needs_dentist
                 'status': 'waiting', 'timestamp': entry_timestamp, 'wait_time': '0 minutes' # Use entry_timestamp
             }
             self.patients.append(patient)

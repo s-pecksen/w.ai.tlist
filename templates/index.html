@@ -70,13 +70,6 @@
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label for="needs_dentist" class="form-label">Requires Dentist?</label>
-                                <select class="form-select" id="needs_dentist" name="needs_dentist" required>
-                                    <option value="no">No</option>
-                                    <option value="yes">Yes</option>
-                                </select>
-                            </div>
-                            <div class="mb-3">
                                 <label for="reason" class="form-label">Additional Notes:</label>
                                 <textarea class="form-control" id="reason" name="reason" rows="2"></textarea>
                             </div>
@@ -177,7 +170,6 @@
                                                       {% endif %}<br>
                                     <strong>Duration:</strong> {{ patient.duration }} mins<br>
                                     <strong>Provider:</strong> {{ patient.provider|capitalize if patient.provider != 'no preference' else 'No Preference' }}<br>
-                                    <strong>Needs Dentist:</strong> {{ 'Yes' if patient.needs_dentist else 'No' }}<br>
                                     {% if patient.reason %}
                                         <strong>Notes:</strong> {{ patient.reason }}
                                     {% endif %}

@@ -183,7 +183,6 @@ def add_patient():
     appointment_type = request.form.get('appointment_type')
     duration = request.form.get('duration')
     provider = request.form.get('provider')
-    needs_dentist = request.form.get('needs_dentist') == 'yes'
     
     if name and phone:  # Basic validation
         # Use the waitlist manager to add the patient
@@ -195,8 +194,7 @@ def add_patient():
             urgency=urgency,
             appointment_type=appointment_type,
             duration=duration,
-            provider=provider,
-            needs_dentist=needs_dentist
+            provider=provider
         )
     
     return redirect(url_for('index'))
@@ -259,11 +257,6 @@ def validate_provider(value):
 def validate_urgency(value):
     valid_urgency = ['low', 'medium', 'high']
     return value.lower() if value.lower() in valid_urgency else 'medium'
-
-def validate_needs_dentist(value):
-    if isinstance(value, str):
-        return value.lower() in ['yes', 'true', '1', 'y']
-    return bool(value)
 
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
@@ -333,8 +326,8 @@ def upload_csv():
                  if not first_row_processed: # Added conditional print
                      print(f"--- DEBUG: Processing first row: {row} ---")
                      first_row_processed = True
-                 # Use correct provider column name ('hygienist' vs 'provider')
-                 provider_value = row.get('hygienist') or row.get('provider', '') # Check both
+                 # Use correct provider column name ('provider' vs 'provider')
+                 provider_value = row.get('provider') or row.get('provider', '') # Use 'provider' consistently
 
                  # --- Try parsing the timestamp ---
                  datetime_str = row.get('date_time_entered', '').strip()
@@ -374,7 +367,6 @@ def upload_csv():
                     'appointment_type': validate_appointment_type(row.get('appointment_type')),
                     'duration': validate_duration(row.get('duration', '30')),
                     'provider': validate_provider(provider_value), # Use combined value
-                    'needs_dentist': validate_needs_dentist(row.get('needs_dentist', False)),
                     'timestamp': parsed_timestamp # Add parsed timestamp here
                  })
                  added_count += 1
