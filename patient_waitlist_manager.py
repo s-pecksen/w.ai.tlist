@@ -77,14 +77,10 @@ class PatientWaitlistManager:
                     original_timestamp_str = row.get('timestamp', '') # Get original string
                     if 'timestamp' in row and row['timestamp']:
                         try:
-                            print(f"DEBUG: Attempting to parse timestamp: '{original_timestamp_str}' for patient {row.get('name')}") # DEBUG ADDED
                             row['timestamp'] = datetime.datetime.fromisoformat(original_timestamp_str)
-                            print(f"DEBUG: Successfully parsed timestamp for {row.get('name')}") # DEBUG ADDED
                         except ValueError:
-                            print(f"DEBUG: Failed to parse timestamp '{original_timestamp_str}' as ISO format. Using current time.") # DEBUG ADDED
                             row['timestamp'] = datetime.datetime.now() # Fallback
                     else: # Handle case where timestamp column might be missing or empty
-                         print(f"DEBUG: Timestamp missing or empty for patient {row.get('name')}. Using current time.") # DEBUG ADDED
                          row['timestamp'] = datetime.datetime.now() # Fallback if column missing/empty
 
                     # Convert needs_dentist to boolean
