@@ -343,14 +343,21 @@ def upload_csv():
                          '%m/%d/%y %I:%M %p',    # MM/DD/YY HH:MM AM/PM
                          '%m/%d/%Y %I:%M %p'     # MM/DD/YYYY HH:MM AM/PM
                      ]
-                     for fmt in possible_formats:
-                         try:
-                             parsed_timestamp = datetime.strptime(datetime_str, fmt)
-                             break # Stop trying formats if one works
-                         except ValueError:
-                             continue # Try next format
+                     # First, try ISO format
+                     try:
+                         parsed_timestamp = datetime.fromisoformat(datetime_str)
+                     except ValueError:
+                         # If ISO fails, try other formats
+                         for fmt in possible_formats:
+                             try:
+                                 parsed_timestamp = datetime.strptime(datetime_str, fmt)
+                                 break # Stop trying formats if one works
+                             except ValueError:
+                                 continue # Try next format
+
                      if not parsed_timestamp:
-                         print(f"--- DEBUG: Could not parse timestamp '{datetime_str}' for patient {row.get('name')} using formats {possible_formats} ---")
+                         # Updated print statement to reflect ISO attempt
+                         print(f"--- DEBUG: Could not parse timestamp '{datetime_str}' for patient {row.get('name')} using ISO or formats {possible_formats} ---")
                  # --- End timestamp parsing ---
 
                  # Add data for non-duplicate patient
@@ -510,8 +517,8 @@ def list_cancelled_appointments():
             start_time = appt['date_time']
             end_time = start_time + timedelta(minutes=int(appt['duration']))
             appointment_conflicts.append({
-                'start': start_time.strftime('%Y-%m-%d %H:%M'),
-                'end': end_time.strftime('%Y-%m-%d %H:%M')
+                'start': start_time.isoformat(sep='T', timespec='seconds'),
+                'end': end_time.isoformat(sep='T', timespec='seconds')
             })
     
     return render_template('cancelled_appointments.html', 
@@ -520,6 +527,40 @@ def list_cancelled_appointments():
                           appointment_conflicts=appointment_conflicts,
                           eligible_patients=None,
                           current_appointment=None)
+
+@app.route('/initiate_cancelled_match', methods=['POST'])
+def initiate_cancelled_match():
+    """Finds eligible patients based on provider/duration from index page form."""
+    provider = request.form.get('provider')
+    duration = request.form.get('duration')
+
+    if not provider or not duration:
+        flash('Please select both a provider and a duration.', 'warning')
+        return redirect(url_for('index'))
+
+    # Create a temporary 'appointment' structure for matching logic
+    # No need for timestamp, notes, or id here
+    temp_appointment = {
+        'provider': provider,
+        'duration': duration,
+        # Add a dummy date_time if needed by template rendering, although it's not used for matching logic itself
+        'date_time': datetime.now() # Or None, if template handles it
+    }
+
+    # Find eligible patients using the existing function
+    eligible_patients = find_eligible_patients(temp_appointment)
+
+    # Get providers for rendering the target template
+    providers = provider_manager.get_provider_list()
+
+    # Render the cancelled appointments page, passing the results
+    # Note: This doesn't add an appointment to the `cancelled_appointments` list
+    return render_template('cancelled_appointments.html',
+                           providers=providers,
+                           cancelled_appointments=cancelled_appointments, # Still pass existing ones
+                           appointment_conflicts=[], # No specific conflicts for this temp search
+                           eligible_patients=eligible_patients,
+                           current_appointment=temp_appointment) # Pass the temporary data
 
 @app.route('/add_cancelled_appointment', methods=['POST'])
 def add_cancelled_appointment():
@@ -534,11 +575,11 @@ def add_cancelled_appointment():
         flash('Please fill in all required fields', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
     
-    # Parse date_time
+    # Parse date_time expecting ISO format
     try:
-        date_time = datetime.strptime(date_time_str, '%m/%d/%Y %H:%M:%S')
+        date_time = datetime.fromisoformat(date_time_str)
     except ValueError:
-        flash('Invalid date/time format', 'danger')
+        flash('Invalid date/time format. Please use YYYY-MM-DDTHH:MM:SS', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
     
     # Check for conflicts

@@ -8,7 +8,7 @@
     
     <div class="row">
         <div class="col-md-6">
-            <div class="card">
+            <div class="card mb-4">
                 <div class="card-body">
                     <h5 class="card-title">Add Patient</h5>
                     <div class="form-section">
@@ -22,20 +22,20 @@
                             <p class="mb-0">Please visit the <a href="{{ url_for('list_providers') }}">Manage Providers</a> page to add providers.</p>
                         </div>
                         {% else %}
-                        <div class="csv-upload">
+                        <div class="csv-upload mb-3">
                             <form method="POST" action="{{ url_for('upload_csv') }}" enctype="multipart/form-data">
                                 <div class="mb-3">
-                                    <label for="csv_file">Upload CSV File:</label>
-                                    <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
+                                    <label for="csv_file" class="form-label">Upload Patient CSV:</label>
+                                    <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv">
                                 </div>
-                                <button type="submit">Upload Patient CSV</button>
+                                <button type="submit" class="btn btn-secondary btn-sm">Upload CSV</button>
                             </form>
-                            <small class="csv-help">
-                                CSV should include columns: name, phone, email, appointment_type, duration, 
+                            <small class="form-text text-muted">
+                                CSV should include columns: name, phone, email, appointment_type, duration,
                                 provider, needs_dentist, reason, urgency
                             </small>
                         </div>
-                        <div class="form-divider"></div>
+                        <hr>
                         <form action="/add_patient" method="post">
                             <div class="mb-3">
                                 <label for="name" class="form-label">Name</label>
@@ -50,20 +50,27 @@
                                 <input type="email" class="form-control" id="email" name="email">
                             </div>
                             <div class="mb-3">
-                                <label for="appointment_type">Appointment Type:</label>
-                                <select id="appointment_type" name="appointment_type" required>
-                                    <option value="" disabled selected>Enter Appointment Type</option>
+                                <label for="appointment_type" class="form-label">Appointment Type:</label>
+                                <select class="form-select" id="appointment_type" name="appointment_type" required>
+                                    <option value="" disabled selected>Select Type</option>
                                     <option value="hygiene">Hygiene</option>
                                     <option value="recall">Recall</option>
                                     <option value="resto">Resto</option>
                                     <option value="spec exam">Spec Exam</option>
                                     <option value="emerg exam">Emerg Exam</option>
                                     <option value="custom">Custom Appointment</option>
+                                    <!-- Add other relevant types if needed -->
+                                    <option value="cleaning">Cleaning</option>
+                                    <option value="deep_cleaning">Deep Cleaning</option>
+                                    <option value="filling">Filling</option>
+                                    <option value="xray">X-ray</option>
+                                    <option value="consultation">Consultation</option>
+                                    <option value="emergency">Emergency</option>
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label for="duration">Appointment Duration:</label>
-                                <select id="duration" name="duration" required>
+                                <label for="duration" class="form-label">Appointment Duration:</label>
+                                <select class="form-select" id="duration" name="duration" required>
                                     <option value="30">30 minutes</option>
                                     <option value="45">45 minutes</option>
                                     <option value="60">1 hour</option>
@@ -72,34 +79,34 @@
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label for="provider">Preferred Provider:</label>
-                                <select id="provider" name="provider" required>
+                                <label for="provider" class="form-label">Preferred Provider:</label>
+                                <select class="form-select" id="provider" name="provider" required>
                                     <option value="no preference">No Preference</option>
                                     {% for provider_name in providers %}
-                                        <option value="{{ provider_name|lower }}">{{ provider_name }}</option>
+                                        <option value="{{ provider_name }}">{{ provider_name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label for="needs_dentist">Requires Dentist?</label>
-                                <select id="needs_dentist" name="needs_dentist" required>
+                                <label for="needs_dentist" class="form-label">Requires Dentist?</label>
+                                <select class="form-select" id="needs_dentist" name="needs_dentist" required>
                                     <option value="no">No</option>
                                     <option value="yes">Yes</option>
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label for="reason">Additional Notes:</label>
-                                <textarea id="reason" name="reason" rows="3"></textarea>
+                                <label for="reason" class="form-label">Additional Notes:</label>
+                                <textarea class="form-control" id="reason" name="reason" rows="2"></textarea>
                             </div>
                             <div class="mb-3">
-                                <label for="urgency">Urgency:</label>
-                                <select id="urgency" name="urgency">
+                                <label for="urgency" class="form-label">Urgency:</label>
+                                <select class="form-select" id="urgency" name="urgency">
                                     <option value="low">Low</option>
                                     <option value="medium" selected>Medium</option>
                                     <option value="high">High</option>
                                 </select>
                             </div>
-                            <button type="submit">Add to Waitlist</button>
+                            <button type="submit" class="btn btn-primary">Add to Waitlist</button>
                         </form>
                         {% endif %}
                     </div>
@@ -108,20 +115,37 @@
         </div>
         
         <div class="col-md-6">
-            <div class="card">
+            <div class="card mb-4">
                 <div class="card-body">
-                    <h5 class="card-title">Manually Upload Patients</h5>
-                    <form action="/upload_csv" method="post" enctype="multipart/form-data">
+                    <h5 class="card-title">Find Patient for Cancelled Slot</h5>
+                    {% if not has_providers %}
+                    <div class="alert alert-warning" role="alert">
+                        Please add providers first.
+                    </div>
+                    {% else %}
+                    <form action="{{ url_for('initiate_cancelled_match') }}" method="post">
                         <div class="mb-3">
-                            <label for="csv_file">Upload CSV File:</label>
-                            <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
+                            <label for="cancel_provider" class="form-label">Available Provider</label>
+                            <select class="form-select" id="cancel_provider" name="provider" required>
+                                <option value="" selected disabled>Select Provider</option>
+                                {% for provider_name in providers %}
+                                    <option value="{{ provider_name }}">{{ provider_name }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
-                        <button type="submit">Upload Patients</button>
+                        <div class="mb-3">
+                            <label for="cancel_duration" class="form-label">Available Duration</label>
+                            <select class="form-select" id="cancel_duration" name="duration" required>
+                                <option value="30">30 minutes</option>
+                                <option value="45">45 minutes</option>
+                                <option value="60">1 hour</option>
+                                <option value="90">1.5 hours</option>
+                                <option value="120">2 hours</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-info">Find Matching Patients</button>
                     </form>
-                    <small class="csv-help">
-                        CSV should include columns: name, phone, email, appointment_type, duration, 
-                        provider, needs_dentist, reason, urgency
-                    </small>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -144,7 +168,13 @@
                     </thead>
                     <tbody>
                         {% for patient in waitlist %}
-                            <tr class="{% if patient.status == 'scheduled' %}scheduled{% else %}{{ patient.urgency }}{% endif %} {% if patient.appointment_type == 'emergency' %}high{% endif %}">
+                            <tr class="
+                                {% if patient.status == 'scheduled' %}table-success scheduled
+                                {% elif patient.appointment_type == 'emergency' %}table-danger high
+                                {% elif patient.urgency == 'high' %}table-warning high
+                                {% elif patient.urgency == 'medium' %}medium
+                                {% else %}low{% endif %}
+                            ">
                                 <td>
                                     {{ patient.name }}
                                     {% if patient.appointment_type == 'emergency' %}
@@ -181,11 +211,11 @@
                                 <td class="action-buttons">
                                     {% if patient.status == 'waiting' %}
                                         <form action="/schedule_patient/{{ patient.id }}" method="post">
-                                            <button type="submit">Schedule</button>
+                                            <button type="submit" class="btn btn-sm btn-success">Schedule</button>
                                         </form>
                                     {% endif %}
-                                    <form action="/remove_patient/{{ patient.id }}" method="post">
-                                        <button type="submit" style="background-color: #f44336;">Remove</button>
+                                    <form action="/remove_patient/{{ patient.id }}" method="post" style="display: inline;">
+                                        <button type="submit" class="btn btn-sm btn-danger">Remove</button>
                                     </form>
                                 </td>
                             </tr>
@@ -201,16 +231,24 @@
 
 <!-- Add JavaScript to handle the reason field visibility -->
 <script>
-    document.getElementById('appointment_type').addEventListener('change', function() {
-        const reasonLabel = document.querySelector('label[for="reason"]');
-        const reasonField = document.getElementById('reason');
-        
-        if (this.value === 'custom') {
-            reasonLabel.textContent = 'Custom Appointment Type:*';
-            reasonField.required = true;
-        } else {
-            reasonLabel.textContent = 'Additional Notes:';
-            reasonField.required = false;
+    document.addEventListener('DOMContentLoaded', function() {
+        const appointmentTypeSelect = document.getElementById('appointment_type');
+        if (appointmentTypeSelect) {
+            appointmentTypeSelect.addEventListener('change', function() {
+                const reasonLabel = document.querySelector('label[for="reason"]');
+                const reasonField = document.getElementById('reason');
+                if (!reasonLabel || !reasonField) return;
+
+                if (this.value === 'custom') {
+                    reasonLabel.innerHTML = 'Custom Appointment Type:*'; // Use innerHTML to include asterisk
+                    reasonField.required = true;
+                } else {
+                    reasonLabel.textContent = 'Additional Notes:';
+                    reasonField.required = false;
+                }
+            });
+            // Trigger change event on load in case 'custom' is pre-selected
+            appointmentTypeSelect.dispatchEvent(new Event('change'));
         }
     });
 </script>
