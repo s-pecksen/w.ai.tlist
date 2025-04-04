@@ -22,20 +22,6 @@
                             <p class="mb-0">Please visit the <a href="{{ url_for('list_providers') }}">Manage Providers</a> page to add providers.</p>
                         </div>
                         {% else %}
-                        <div class="csv-upload mb-3">
-                            <form method="POST" action="{{ url_for('upload_csv') }}" enctype="multipart/form-data">
-                                <div class="mb-3">
-                                    <label for="csv_file" class="form-label">Upload Patient CSV:</label>
-                                    <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv">
-                                </div>
-                                <button type="submit" class="btn btn-secondary btn-sm">Upload CSV</button>
-                            </form>
-                            <small class="form-text text-muted">
-                                CSV should include columns: name, phone, email, appointment_type, duration,
-                                provider, needs_dentist, reason, urgency
-                            </small>
-                        </div>
-                        <hr>
                         <form action="/add_patient" method="post">
                             <div class="mb-3">
                                 <label for="name" class="form-label">Name</label>
