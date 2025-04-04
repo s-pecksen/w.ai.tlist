@@ -34,6 +34,7 @@
         display: inline-block;
         border-radius: 50%;
         margin-right: 5px;
+        background-color: #198754; /* Always green now */
     }
     .match-perfect {
         background-color: #198754;
@@ -58,6 +59,79 @@
 <div class="container">
     <h1 class="mb-4">Manage Cancelled Appointments</h1>
     
+    <!-- Moved Eligible Patients section to the top -->
+    {% if eligible_patients and current_appointment %}
+    <div class="row mb-4">  <!-- Added mb-4 for spacing -->
+        <div class="col-md-12">
+            <div class="card border-primary"> <!-- Added border for emphasis -->
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Perfect Matches Found for Appointment</h5>
+                    <p class="mb-0">Provider: {{ current_appointment.provider }} | Date: {{ current_appointment.date_time.strftime('%a, %b %d, %Y at %I:%M %p') }} | Duration: {{ current_appointment.duration }} minutes</p>
+                </div>
+                <div class="card-body">
+                    {% if eligible_patients|length > 0 %}
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Match</th>
+                                <th>Patient</th>
+                                <th>Contact Information</th>
+                                <th>Wait Time</th>
+                                <th>Appointment Details</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for patient in eligible_patients %}
+                            <tr class="eligibility-match"> <!-- Always eligibility-match class -->
+                                <td>
+                                    <span class="patient-match-indicator"></span> <!-- Simplified indicator -->
+                                    <span class="fw-bold">Perfect</span> <!-- Simplified text -->
+                                </td>
+                                <td>{{ patient.name }}</td>
+                                <td>
+                                    {{ patient.phone }}<br>
+                                    <small>{{ patient.email or "No email" }}</small>
+                                </td>
+                                <td>{{ patient.wait_time }}</td>
+                                <td>
+                                    <div class="patient-details">
+                                        <div><strong>Type:</strong> {{ patient.appointment_type }}</div>
+                                        <div><strong>Duration:</strong> {{ patient.duration }} min</div>
+                                        <div><strong>Provider Pref:</strong>
+                                            {% if patient.provider == current_appointment.provider %}
+                                                <span class="text-success">{{ patient.provider }}</span>
+                                            {% elif patient.provider == 'no preference' %}
+                                                <span class="text-muted">No preference</span>
+                                            {% else %}
+                                                 <!-- This case shouldn't happen with perfect match filter, but kept for safety -->
+                                                <span class="text-danger">{{ patient.provider }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <!-- Simplified assign button - always enabled for rows shown -->
+                                    <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=current_appointment.id) }}" method="post">
+                                        <button type="submit" class="btn btn-sm btn-success">Assign</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="alert alert-info mb-0"> <!-- Added mb-0 -->
+                        No patients found with a perfect match for this appointment slot.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- End Moved Eligible Patients section -->
+
     <div class="row mb-4">
         <div class="col-md-6">
             <div class="card">
@@ -135,115 +209,13 @@
                 </ul>
             </div>
             
-            <!-- Add a legend to explain the matching -->
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5 class="mb-0">Patient Matching Legend</h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-2">
-                        <span class="patient-match-indicator match-perfect"></span>
-                        <strong>Perfect Match:</strong> Provider preference and appointment duration match
-                    </div>
-                    <div class="mb-2">
-                        <span class="patient-match-indicator match-partial"></span>
-                        <strong>Partial Match:</strong> Patient accepts any provider or duration is flexible
-                    </div>
-                    <div>
-                        <span class="patient-match-indicator match-none"></span>
-                        <strong>No Match:</strong> Patient not eligible for this appointment
-                    </div>
-                </div>
-            </div>
+            <!-- Removed legend card -->
+            
         </div>
     </div>
     
-    {% if eligible_patients and current_appointment %}
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Eligible Patients for Cancelled Appointment</h5>
-                    <p class="mb-0">{{ current_appointment.provider }} on 
-                    {{ current_appointment.date_time.strftime('%a, %b %d, %Y at %I:%M %p') }} for 
-                    {{ current_appointment.duration }} minutes</p>
-                </div>
-                <div class="card-body">
-                    {% if eligible_patients|length > 0 %}
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Match</th>
-                                <th>Patient</th>
-                                <th>Contact Information</th>
-                                <th>Wait Time</th>
-                                <th>Appointment Details</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for patient in eligible_patients %}
-                            <tr class="
-                                {% if patient.match_score == 'perfect' %}eligibility-match
-                                {% elif patient.match_score == 'partial' %}eligibility-neutral
-                                {% else %}eligibility-mismatch{% endif %}
-                            ">
-                                <td>
-                                    <span class="patient-match-indicator 
-                                        {% if patient.match_score == 'perfect' %}match-perfect
-                                        {% elif patient.match_score == 'partial' %}match-partial
-                                        {% else %}match-none{% endif %}">
-                                    </span>
-                                    <span class="compatibility-score">
-                                        {% if patient.match_score == 'perfect' %}Perfect
-                                        {% elif patient.match_score == 'partial' %}Partial
-                                        {% else %}Low{% endif %}
-                                    </span>
-                                </td>
-                                <td>{{ patient.name }}</td>
-                                <td>
-                                    {{ patient.phone }}<br>
-                                    <small>{{ patient.email or "No email" }}</small>
-                                </td>
-                                <td>{{ patient.wait_time }}</td>
-                                <td>
-                                    <div class="patient-details">
-                                        <div><strong>Type:</strong> {{ patient.appointment_type }}</div>
-                                        <div><strong>Duration:</strong> {{ patient.duration }} min</div>
-                                        <div><strong>Provider:</strong> 
-                                            {% if patient.provider == current_appointment.provider %}
-                                                <span class="text-success">{{ patient.provider }}</span>
-                                            {% elif patient.provider == 'no preference' %}
-                                                <span class="text-muted">No preference</span>
-                                            {% else %}
-                                                <span class="text-danger">{{ patient.provider }}</span>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    {% if patient.match_score == 'perfect' or patient.match_score == 'partial' %}
-                                    <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=current_appointment.id) }}" method="post">
-                                        <button type="submit" class="btn btn-sm btn-success">Assign</button>
-                                    </form>
-                                    {% else %}
-                                    <button class="btn btn-sm btn-secondary" disabled title="Patient not eligible">Not Eligible</button>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                    {% else %}
-                    <div class="alert alert-info">
-                        No eligible patients found for this appointment.
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
+    <!-- Original location of eligible patients list (now moved to top) -->
+    
 </div>
 
 <script>

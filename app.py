@@ -740,15 +740,21 @@ def find_eligible_patients(cancelled_appointment):
     provider_name = cancelled_appointment['provider']
     eligible_patients = []
     waiting_patients = [p for p in waitlist_manager.get_all_patients() if p.get('status') == 'waiting']
+    
     for patient in waiting_patients:
         match_score = calculate_match_score(patient, cancelled_appointment)
-        patient_copy = patient.copy()
-        patient_copy['match_score'] = match_score
-        eligible_patients.append(patient_copy)
+        # Only add patients if they are a perfect match
+        if match_score == 'perfect':
+            patient_copy = patient.copy()
+            patient_copy['match_score'] = match_score # Keep score for consistency if needed later
+            eligible_patients.append(patient_copy)
+            
+    # Sort the perfect matches by wait time (longest first)
     def sort_key(patient):
-        score_value = {'perfect': 0, 'partial': 1, 'none': 2}
+        # No need to sort by score value anymore, just wait time
         # Use get with default for wait_time
-        return (score_value.get(patient['match_score'], 2), -wait_time_to_minutes(patient.get('wait_time', '0 minutes')))
+        return -wait_time_to_minutes(patient.get('wait_time', '0 minutes'))
+        
     eligible_patients.sort(key=sort_key)
     return eligible_patients
 

@@ -51,5 +51,31 @@
             </div>
         </div>
     </div>
+
+    {% if eligible_patients and current_appointment %}
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <!-- Displays current_appointment details -->
+                </div>
+                <div class="card-body">
+                    {% if eligible_patients|length > 0 %}
+                    <table class="table table-hover">
+                        <!-- Table headers -->
+                        <tbody>
+                            {% for patient in eligible_patients %}
+                            <!-- Renders a row for each eligible patient with details and Assign button -->
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <!-- Shows 'No eligible patients found' message -->
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
