@@ -126,6 +126,16 @@
         </div>
     </div>
 
+    <div class="row mb-3">
+        <div class="col-md-12 text-end">
+             <form action="{{ url_for('save_backup') }}" method="post" style="display: inline;">
+                 <button type="submit" class="btn btn-secondary">
+                     <i class="fas fa-save"></i> Save Waitlist Backup
+                 </button>
+             </form>
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-md-12">
             <h2>Current Waitlist</h2>

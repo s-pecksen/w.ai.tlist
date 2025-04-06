@@ -221,6 +221,19 @@ def remove_patient(patient_id):
         flash('Failed to remove patient.', 'danger')
     return redirect(url_for('index'))
 
+# --- Add New Route for Manual Backup ---
+@app.route('/save_backup', methods=['POST'])
+def save_backup():
+    """Manually saves a timestamped backup of the waitlist."""
+    try:
+        waitlist_manager.save_backup()
+        flash('Waitlist backup saved successfully.', 'success')
+    except Exception as e:
+        print(f"Error during manual backup: {str(e)}")
+        flash(f'Error saving backup: {str(e)}', 'danger')
+    return redirect(url_for('index'))
+# --- End New Route ---
+
 # Add these helper functions
 def validate_appointment_type(value):
     # Updated valid types based on user request
