@@ -758,14 +758,11 @@ def find_eligible_patients(cancelled_appointment):
             patient_copy['match_score'] = match_score # Keep score for consistency if needed later
             eligible_patients.append(patient_copy)
             
-    # Sort the perfect matches first by Urgency (High > Medium > Low), then by wait time (longest first)
+    # Sort the perfect matches by wait time (longest first)
     def sort_key(patient):
-        urgency = patient.get('urgency', 'medium').lower()
-        # Assign lower numbers to higher priorities for sorting
-        urgency_priority = {'high': 0, 'medium': 1, 'low': 2}.get(urgency, 1) # Default to medium priority
         # Use negative wait time for descending order (longest wait first)
         wait_minutes = -wait_time_to_minutes(patient.get('wait_time', '0 minutes')) 
-        return (urgency_priority, wait_minutes)
+        return wait_minutes # Return only the wait time for sorting
         
     eligible_patients.sort(key=sort_key)
     return eligible_patients
