@@ -173,10 +173,17 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <strong>Type:</strong> {% if patient.appointment_type == 'custom' %}
+                                    <strong>Type:</strong> {% set appt_type = patient.appointment_type.strip()|lower %}
+                                                      {% if appt_type == 'custom' %}
                                                         Custom: {{ patient.reason }}
+                                                      {% elif appt_type == 'rct' %}
+                                                        RCT
+                                                      {% elif appt_type == 'xray' %}
+                                                        X-Ray
+                                                      {% elif appt_type == 'np spec' %}
+                                                        NP Spec
                                                       {% else %}
-                                                        {{ patient.appointment_type|replace('_', ' ')|title }}
+                                                        {{ patient.appointment_type.strip()|replace('_', ' ')|title }}
                                                       {% endif %}<br>
                                     <strong>Duration:</strong> {{ patient.duration }} mins<br>
                                     <strong>Provider:</strong> {{ patient.provider|capitalize if patient.provider and patient.provider != 'no preference' else 'No Preference' }}<br>
