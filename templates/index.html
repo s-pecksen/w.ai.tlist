@@ -179,7 +179,7 @@
                                                         {{ patient.appointment_type|replace('_', ' ')|title }}
                                                       {% endif %}<br>
                                     <strong>Duration:</strong> {{ patient.duration }} mins<br>
-                                    <strong>Provider:</strong> {{ patient.provider|capitalize if patient.provider != 'no preference' else 'No Preference' }}<br>
+                                    <strong>Provider:</strong> {{ patient.provider|capitalize if patient.provider and patient.provider != 'no preference' else 'No Preference' }}<br>
                                     {% if patient.reason %}
                                         <strong>Notes:</strong> {{ patient.reason }}
                                     {% endif %}
