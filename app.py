@@ -14,9 +14,13 @@ import uuid
 from patient_waitlist_manager import PatientWaitlistManager
 import shutil
 import glob
+import logging
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
 
 # Make sure to add this for flash messages to work
 app.config['SESSION_TYPE'] = 'filesystem'
@@ -137,41 +141,56 @@ def wait_time_to_minutes(wait_time_str):
         
     return total_minutes
 
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
-    # Update wait times first
-    waitlist_manager.update_wait_times()
-    
-    # Get all providers (not just active ones)
-    all_providers = provider_manager.get_provider_list()
-    active_providers = provider_manager.get_active_providers()
-    
-    # Check if we have any providers at all
-    has_providers = len(all_providers) > 0
-    
-    # Get the waitlist from manager
-    waitlist = waitlist_manager.get_all_patients()
-    
-    # Sort waitlist: emergencies first, then by wait time (longest first), then scheduled last
-    sorted_waitlist = sorted(
-        waitlist,
-        key=lambda x: (
-            x['status'] == 'scheduled',  # Scheduled patients last
-            x['appointment_type'] != 'emergency',  # Emergencies first
-            -wait_time_to_minutes(x['wait_time'])  # Sort by wait time (negative for descending order)
-        )
-    )
-    
-    # Show a different message if there are providers but they're all inactive
-    if not has_providers:
-        flash('Please upload a list of Provider names to proceed', 'warning')
-    elif not active_providers:
-        flash('All providers are currently marked as inactive. Please activate at least one provider.', 'warning')
-    
-    return render_template('index.html', 
-                          waitlist=sorted_waitlist, 
-                          providers=active_providers,
-                          has_providers=has_providers)
+    logging.debug("Entering index route")
+    try:
+        # Update wait times first
+        waitlist_manager.update_wait_times()
+        
+        # Get all providers (not just active ones)
+        all_providers = provider_manager.get_provider_list()
+        active_providers = provider_manager.get_active_providers()
+        
+        # Check if we have any providers at all
+        has_providers = len(all_providers) > 0
+        
+        # Get the waitlist from manager
+        waitlist = waitlist_manager.get_all_patients()
+        logging.debug(f"Index route: Fetched {len(waitlist)} patients")
+        
+        # Sort waitlist: emergencies first, then by wait time (longest first), then scheduled last
+        def sort_key_safe(x):
+            try:
+                wait_minutes = -wait_time_to_minutes(x.get('wait_time', '0 minutes'))
+                is_scheduled = x.get('status') == 'scheduled'
+                # Correctly check for emergency type using .get()
+                is_emergency = x.get('appointment_type', '').lower() == 'emergency'
+                # Sort order: Scheduled (True) last, Emergency (False means emergency comes first) first, then by wait time
+                return (is_scheduled, not is_emergency, wait_minutes)
+            except Exception as e:
+                logging.error(f"Error calculating sort key for patient {x.get('id')}: {e}", exc_info=True)
+                return (True, True, 0) # Default sort value on error
+
+        sorted_waitlist = sorted(waitlist, key=sort_key_safe)
+        
+        # Show a different message if there are providers but they're all inactive
+        if not has_providers:
+            flash('Please upload a list of Provider names to proceed', 'warning')
+        elif not active_providers:
+            flash('All providers are currently marked as inactive. Please activate at least one provider.', 'warning')
+        
+        logging.debug("Index route: Rendering index.html")
+        return render_template('index.html', 
+                              waitlist=sorted_waitlist, 
+                              providers=active_providers,
+                              has_providers=has_providers)
+    except Exception as e:
+        logging.error(f"Exception in index route: {e}", exc_info=True)
+        flash('An error occurred while loading the main page.', 'danger')
+        # Render a simpler template or redirect to an error page if possible
+        # For now, just return a simple error message
+        return "<h1>An error occurred</h1><p>Please check the server logs.</p>", 500
 
 @app.route('/add_patient', methods=['POST'])
 def add_patient():
@@ -661,54 +680,79 @@ def find_matches_for_appointment(appointment_id):
                         eligible_patients=eligible_patients,
                         current_appointment=appointment)
 
-@app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'])
+@app.route('/assign_appointment/<patient_id>/<appointment_id>/', methods=['POST'])
 def assign_appointment(patient_id, appointment_id):
-    """Assign a patient to a cancelled appointment slot"""
+    """Assign a patient to a cancelled appointment slot and remove from waitlist"""
+    # Parameters are already strings
+    logging.debug(f"Entering assign_appointment for patient_id={patient_id}, appointment_id={appointment_id}")
     # Update wait times
     waitlist_manager.update_wait_times()
-    
+
     # Get all patients
     all_patients = waitlist_manager.get_all_patients()
-    
-    # Find the patient
+
+    # Find the patient using the string representation
     patient = None
     for p in all_patients:
-        if p['id'] == patient_id:
+        if p.get('id') == patient_id: # Compare with string
             patient = p
             break
-    
+
     if not patient:
         flash('Patient not found', 'danger')
+        logging.debug("Patient not found, redirecting to list_cancelled_appointments")
         return redirect(url_for('list_cancelled_appointments'))
-    
-    # Find the appointment
+
+    # Find the appointment using the string representation
     appointment = None
     for a in cancelled_appointments:
-        if a['id'] == appointment_id:
+        if a.get('id') == appointment_id: # Compare with string
             appointment = a
             break
-    
+
     if not appointment:
         flash('Appointment not found', 'danger')
+        logging.debug("Appointment not found, redirecting to list_cancelled_appointments")
         return redirect(url_for('list_cancelled_appointments'))
-    
+
     # Check if patient is eligible
     match_score = calculate_match_score(patient, appointment)
     if match_score == 'none':
-        flash('This patient is not eligible for this appointment', 'danger')
-        # Redirect back to the page showing matches for the specific appointment
-        return redirect(url_for('find_matches_for_appointment', appointment_id=appointment_id))
-    
-    # Assign patient to appointment
+        flash(f'{patient.get("name", "Unknown Patient")} is not eligible for this appointment slot.', 'danger') # Use .get()
+        logging.debug("Patient not eligible, redirecting to list_cancelled_appointments")
+        return redirect(url_for('list_cancelled_appointments'))
+
+    # Assign patient to appointment (optional)
     appointment['matched_patient'] = patient
-    
-    # Change patient status to scheduled
-    if waitlist_manager.schedule_patient(patient_id):
-        flash(f'Successfully assigned {patient["name"]} to appointment with {appointment["provider"]}', 'success')
-    else:
-        flash('Failed to schedule patient.', 'danger')
-    # Redirect back to the main cancelled appointments list after successful assignment
-    return redirect(url_for('list_cancelled_appointments'))
+
+    # Remove patient from the waitlist using the string representation
+    try:
+        logging.debug(f"Attempting to remove patient ID: {patient_id}")
+        removed = waitlist_manager.remove_patient(patient_id) # Use string ID
+        logging.debug(f"Removal result: {removed}")
+        if removed:
+            flash(f'Successfully assigned {patient.get("name", "Unknown Patient")} to the appointment and removed them from the waitlist.', 'success')
+            target_url = url_for('index')
+            logging.debug(f"Patient removed successfully, redirecting to: {target_url}")
+
+            # Backup call remains removed/commented out here
+            # try:
+            #     waitlist_manager.save_backup()
+            #     logging.debug("Waitlist backup saved successfully after assignment.")
+            # except Exception as backup_e:
+            #     logging.error(f"Error saving backup after assignment: {backup_e}", exc_info=True)
+            #     flash('Patient assigned and removed, but failed to save backup. Check logs.', 'warning')
+
+            return redirect(target_url)
+        else:
+            # This case is less likely if patient was found earlier, but handle it
+            flash('Failed to remove patient from waitlist (patient ID might have changed or not found during removal).', 'danger')
+            logging.debug("Patient removal failed, redirecting to list_cancelled_appointments")
+            return redirect(url_for('list_cancelled_appointments'))
+    except Exception as e:
+        logging.error(f"Exception during patient removal or redirect: {e}", exc_info=True)
+        flash('An unexpected error occurred while assigning the patient.', 'danger')
+        return redirect(url_for('list_cancelled_appointments'))
 
 def calculate_match_score(patient, appointment):
     score = 0
@@ -782,6 +826,12 @@ if __name__ == '__main__':
             # waitlist_manager.import_from_list(waitlist_manager.get_all_patients()) # This line also had an issue, using get_all_patients as input
     # except Exception as e:
         # print(f"Error during startup: {str(e)}")
+    
+    # --- Add this line to print the URL map ---
+    print("--- Registered URL Routes ---")
+    print(app.url_map)
+    print("--- End Registered URL Routes ---")
+    # --- End added line ---
     
     print("Starting Flask application...")
     app.run(debug=True, host="0.0.0.0", port=7776)

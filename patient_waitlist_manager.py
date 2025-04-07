@@ -167,7 +167,7 @@ class PatientWaitlistManager:
                 'status': 'waiting', 'timestamp': entry_timestamp, 'wait_time': '0 minutes' # Use entry_timestamp
             }
             self.patients.append(patient)
-            # self._save_timestamped_backup() # REMOVED: Save after adding
+            # self._save_timestamped_backup() # Ensure this is REMOVED/Commented
             return patient
         except Exception as e:
             print(f"Error adding patient: {e}")
@@ -227,7 +227,7 @@ class PatientWaitlistManager:
             if patient.get('id') == patient_id:
                 if patient['status'] != 'scheduled':
                     patient['status'] = 'scheduled'
-                    # self._save_timestamped_backup() # REMOVED: Save after status change
+                    # self._save_timestamped_backup() # Ensure this is REMOVED/Commented
                     return True
                 return True # Already scheduled, count as success
         return False
@@ -237,13 +237,13 @@ class PatientWaitlistManager:
         initial_len = len(self.patients)
         self.patients = [p for p in self.patients if p.get('id') != patient_id]
         if len(self.patients) < initial_len:
-            # self._save_timestamped_backup() # REMOVED: Save after removing
+            # self._save_timestamped_backup() # Ensure this is REMOVED/Commented
             return True
         return False
 
     def save_backup(self):
         """Manually trigger saving the current patient list to a timestamped backup file."""
-        self._save_timestamped_backup()
+        self._save_timestamped_backup() # This one STAYS for the manual button
 
     def find_eligible_patients(self, provider_name: str) -> List[Dict[str, Any]]:
         # This method does not modify data, so no save needed here
