@@ -534,25 +534,18 @@ def toggle_provider_active(provider_name):
 def list_cancelled_appointments():
     # Update wait times first
     waitlist_manager.update_wait_times()
-    
+
     # Get all providers
     providers = provider_manager.get_provider_list()
-    
-    # Create appointment conflicts for the date picker
-    appointment_conflicts = []
-    for appt in cancelled_appointments:
-        if not appt.get('matched_patient'):
-            start_time = appt['date_time']
-            end_time = start_time + timedelta(minutes=int(appt['duration']))
-            appointment_conflicts.append({
-                'start': start_time.isoformat(sep='T', timespec='seconds'),
-                'end': end_time.isoformat(sep='T', timespec='seconds')
-            })
-    
-    return render_template('cancelled_appointments.html', 
+
+    # No need for appointment_conflicts anymore
+    # appointment_conflicts = []
+    # ... (removed conflict generation loop) ...
+
+    return render_template('cancelled_appointments.html',
                           providers=providers,
                           cancelled_appointments=cancelled_appointments,
-                          appointment_conflicts=appointment_conflicts,
+                          # appointment_conflicts=appointment_conflicts, # Removed
                           eligible_patients=None,
                           current_appointment=None)
 
@@ -567,12 +560,10 @@ def initiate_cancelled_match():
         return redirect(url_for('index'))
 
     # Create a temporary 'appointment' structure for matching logic
-    # No need for timestamp, notes, or id here
+    # Removed date_time key
     temp_appointment = {
         'provider': provider,
-        'duration': duration,
-        # Add a dummy date_time if needed by template rendering, although it's not used for matching logic itself
-        'date_time': datetime.now() # Or None, if template handles it
+        'duration': duration
     }
 
     # Find eligible patients using the existing function
@@ -582,73 +573,69 @@ def initiate_cancelled_match():
     providers = provider_manager.get_provider_list()
 
     # Render the cancelled appointments page, passing the results
-    # Note: This doesn't add an appointment to the `cancelled_appointments` list
     return render_template('cancelled_appointments.html',
                            providers=providers,
                            cancelled_appointments=cancelled_appointments, # Still pass existing ones
-                           appointment_conflicts=[], # No specific conflicts for this temp search
+                           # appointment_conflicts=[], # Removed
                            eligible_patients=eligible_patients,
-                           current_appointment=temp_appointment) # Pass the temporary data
+                           current_appointment=temp_appointment, # Pass the temporary data
+                           is_temporary_search=True)
 
 @app.route('/add_cancelled_appointment', methods=['POST'])
 def add_cancelled_appointment():
-    # Get form data
+    # Get form data - remove date_time_str
     provider = request.form.get('provider')
-    date_time_str = request.form.get('date_time')
+    # date_time_str = request.form.get('date_time') # Removed
     duration = request.form.get('duration')
     notes = request.form.get('notes', '')
-    
-    # Basic validation
-    if not provider or not date_time_str or not duration:
+
+    # Basic validation - remove date_time_str
+    if not provider or not duration: # Removed date_time_str check
         flash('Please fill in all required fields', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
-    
-    # Parse date_time expecting ISO format
-    try:
-        date_time = datetime.fromisoformat(date_time_str)
-    except ValueError:
-        flash('Invalid date/time format. Please use YYYY-MM-DDTHH:MM:SS', 'danger')
-        return redirect(url_for('list_cancelled_appointments'))
-    
-    # Check for conflicts
-    for appt in cancelled_appointments:
-        appt_start = appt['date_time']
-        appt_end = appt_start + timedelta(minutes=int(appt['duration']))
-        new_appt_start = date_time
-        new_appt_end = new_appt_start + timedelta(minutes=int(duration))
-        
-        # Check if the appointments overlap
-        if appt['provider'] == provider and (
-            (appt_start <= new_appt_start < appt_end) or
-            (appt_start < new_appt_end <= appt_end) or
-            (new_appt_start <= appt_start and new_appt_end >= appt_end)
-        ):
-            flash(f'Appointment conflicts with existing appointment for {provider}', 'danger')
-            return redirect(url_for('list_cancelled_appointments'))
-    
-    # Create appointment object
+
+    # Remove date/time parsing and conflict check
+    # try:
+    #     date_time = datetime.fromisoformat(date_time_str)
+    # except ValueError:
+    #     flash('Invalid date/time format. Please use YYYY-MM-DDTHH:MM:SS', 'danger')
+    #     return redirect(url_for('list_cancelled_appointments'))
+    #
+    # # Check for conflicts - Removed
+    # for appt in cancelled_appointments:
+    #     # ... (conflict logic removed) ...
+
+    # Create appointment object - remove date_time key
     appointment = {
         'id': str(uuid.uuid4()),
         'provider': provider,
-        'date_time': date_time,
+        # 'date_time': date_time, # Removed
         'duration': duration,
         'notes': notes,
         'matched_patient': None
     }
-    
+
     # Add to cancelled_appointments list
     cancelled_appointments.append(appointment)
-    
+
     # Find eligible patients for this appointment
     eligible_patients = find_eligible_patients(appointment)
-    
+
+    # --- Logging ---
+    logging.debug(f"Rendering cancelled_appointments template from add_cancelled_appointment.")
+    logging.debug(f"Current appointment ID: {appointment.get('id')}")
+    if not appointment.get('id'):
+         logging.error("!!! CRITICAL: appointment['id'] is missing before rendering template in add_cancelled_appointment !!!")
+    # --- End Logging ---
+
     # Render template with eligible patients
     return render_template('cancelled_appointments.html',
                           providers=provider_manager.get_provider_list(),
                           cancelled_appointments=cancelled_appointments,
-                          appointment_conflicts=[],
+                          # appointment_conflicts=[], # Removed
                           eligible_patients=eligible_patients,
-                          current_appointment=appointment)
+                          current_appointment=appointment,
+                          is_temporary_search=False)
 
 # Add route to find matches for an existing appointment
 @app.route('/find_matches_for_appointment/<appointment_id>', methods=['POST'])
@@ -658,7 +645,7 @@ def find_matches_for_appointment(appointment_id):
     for a in cancelled_appointments:
         if a['id'] == appointment_id:
             appointment = a
-        break
+            break
     
     if not appointment:
         flash('Appointment not found', 'danger')
@@ -672,15 +659,24 @@ def find_matches_for_appointment(appointment_id):
     # Find eligible patients
     eligible_patients = find_eligible_patients(appointment)
     
+    # --- Logging ---
+    logging.debug(f"Rendering cancelled_appointments template from find_matches_for_appointment.")
+    logging.debug(f"Current appointment ID: {appointment.get('id')}")
+    if not appointment.get('id'):
+         logging.error("!!! CRITICAL: appointment['id'] is missing before rendering template in find_matches_for_appointment !!!")
+    # --- End Logging ---
+
     # Render template with eligible patients
     return render_template('cancelled_appointments.html',
                         providers=provider_manager.get_provider_list(),
                         cancelled_appointments=cancelled_appointments,
                         appointment_conflicts=[],
                         eligible_patients=eligible_patients,
-                        current_appointment=appointment)
+                        current_appointment=appointment,
+                        is_temporary_search=False) # <-- Add this flag
 
-@app.route('/assign_appointment/<patient_id>/<appointment_id>/', methods=['POST'])
+# Revert route definition: no trailing slash, but add strict_slashes=False
+@app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
 def assign_appointment(patient_id, appointment_id):
     """Assign a patient to a cancelled appointment slot and remove from waitlist"""
     # Parameters are already strings
