@@ -70,6 +70,24 @@
                 </div>
                 <div class="card-body">
                     {% if eligible_patients|length > 0 %}
+                        {# Define the formatting macro HERE, before the table #}
+                        {% macro format_appointment_type(patient) %}
+                            {% set appt_type = patient.appointment_type.strip()|lower %}
+                            {% if appt_type == 'custom' %}
+                                Custom: {{ patient.reason|default('N/A', true) }}
+                            {% elif appt_type == 'rct' %}
+                                RCT
+                            {% elif appt_type == 'x-ray' or appt_type == 'xray' %}
+                                X-Ray
+                            {% elif appt_type == 'np_spec' or appt_type == 'np spec' %}
+                                NP Spec
+                            {% elif '_' in patient.appointment_type or ' ' in patient.appointment_type %} {# Assume multi-word types need title case #}
+                                {{ patient.appointment_type.strip()|replace('_', ' ')|title }}
+                            {% else %} {# Single word, just capitalize first #}
+                                {{ patient.appointment_type.strip()|capitalize }}
+                            {% endif %}
+                        {% endmacro %}
+
                     <table class="table table-hover">
                         <thead>
                             <tr>
@@ -96,22 +114,27 @@
                                 <td>{{ patient.wait_time }}</td>
                                 <td>
                                     <div class="patient-details">
-                                        <div><strong>Type:</strong> {{ patient.appointment_type }}</div>
+                                        {# Use the macro to format appointment type #}
+                                        <div><strong>Type:</strong> {{ format_appointment_type(patient) }}</div>
                                         <div><strong>Duration:</strong> {{ patient.duration }} min</div>
                                         <div><strong>Provider Pref:</strong>
                                             {% if patient.provider == current_appointment.provider %}
                                                 <span class="text-success">{{ patient.provider }}</span>
-                                            {% elif patient.provider == 'no preference' %}
-                                                <span class="text-muted">No preference</span>
+                                            {% elif patient.provider == 'no preference' or not patient.provider %}
+                                                <span class="text-muted">No Preference</span>
                                             {% else %}
                                                  <!-- This case shouldn't happen with perfect match filter, but kept for safety -->
                                                 <span class="text-danger">{{ patient.provider }}</span>
                                             {% endif %}
                                         </div>
+                                         {# Optionally display notes if not a custom type already showing them #}
+                                        {% if patient.reason and patient.appointment_type.lower() != 'custom' %}
+                                            <div><strong>Notes:</strong> {{ patient.reason }}</div>
+                                        {% endif %}
                                     </div>
                                 </td>
                                 <td>
-                                    <!-- Simplified assign button - always enabled for rows shown -->
+                                    <!-- Simplified assign button -->
                                     <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=current_appointment.id) }}" method="post">
                                         <button type="submit" class="btn btn-sm btn-success">Assign</button>
                                     </form>

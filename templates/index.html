@@ -139,6 +139,24 @@
         <div class="col-md-12">
             <h2>Current Waitlist</h2>
             {% if waitlist %}
+                {# Define the formatting macro HERE, before the table #}
+                {% macro format_appointment_type(patient) %}
+                    {% set appt_type = patient.appointment_type.strip()|lower %}
+                    {% if appt_type == 'custom' %}
+                        Custom: {{ patient.reason|default('N/A', true) }}
+                    {% elif appt_type == 'rct' %}
+                        RCT
+                    {% elif appt_type == 'x-ray' or appt_type == 'xray' %}
+                        X-Ray
+                    {% elif appt_type == 'np_spec' or appt_type == 'np spec' %}
+                        NP Spec
+                    {% elif '_' in patient.appointment_type or ' ' in patient.appointment_type %} {# Assume multi-word types need title case #}
+                        {{ patient.appointment_type.strip()|replace('_', ' ')|title }}
+                    {% else %} {# Single word, just capitalize first #}
+                        {{ patient.appointment_type.strip()|capitalize }}
+                    {% endif %}
+                {% endmacro %}
+
                 <table>
                     <thead>
                         <tr>
@@ -172,21 +190,11 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <strong>Type:</strong> {% set appt_type = patient.appointment_type.strip()|lower %}
-                                                      {% if appt_type == 'custom' %}
-                                                        Custom: {{ patient.reason }}
-                                                      {% elif appt_type == 'rct' %}
-                                                        RCT
-                                                      {% elif appt_type == 'xray' %}
-                                                        X-Ray
-                                                      {% elif appt_type == 'np spec' %}
-                                                        NP Spec
-                                                      {% else %}
-                                                        {{ patient.appointment_type.strip()|replace('_', ' ')|title }}
-                                                      {% endif %}<br>
+                                    {# Use the macro to format appointment type #}
+                                    <strong>Type:</strong> {{ format_appointment_type(patient) }}<br>
                                     <strong>Duration:</strong> {{ patient.duration }} mins<br>
                                     <strong>Provider:</strong> {{ patient.provider|capitalize if patient.provider and patient.provider != 'no preference' else 'No Preference' }}<br>
-                                    {% if patient.reason %}
+                                    {% if patient.reason and patient.appointment_type.lower() != 'custom' %} {# Don't show notes if already shown by custom type #}
                                         <strong>Notes:</strong> {{ patient.reason }}
                                     {% endif %}
                                 </td>
