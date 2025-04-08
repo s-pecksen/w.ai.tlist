@@ -812,6 +812,91 @@ def find_eligible_patients(cancelled_appointment):
     eligible_patients.sort(key=sort_key)
     return eligible_patients
 
+@app.route('/remove_cancelled_slot/<appointment_id>', methods=['POST'])
+def remove_cancelled_slot(appointment_id):
+    """Removes a specific cancelled appointment slot."""
+    global cancelled_appointments # Declare we intend to modify the global list
+    
+    initial_length = len(cancelled_appointments)
+    # Filter out the appointment with the matching ID
+    cancelled_appointments = [appt for appt in cancelled_appointments if appt.get('id') != appointment_id]
+    
+    if len(cancelled_appointments) < initial_length:
+        flash('Cancelled appointment slot removed successfully.', 'success')
+        logging.debug(f"Removed cancelled slot ID: {appointment_id}")
+    else:
+        flash('Cancelled appointment slot not found.', 'warning')
+        logging.warning(f"Attempted to remove non-existent cancelled slot ID: {appointment_id}")
+        
+    return redirect(url_for('list_cancelled_appointments'))
+
+@app.route('/edit_cancelled_slot/<appointment_id>', methods=['GET'])
+def edit_cancelled_slot(appointment_id):
+    """Shows the form to edit a cancelled appointment slot."""
+    appointment_to_edit = None
+    for appt in cancelled_appointments:
+        if appt.get('id') == appointment_id:
+            appointment_to_edit = appt
+            break
+            
+    if not appointment_to_edit:
+        flash('Cancelled appointment slot not found.', 'danger')
+        return redirect(url_for('list_cancelled_appointments'))
+        
+    # Prevent editing if already matched
+    if appointment_to_edit.get('matched_patient'):
+        flash('Cannot edit a slot that is already matched.', 'warning')
+        return redirect(url_for('list_cancelled_appointments'))
+        
+    providers = provider_manager.get_provider_list()
+    return render_template('edit_cancelled_slot.html', 
+                           appointment=appointment_to_edit,
+                           providers=providers)
+
+@app.route('/update_cancelled_slot/<appointment_id>', methods=['POST'])
+def update_cancelled_slot(appointment_id):
+    """Updates the details of a cancelled appointment slot."""
+    global cancelled_appointments
+    
+    appointment_to_update = None
+    for i, appt in enumerate(cancelled_appointments):
+        if appt.get('id') == appointment_id:
+            # Prevent editing if already matched (double check)
+            if appt.get('matched_patient'):
+                 flash('Cannot edit a slot that is already matched.', 'warning')
+                 return redirect(url_for('list_cancelled_appointments'))
+            appointment_to_update = appt
+            appointment_index = i
+            break
+            
+    if not appointment_to_update:
+        flash('Cancelled appointment slot not found.', 'danger')
+        return redirect(url_for('list_cancelled_appointments'))
+        
+    # Get updated data from form
+    provider = request.form.get('provider')
+    duration = request.form.get('duration')
+    notes = request.form.get('notes', '')
+    
+    # Basic validation
+    if not provider or not duration:
+        flash('Provider and Duration are required.', 'danger')
+        # Redirect back to edit page, passing original appointment data again
+        providers = provider_manager.get_provider_list()
+        return render_template('edit_cancelled_slot.html',
+                               appointment=appointment_to_update,
+                               providers=providers)
+
+    # Update the dictionary in the list
+    cancelled_appointments[appointment_index]['provider'] = provider
+    cancelled_appointments[appointment_index]['duration'] = duration
+    cancelled_appointments[appointment_index]['notes'] = notes
+    
+    flash('Cancelled appointment slot updated successfully.', 'success')
+    logging.debug(f"Updated cancelled slot ID: {appointment_id}")
+    
+    return redirect(url_for('list_cancelled_appointments'))
+
 if __name__ == '__main__':
     # Ensure provider.csv exists (even if empty)
     if not os.path.exists('provider.csv'):

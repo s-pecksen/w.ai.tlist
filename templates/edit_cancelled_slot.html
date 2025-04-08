@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Cancelled Slot{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="mb-4">Edit Cancelled Appointment Slot</h1>
+
+    <div class="card">
+        <div class="card-body">
+            <form action="{{ url_for('update_cancelled_slot', appointment_id=appointment.id) }}" method="post">
+                <div class="mb-3">
+                    <label for="provider" class="form-label">Provider</label>
+                    <select class="form-select" id="provider" name="provider" required>
+                        <option value="" disabled>Select Provider</option>
+                        {% for p in providers %}
+                            {# Check if current provider matches the appointment's provider #}
+                            <option value="{{ p.name }}" {% if p.name == appointment.provider %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="duration" class="form-label">Duration</label>
+                    <select class="form-select" id="duration" name="duration" required>
+                        {# Populate options and select the current duration #}
+                        <option value="30" {% if appointment.duration == '30' %}selected{% endif %}>30 minutes</option>
+                        <option value="60" {% if appointment.duration == '60' %}selected{% endif %}>1 hour</option>
+                        <option value="70" {% if appointment.duration == '70' %}selected{% endif %}>70 minutes</option>
+                        <option value="120" {% if appointment.duration == '120' %}selected{% endif %}>2 hours</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="notes" class="form-label">Notes (Optional)</label>
+                    <textarea class="form-control" id="notes" name="notes" rows="2">{{ appointment.notes or '' }}</textarea> {# Pre-fill notes #}
+                </div>
+
+                <button type="submit" class="btn btn-primary">Update Slot</button>
+                <a href="{{ url_for('list_cancelled_appointments') }}" class="btn btn-secondary">Cancel</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %} 

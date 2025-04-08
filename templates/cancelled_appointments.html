@@ -204,18 +204,33 @@
                     {% if cancelled_appointments %}
                         {% for appointment in cancelled_appointments %}
                             <li class="list-group-item">
-                                <div class="d-flex justify-content-between">
+                                <div class="d-flex justify-content-between align-items-center"> {# Use align-items-center for better vertical alignment #}
                                     <div>
                                         <strong>{{ appointment.provider }}</strong><br>
-                                        {# Removed date_time display #}
                                         Duration: {{ appointment.duration }} minutes
+                                        {% if appointment.notes %}
+                                            <br><small class="text-muted">Notes: {{ appointment.notes }}</small>
+                                        {% endif %}
                                     </div>
-                                    <div>
+                                    <div class="text-end"> {# Group buttons #}
                                         {% if appointment.matched_patient %}
                                             <span class="badge bg-success">Matched: {{ appointment.matched_patient.name }}</span>
                                         {% else %}
-                                            <form action="{{ url_for('find_matches_for_appointment', appointment_id=appointment.id) }}" method="post">
-                                                <button type="submit" class="btn btn-sm btn-outline-primary">Find Matches</button>
+                                            {# Find Matches Form #}
+                                            <form action="{{ url_for('find_matches_for_appointment', appointment_id=appointment.id) }}" method="post" style="display: inline-block; margin-right: 5px;">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Find Matches">
+                                                    <i class="bi bi-search"></i> Find Matches
+                                                </button>
+                                            </form>
+                                            {# Edit Button (links to GET route) #}
+                                            <a href="{{ url_for('edit_cancelled_slot', appointment_id=appointment.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit Slot" style="display: inline-block; margin-right: 5px;">
+                                                 <i class="bi bi-pencil"></i> Edit
+                                            </a>
+                                            {# Remove Form #}
+                                            <form action="{{ url_for('remove_cancelled_slot', appointment_id=appointment.id) }}" method="post" style="display: inline-block;" onsubmit="return confirm('Are you sure you want to remove this cancelled slot?');">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Slot">
+                                                    <i class="bi bi-trash"></i> Remove
+                                                </button>
                                             </form>
                                         {% endif %}
                                     </div>
