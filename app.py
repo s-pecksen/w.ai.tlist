@@ -15,6 +15,7 @@ from patient_waitlist_manager import PatientWaitlistManager
 import shutil
 import glob
 import logging
+from cancelled_slot_manager import CancelledSlotManager
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -31,39 +32,16 @@ provider_manager = ProviderManager()
 # Define paths
 # test_csv_path = 'Tests/patient_waitlist.csv' # Removed test path
 backup_dir = 'waitlist_backups'
+cancelled_slots_backup_dir = 'cancelled_slots_backups'
 
-# --- Remove Pre-initialization: Seed backup from test file ---
-# try:
-#     os.makedirs(backup_dir, exist_ok=True) # Ensure backup dir exists
-#     existing_backups = glob.glob(os.path.join(backup_dir, 'waitlist_*.csv'))
-#
-#     if not existing_backups and os.path.exists(test_csv_path):
-#         # Backup directory is empty, and test file exists
-#         print(f"No backups found. Initializing from test file: {test_csv_path}")
-#         now = datetime.now()
-#         timestamp_str = now.strftime("%Y%m%d_%H%M%S")
-#         destination_filename = f"waitlist_{timestamp_str}.csv"
-#         destination_path = os.path.join(backup_dir, destination_filename)
-#
-#         # Copy the test file to the backup directory with a timestamp
-#         shutil.copy2(test_csv_path, destination_path)
-#         print(f"Copied test file to: {destination_path}")
-#
-# except Exception as e:
-#     print(f"Error during pre-initialization seeding: {e}")
-# --- End Pre-initialization Removal ---
-
-# Initialize PatientWaitlistManager - It will now load the latest backup from backup_dir
+# Initialize PatientWaitlistManager
 waitlist_manager = PatientWaitlistManager("ClinicWaitlistApp", backup_dir=backup_dir)
+
+# Initialize CancelledSlotManager
+slot_manager = CancelledSlotManager(backup_dir=cancelled_slots_backup_dir)
 
 # Create Base before any classes that need to inherit from it
 Base = declarative_base()
-
-# In-memory storage for the patient waitlist (will be migrated to the manager)
-# waitlist = []  # We'll replace this with waitlist_manager
-
-# Add this to store cancelled appointments
-cancelled_appointments = []
 
 # Database setup with encryption
 class SecureDatabase:
@@ -537,21 +515,18 @@ def list_cancelled_appointments():
 
     # Get all providers
     providers = provider_manager.get_provider_list()
-
-    # No need for appointment_conflicts anymore
-    # appointment_conflicts = []
-    # ... (removed conflict generation loop) ...
+    # Get slots from the manager
+    current_slots = slot_manager.get_all_slots()
 
     return render_template('cancelled_appointments.html',
                           providers=providers,
-                          cancelled_appointments=cancelled_appointments,
-                          # appointment_conflicts=appointment_conflicts, # Removed
+                          cancelled_appointments=current_slots, # Use data from manager
                           eligible_patients=None,
                           current_appointment=None)
 
 @app.route('/create_slot_and_find_matches', methods=['POST'])
 def create_slot_and_find_matches():
-    """Creates a cancelled slot based on provider/duration from index page form and finds matches."""
+    """Creates a cancelled slot using the manager and finds matches."""
     provider = request.form.get('provider')
     duration = request.form.get('duration')
 
@@ -559,70 +534,42 @@ def create_slot_and_find_matches():
         flash('Please select both a provider and a duration.', 'warning')
         return redirect(url_for('index'))
 
-    # 1. Create a *real* appointment object for the slot
-    new_appointment = {
-        'id': str(uuid.uuid4()), # Give it a unique ID
-        'provider': provider,
-        'duration': duration,
-        'notes': 'Slot created from main page search', # Optional note
-        'matched_patient': None
-        # No date_time key needed
-    }
+    # 1. Create the slot using the manager
+    new_appointment = slot_manager.add_slot(
+        provider=provider,
+        duration=duration,
+        notes='Slot created from main page search' # Optional note
+    )
+    logging.debug(f"Created and saved new cancelled slot via manager: {new_appointment.get('id')}")
 
-    # 2. Add it to the global list
-    cancelled_appointments.append(new_appointment)
-    logging.debug(f"Created and added new cancelled slot: {new_appointment.get('id')}")
-
-    # 3. Find eligible patients for this *new* slot
-    eligible_patients = find_eligible_patients(new_appointment)
+    # 2. Find eligible patients for this *new* slot
+    eligible_patients = find_eligible_patients(new_appointment) # Pass the dict returned by manager
 
     # Get providers for rendering the target template
     providers = provider_manager.get_provider_list()
+    # Get all current slots from manager for the list display
+    current_slots = slot_manager.get_all_slots()
 
-    # 4. Render the template, passing the new appointment and setting is_temporary_search=False
+    # 3. Render the template
     return render_template('cancelled_appointments.html',
                            providers=providers,
-                           cancelled_appointments=cancelled_appointments, # Pass the updated list
+                           cancelled_appointments=current_slots, # Pass the updated list from manager
                            eligible_patients=eligible_patients,
-                           current_appointment=new_appointment, # Pass the newly created slot
-                           is_temporary_search=False) # Explicitly False
+                           current_appointment=new_appointment, # Pass the newly created slot dict
+                           is_temporary_search=False)
 
 @app.route('/add_cancelled_appointment', methods=['POST'])
 def add_cancelled_appointment():
-    # Get form data - remove date_time_str
     provider = request.form.get('provider')
-    # date_time_str = request.form.get('date_time') # Removed
     duration = request.form.get('duration')
     notes = request.form.get('notes', '')
 
-    # Basic validation - remove date_time_str
-    if not provider or not duration: # Removed date_time_str check
+    if not provider or not duration:
         flash('Please fill in all required fields', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
 
-    # Remove date/time parsing and conflict check
-    # try:
-    #     date_time = datetime.fromisoformat(date_time_str)
-    # except ValueError:
-    #     flash('Invalid date/time format. Please use YYYY-MM-DDTHH:MM:SS', 'danger')
-    #     return redirect(url_for('list_cancelled_appointments'))
-    #
-    # # Check for conflicts - Removed
-    # for appt in cancelled_appointments:
-    #     # ... (conflict logic removed) ...
-
-    # Create appointment object - remove date_time key
-    appointment = {
-        'id': str(uuid.uuid4()),
-        'provider': provider,
-        # 'date_time': date_time, # Removed
-        'duration': duration,
-        'notes': notes,
-        'matched_patient': None
-    }
-
-    # Add to cancelled_appointments list
-    cancelled_appointments.append(appointment)
+    # Create appointment object using the manager
+    appointment = slot_manager.add_slot(provider, duration, notes)
 
     # Find eligible patients for this appointment
     eligible_patients = find_eligible_patients(appointment)
@@ -631,60 +578,58 @@ def add_cancelled_appointment():
     logging.debug(f"Rendering cancelled_appointments template from add_cancelled_appointment.")
     logging.debug(f"Current appointment ID: {appointment.get('id')}")
     if not appointment.get('id'):
-         logging.error("!!! CRITICAL: appointment['id'] is missing before rendering template in add_cancelled_appointment !!!")
+         logging.error("!!! CRITICAL: appointment['id'] is missing after adding via manager in add_cancelled_appointment !!!")
     # --- End Logging ---
+
+    # Get all slots for rendering
+    current_slots = slot_manager.get_all_slots()
 
     # Render template with eligible patients
     return render_template('cancelled_appointments.html',
                           providers=provider_manager.get_provider_list(),
-                          cancelled_appointments=cancelled_appointments,
-                          # appointment_conflicts=[], # Removed
+                          cancelled_appointments=current_slots, # Use list from manager
                           eligible_patients=eligible_patients,
                           current_appointment=appointment,
                           is_temporary_search=False)
 
-# Add route to find matches for an existing appointment
 @app.route('/find_matches_for_appointment/<appointment_id>', methods=['POST'])
 def find_matches_for_appointment(appointment_id):
-    # Find the appointment
-    appointment = None
-    for a in cancelled_appointments:
-        if a['id'] == appointment_id:
-            appointment = a
-            break
-    
+    # Find the appointment using the manager
+    appointment = slot_manager.get_slot_by_id(appointment_id)
+
     if not appointment:
         flash('Appointment not found', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
-    
+
     # If already matched, show info message
     if appointment.get('matched_patient'):
         flash('This appointment is already matched with a patient', 'info')
         return redirect(url_for('list_cancelled_appointments'))
-    
+
     # Find eligible patients
     eligible_patients = find_eligible_patients(appointment)
-    
+
     # --- Logging ---
     logging.debug(f"Rendering cancelled_appointments template from find_matches_for_appointment.")
     logging.debug(f"Current appointment ID: {appointment.get('id')}")
     if not appointment.get('id'):
-         logging.error("!!! CRITICAL: appointment['id'] is missing before rendering template in find_matches_for_appointment !!!")
+         logging.error("!!! CRITICAL: appointment['id'] is missing after getting from manager in find_matches_for_appointment !!!")
     # --- End Logging ---
+
+    # Get all slots for rendering
+    current_slots = slot_manager.get_all_slots()
 
     # Render template with eligible patients
     return render_template('cancelled_appointments.html',
                         providers=provider_manager.get_provider_list(),
-                        cancelled_appointments=cancelled_appointments,
+                        cancelled_appointments=current_slots, # Use list from manager
                         eligible_patients=eligible_patients,
                         current_appointment=appointment,
-                        is_temporary_search=False) # Removed is_temporary_search
+                        is_temporary_search=False)
 
-# Revert route definition: no trailing slash, but add strict_slashes=False
 @app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
 def assign_appointment(patient_id, appointment_id):
     """Assign a patient to a cancelled appointment slot and remove from waitlist"""
-    # Parameters are already strings
     logging.debug(f"Entering assign_appointment for patient_id={patient_id}, appointment_id={appointment_id}")
     # Update wait times
     waitlist_manager.update_wait_times()
@@ -692,10 +637,10 @@ def assign_appointment(patient_id, appointment_id):
     # Get all patients
     all_patients = waitlist_manager.get_all_patients()
 
-    # Find the patient using the string representation
+    # Find the patient
     patient = None
     for p in all_patients:
-        if p.get('id') == patient_id: # Compare with string
+        if p.get('id') == patient_id:
             patient = p
             break
 
@@ -704,54 +649,55 @@ def assign_appointment(patient_id, appointment_id):
         logging.debug("Patient not found, redirecting to list_cancelled_appointments")
         return redirect(url_for('list_cancelled_appointments'))
 
-    # Find the appointment using the string representation
-    appointment = None
-    for a in cancelled_appointments:
-        if a.get('id') == appointment_id: # Compare with string
-            appointment = a
-            break
+    # Find the appointment using the manager
+    appointment = slot_manager.get_slot_by_id(appointment_id)
 
     if not appointment:
         flash('Appointment not found', 'danger')
         logging.debug("Appointment not found, redirecting to list_cancelled_appointments")
         return redirect(url_for('list_cancelled_appointments'))
 
-    # Check if patient is eligible
-    match_score = calculate_match_score(patient, appointment)
+    # Check if already matched
+    if appointment.get('matched_patient'):
+        flash(f'Slot already assigned to {appointment["matched_patient"].get("name", "another patient")}.', 'warning')
+        logging.debug("Slot already matched, redirecting to list_cancelled_appointments")
+        return redirect(url_for('list_cancelled_appointments'))
+
+    # Check if patient is eligible (using the same helper function)
+    match_score = calculate_match_score(patient, appointment) # calculate_match_score uses dicts, compatible
     if match_score == 'none':
-        flash(f'{patient.get("name", "Unknown Patient")} is not eligible for this appointment slot.', 'danger') # Use .get()
+        flash(f'{patient.get("name", "Unknown Patient")} is not eligible for this appointment slot.', 'danger')
         logging.debug("Patient not eligible, redirecting to list_cancelled_appointments")
         return redirect(url_for('list_cancelled_appointments'))
 
-    # Assign patient to appointment (optional)
-    appointment['matched_patient'] = patient
-
-    # Remove patient from the waitlist using the string representation
+    # Attempt to remove patient from waitlist FIRST
     try:
         logging.debug(f"Attempting to remove patient ID: {patient_id}")
-        removed = waitlist_manager.remove_patient(patient_id) # Use string ID
+        removed = waitlist_manager.remove_patient(patient_id)
         logging.debug(f"Removal result: {removed}")
+
         if removed:
-            flash(f'Successfully assigned {patient.get("name", "Unknown Patient")} to the appointment and removed them from the waitlist.', 'success')
-            target_url = url_for('index')
-            logging.debug(f"Patient removed successfully, redirecting to: {target_url}")
+            # If patient removal was successful, THEN assign patient to appointment using the manager
+            assigned = slot_manager.assign_patient_to_slot(appointment_id, patient) # Pass the patient dict
 
-            # Backup call remains removed/commented out here
-            # try:
-            #     waitlist_manager.save_backup()
-            #     logging.debug("Waitlist backup saved successfully after assignment.")
-            # except Exception as backup_e:
-            #     logging.error(f"Error saving backup after assignment: {backup_e}", exc_info=True)
-            #     flash('Patient assigned and removed, but failed to save backup. Check logs.', 'warning')
-
-            return redirect(target_url)
+            if assigned:
+                flash(f'Successfully assigned {patient.get("name", "Unknown Patient")} to the appointment and removed them from the waitlist.', 'success')
+                target_url = url_for('list_cancelled_appointments') # Redirect back to the slots list
+                logging.debug(f"Patient removed and assigned successfully, redirecting to: {target_url}")
+                return redirect(target_url)
+            else:
+                # This case means patient was removed but slot assignment failed (e.g., slot disappeared between check and assignment)
+                flash('Patient removed from waitlist, but failed to assign to the slot (slot may have been removed). Please check the lists.', 'warning')
+                logging.error(f"Removed patient {patient_id} but failed to assign to slot {appointment_id}")
+                # Maybe try re-adding the patient? For now, just warn.
+                return redirect(url_for('list_cancelled_appointments'))
         else:
-            # This case is less likely if patient was found earlier, but handle it
-            flash('Failed to remove patient from waitlist (patient ID might have changed or not found during removal).', 'danger')
-            logging.debug("Patient removal failed, redirecting to list_cancelled_appointments")
+            # Patient removal failed
+            flash('Failed to remove patient from waitlist. Assignment cancelled.', 'danger')
+            logging.debug("Patient removal failed, assignment cancelled, redirecting to list_cancelled_appointments")
             return redirect(url_for('list_cancelled_appointments'))
     except Exception as e:
-        logging.error(f"Exception during patient removal or redirect: {e}", exc_info=True)
+        logging.error(f"Exception during patient removal or assignment: {e}", exc_info=True)
         flash('An unexpected error occurred while assigning the patient.', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
 
@@ -814,87 +760,78 @@ def find_eligible_patients(cancelled_appointment):
 
 @app.route('/remove_cancelled_slot/<appointment_id>', methods=['POST'])
 def remove_cancelled_slot(appointment_id):
-    """Removes a specific cancelled appointment slot."""
-    global cancelled_appointments # Declare we intend to modify the global list
-    
-    initial_length = len(cancelled_appointments)
-    # Filter out the appointment with the matching ID
-    cancelled_appointments = [appt for appt in cancelled_appointments if appt.get('id') != appointment_id]
-    
-    if len(cancelled_appointments) < initial_length:
+    """Removes a specific cancelled appointment slot using the manager."""
+    # Use the manager's remove method
+    removed = slot_manager.remove_slot(appointment_id)
+
+    if removed:
         flash('Cancelled appointment slot removed successfully.', 'success')
-        logging.debug(f"Removed cancelled slot ID: {appointment_id}")
+        logging.debug(f"Removed cancelled slot ID: {appointment_id} via manager")
     else:
-        flash('Cancelled appointment slot not found.', 'warning')
-        logging.warning(f"Attempted to remove non-existent cancelled slot ID: {appointment_id}")
-        
+        # Manager already logs warnings for non-existent IDs
+        flash('Cancelled appointment slot not found or already removed.', 'warning')
+
     return redirect(url_for('list_cancelled_appointments'))
 
 @app.route('/edit_cancelled_slot/<appointment_id>', methods=['GET'])
 def edit_cancelled_slot(appointment_id):
-    """Shows the form to edit a cancelled appointment slot."""
-    appointment_to_edit = None
-    for appt in cancelled_appointments:
-        if appt.get('id') == appointment_id:
-            appointment_to_edit = appt
-            break
-            
+    """Shows the form to edit a cancelled appointment slot using the manager."""
+    # Get the slot using the manager
+    appointment_to_edit = slot_manager.get_slot_by_id(appointment_id)
+
     if not appointment_to_edit:
         flash('Cancelled appointment slot not found.', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
-        
+
     # Prevent editing if already matched
     if appointment_to_edit.get('matched_patient'):
         flash('Cannot edit a slot that is already matched.', 'warning')
         return redirect(url_for('list_cancelled_appointments'))
-        
+
     providers = provider_manager.get_provider_list()
-    return render_template('edit_cancelled_slot.html', 
+    return render_template('edit_cancelled_slot.html',
                            appointment=appointment_to_edit,
                            providers=providers)
 
 @app.route('/update_cancelled_slot/<appointment_id>', methods=['POST'])
 def update_cancelled_slot(appointment_id):
-    """Updates the details of a cancelled appointment slot."""
-    global cancelled_appointments
-    
-    appointment_to_update = None
-    for i, appt in enumerate(cancelled_appointments):
-        if appt.get('id') == appointment_id:
-            # Prevent editing if already matched (double check)
-            if appt.get('matched_patient'):
-                 flash('Cannot edit a slot that is already matched.', 'warning')
-                 return redirect(url_for('list_cancelled_appointments'))
-            appointment_to_update = appt
-            appointment_index = i
-            break
-            
+    """Updates the details of a cancelled appointment slot using the manager."""
+    # Get original slot first to pass back to template on validation failure
+    appointment_to_update = slot_manager.get_slot_by_id(appointment_id)
+
     if not appointment_to_update:
         flash('Cancelled appointment slot not found.', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
-        
+
+    # Check if already matched (manager's update method also checks this)
+    if appointment_to_update.get('matched_patient'):
+         flash('Cannot edit a slot that is already matched.', 'warning')
+         return redirect(url_for('list_cancelled_appointments'))
+
     # Get updated data from form
     provider = request.form.get('provider')
     duration = request.form.get('duration')
     notes = request.form.get('notes', '')
-    
+
     # Basic validation
     if not provider or not duration:
         flash('Provider and Duration are required.', 'danger')
         # Redirect back to edit page, passing original appointment data again
         providers = provider_manager.get_provider_list()
         return render_template('edit_cancelled_slot.html',
-                               appointment=appointment_to_update,
+                               appointment=appointment_to_update, # Use the dict fetched earlier
                                providers=providers)
 
-    # Update the dictionary in the list
-    cancelled_appointments[appointment_index]['provider'] = provider
-    cancelled_appointments[appointment_index]['duration'] = duration
-    cancelled_appointments[appointment_index]['notes'] = notes
-    
-    flash('Cancelled appointment slot updated successfully.', 'success')
-    logging.debug(f"Updated cancelled slot ID: {appointment_id}")
-    
+    # Update using the manager
+    updated = slot_manager.update_slot(appointment_id, provider, duration, notes)
+
+    if updated:
+        flash('Cancelled appointment slot updated successfully.', 'success')
+        logging.debug(f"Updated cancelled slot ID: {appointment_id} via manager")
+    else:
+        # Manager handles logging, maybe flash a generic error or rely on previous checks
+        flash('Failed to update cancelled appointment slot. It might have been removed or matched.', 'danger')
+
     return redirect(url_for('list_cancelled_appointments'))
 
 if __name__ == '__main__':
