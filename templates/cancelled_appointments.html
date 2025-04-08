@@ -83,7 +83,15 @@
                         </thead>
                         <tbody>
                             {% for patient in eligible_patients %}
-                            <!-- DEBUG: Patient ID: {{ patient.id }}, Appointment ID: {{ current_appointment.id }} -->
+                            {# --- More Explicit Debug Output --- #}
+                            <!--
+                                DEBUG INFO FOR ROW:
+                                Patient ID: {{ patient.id | default('MISSING', true) }}
+                                Current Appointment object: {{ current_appointment | string() }}
+                                Current Appointment ID: {{ current_appointment.id | default('MISSING', true) }}
+                                is_temporary_search: {{ is_temporary_search | default('NOT_SET', true) }}
+                            -->
+                            {# --- End Debug Output --- #}
                             <tr class="eligibility-match"> <!-- Always eligibility-match class -->
                                 <td>
                                     <span class="patient-match-indicator"></span> <!-- Simplified indicator -->
@@ -117,16 +125,14 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <!-- Simplified assign button -->
-                                    {# Check if IDs are present before creating the form action #}
+                                    <!-- Assign Button Logic -->
+                                    {# Simplified check: just ensure both IDs exist #}
                                     {% if patient.id and current_appointment.id %}
-                                        {# Use url_for again for robustness, assuming strict_slashes=False works now #}
                                         <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=current_appointment.id) }}" method="post">
                                             <button type="submit" class="btn btn-sm btn-success">Assign</button>
                                         </form>
-                                    {% elif not is_temporary_search %} {# Only show error if not a temp search AND IDs are missing #}
-                                        <span class="text-danger">Error: Missing IDs for assignment.</span>
-                                    {% endif %} {# Otherwise, show nothing in the Action column for temp searches #}
+                                    {# Removed the elif condition - if IDs are missing, something else is wrong #}
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}

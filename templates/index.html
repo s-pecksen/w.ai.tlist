@@ -98,7 +98,7 @@
                         Please add providers first.
                     </div>
                     {% else %}
-                    <form action="{{ url_for('initiate_cancelled_match') }}" method="post">
+                    <form action="{{ url_for('create_slot_and_find_matches') }}" method="post">
                         <div class="mb-3">
                             <label for="cancel_provider" class="form-label">Available Provider</label>
                             <select class="form-select" id="cancel_provider" name="provider" required>

@@ -1,0 +1,10 @@
+id,name,phone,email,reason,urgency,appointment_type,duration,provider,status,timestamp,wait_time
+51430c51-ee0d-4bc8-a5e7-ba59fafd02cf,John Smith,555-123-4567,john.smith@email.com,Regular checkup & cleaning,low,hygiene,70,Shannon,waiting,2025-02-25T13:00:00,"41 days, 22 hours"
+c05b0e09-6adf-4280-96dd-a0f4c0969390,Jane Doe,555-234-5678,jane.doe@email.com,Severe toothache,high,emergency exam,30,Kaitlin,waiting,2025-02-25T16:00:00,"41 days, 19 hours"
+7005102b-a5b3-4121-b6bf-06fc4434d9b9,Bob Wilson,555-345-6789,bob.wilson@email.com,Deep cleaning needed,medium,recall,70,,waiting,2025-03-25T16:00:00,"13 days, 19 hours"
+89c6f3df-39d1-4c49-82ec-b8ef98a0df5b,Tom Johnson,555-567-8901,tom@email.com,,low,xray,30,Maylee,waiting,2025-03-13T16:00:00,"25 days, 19 hours"
+f579a9e2-c49c-4599-b937-35182ff6e129,Sarah Brown,555-678-9012,S.brown@hotmail.com,New Patient Spec Exam,medium,NP spec,30,Kathy,waiting,2025-02-10T16:00:00,"56 days, 19 hours"
+62454b6c-8aa9-4954-8d69-c2583959f776,Mike Davis,555-789-0123,mike@email.com,Broken tooth,high,spec exam,30,,waiting,2025-02-08T16:00:00,"58 days, 19 hours"
+2e8c8e9a-74fe-4fa5-8941-d6b063491858,Lisa Chen,555-890-1234,lisa@email.com,Root Canal Treatment,low,RCT,90,Ramneet,waiting,2025-04-03T16:00:00,"4 days, 19 hours"
+ede64025-b5d1-4d81-a385-4b5677f77553,Tom Riddle,6665026934,lord.v@hogwarts.com,Don't comment on his appearance. Or make eye contact,medium,resto,60,Maylee,waiting,2025-04-06T16:32:50.390664,"1 days, 18 hours"
+84e486c9-11ee-4469-a6da-20d979f12bca,Albus Dumbledore,7778253497,albus@gumdrops.wiz,,medium,np_spec,30,no preference,waiting,2025-04-08T11:10:53.950068,0 minutes

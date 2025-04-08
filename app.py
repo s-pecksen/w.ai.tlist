@@ -549,9 +549,9 @@ def list_cancelled_appointments():
                           eligible_patients=None,
                           current_appointment=None)
 
-@app.route('/initiate_cancelled_match', methods=['POST'])
-def initiate_cancelled_match():
-    """Finds eligible patients based on provider/duration from index page form."""
+@app.route('/create_slot_and_find_matches', methods=['POST'])
+def create_slot_and_find_matches():
+    """Creates a cancelled slot based on provider/duration from index page form and finds matches."""
     provider = request.form.get('provider')
     duration = request.form.get('duration')
 
@@ -559,27 +559,33 @@ def initiate_cancelled_match():
         flash('Please select both a provider and a duration.', 'warning')
         return redirect(url_for('index'))
 
-    # Create a temporary 'appointment' structure for matching logic
-    # Removed date_time key
-    temp_appointment = {
+    # 1. Create a *real* appointment object for the slot
+    new_appointment = {
+        'id': str(uuid.uuid4()), # Give it a unique ID
         'provider': provider,
-        'duration': duration
+        'duration': duration,
+        'notes': 'Slot created from main page search', # Optional note
+        'matched_patient': None
+        # No date_time key needed
     }
 
-    # Find eligible patients using the existing function
-    eligible_patients = find_eligible_patients(temp_appointment)
+    # 2. Add it to the global list
+    cancelled_appointments.append(new_appointment)
+    logging.debug(f"Created and added new cancelled slot: {new_appointment.get('id')}")
+
+    # 3. Find eligible patients for this *new* slot
+    eligible_patients = find_eligible_patients(new_appointment)
 
     # Get providers for rendering the target template
     providers = provider_manager.get_provider_list()
 
-    # Render the cancelled appointments page, passing the results
+    # 4. Render the template, passing the new appointment and setting is_temporary_search=False
     return render_template('cancelled_appointments.html',
                            providers=providers,
-                           cancelled_appointments=cancelled_appointments, # Still pass existing ones
-                           # appointment_conflicts=[], # Removed
+                           cancelled_appointments=cancelled_appointments, # Pass the updated list
                            eligible_patients=eligible_patients,
-                           current_appointment=temp_appointment, # Pass the temporary data
-                           is_temporary_search=True)
+                           current_appointment=new_appointment, # Pass the newly created slot
+                           is_temporary_search=False) # Explicitly False
 
 @app.route('/add_cancelled_appointment', methods=['POST'])
 def add_cancelled_appointment():
@@ -670,10 +676,9 @@ def find_matches_for_appointment(appointment_id):
     return render_template('cancelled_appointments.html',
                         providers=provider_manager.get_provider_list(),
                         cancelled_appointments=cancelled_appointments,
-                        appointment_conflicts=[],
                         eligible_patients=eligible_patients,
                         current_appointment=appointment,
-                        is_temporary_search=False) # <-- Add this flag
+                        is_temporary_search=False) # Removed is_temporary_search
 
 # Revert route definition: no trailing slash, but add strict_slashes=False
 @app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
