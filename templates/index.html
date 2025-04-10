@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="container">
+    {# Note: id="page-top" is now in base.html's main container #}
     <h1>Patient Waitlist Manager</h1>
     
     <div class="row">
@@ -11,7 +12,8 @@
             <div class="card mb-4">
                 <div class="card-body">
                     <h5 class="card-title">Add Patient</h5>
-                    <div class="form-section">
+                     {# Add id to the form section container #}
+                    <div class="form-section" id="add-patient-form">
                         <h2>Add Patient to Waitlist</h2>
                         
                         {% if not has_providers %}
@@ -22,6 +24,7 @@
                             <p class="mb-0">Please visit the <a href="{{ url_for('list_providers') }}">Manage Providers</a> page to add providers.</p>
                         </div>
                         {% else %}
+                        {# The form itself could also have the ID, but the section is fine #}
                         <form action="/add_patient" method="post">
                             <div class="mb-3">
                                 <label for="name" class="form-label">Name</label>
@@ -90,7 +93,8 @@
         </div>
         
         <div class="col-md-6">
-            <div class="card mb-4">
+             {# Add id to the form section container #}
+            <div class="card mb-4" id="find-matches-form">
                 <div class="card-body">
                     <h5 class="card-title">Find Patient for Cancelled Slot</h5>
                     {% if not has_providers %}
@@ -157,7 +161,8 @@
                     {% endif %}
                 {% endmacro %}
 
-                <table>
+                 {# Add id to the table #}
+                <table id="waitlist-table">
                     <thead>
                         <tr>
                             <th>Name</th>

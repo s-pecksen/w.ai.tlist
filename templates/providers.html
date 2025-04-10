@@ -8,7 +8,7 @@
     
     <div class="row mb-4">
         <div class="col-md-6">
-            <div class="card">
+            <div class="card" id="add-provider-form">
                 <div class="card-body">
                     <h5 class="card-title">Add Provider</h5>
                     <form action="{{ url_for('add_provider') }}" method="post">
@@ -27,7 +27,7 @@
         </div>
         
         <div class="col-md-6">
-            <div class="card">
+            <div class="card" id="provider-list">
                 <div class="card-header">
                     Current Providers
                 </div>
@@ -37,8 +37,14 @@
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 {{ provider.name }}
                                 <div>
+                                    <form action="{{ url_for('toggle_provider_active', provider_name=provider.name) }}" method="post" class="d-inline">
+                                        <button type="submit" class="btn btn-sm {% if provider.is_active %}btn-warning{% else %}btn-success{% endif %}">
+                                            {% if provider.is_active %}Deactivate{% else %}Activate{% endif %}
+                                        </button>
+                                    </form>
                                     <form action="{{ url_for('remove_provider') }}" method="post" class="d-inline">
-                                        <input type="hidden" name="first_name" value="{{ provider.name }}">
+                                        <input type="hidden" name="first_name" value="{{ provider.name.split()[0] }}">
+                                        <input type="hidden" name="last_initial" value="{{ provider.name.split()[1] if provider.name.split()|length > 1 else '' }}">
                                         <button type="submit" class="btn btn-sm btn-danger">Remove</button>
                                     </form>
                                 </div>

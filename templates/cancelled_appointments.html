@@ -42,7 +42,7 @@
 
     <!-- Moved Eligible Patients section to the top -->
     {% if eligible_patients and current_appointment %}
-    <div class="row mb-4">  <!-- Added mb-4 for spacing -->
+    <div class="row mb-4" id="eligible-patients-list"> 
         <div class="col-md-12">
             <div class="card border-primary"> <!-- Added border for emphasis -->
                 <div class="card-header bg-primary text-white">
@@ -152,7 +152,8 @@
 
     <div class="row mb-4">
         <div class="col-md-6">
-            <div class="card">
+             {# Add id to the add slot form section #}
+            <div class="card" id="add-slot-form">
                 <div class="card-body">
                     <h5 class="card-title">Add Cancelled Appointment Slot</h5>
                     <form action="{{ url_for('add_cancelled_appointment') }}" method="post">
@@ -196,14 +197,16 @@
         </div>
 
         <div class="col-md-6">
-            <div class="card">
+            {# Add id to the card containing the list #}
+            <div class="card" id="cancelled-slots-list">
                 <div class="card-header">
                     <h5 class="mb-0">Available Cancelled Slots</h5>
                 </div>
                 <ul class="list-group list-group-flush">
                     {% if cancelled_appointments %}
                         {% for appointment in cancelled_appointments %}
-                            <li class="list-group-item">
+                            {# Add id to the list item for individual slot focusing #}
+                            <li class="list-group-item" id="slot-{{ appointment.id }}">
                                 <div class="d-flex justify-content-between align-items-center"> {# Use align-items-center for better vertical alignment #}
                                     <div>
                                         <strong>{{ appointment.provider }}</strong><br>

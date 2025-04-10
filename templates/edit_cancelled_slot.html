@@ -6,7 +6,8 @@
 <div class="container">
     <h1 class="mb-4">Edit Cancelled Appointment Slot</h1>
 
-    <div class="card">
+    {# Add id to the card containing the form #}
+    <div class="card" id="edit-slot-form">
         <div class="card-body">
             <form action="{{ url_for('update_cancelled_slot', appointment_id=appointment.id) }}" method="post">
                 <div class="mb-3">
@@ -37,7 +38,8 @@
                 </div>
 
                 <button type="submit" class="btn btn-primary">Update Slot</button>
-                <a href="{{ url_for('list_cancelled_appointments') }}" class="btn btn-secondary">Cancel</a>
+                {# The cancel button redirects to the list with a fragment #}
+                <a href="{{ url_for('list_cancelled_appointments') }}#cancelled-slots-list" class="btn btn-secondary">Cancel</a>
             </form>
         </div>
     </div>

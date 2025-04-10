@@ -193,8 +193,12 @@ def add_patient():
             duration=duration,
             provider=provider
         )
+        flash('Patient added successfully.', 'success') # Add feedback
+    else:
+        flash('Name and Phone are required to add a patient.', 'warning') # Add feedback on failure
     
-    return redirect(url_for('index'))
+    # Redirect back to the index page, focusing on the add form or waitlist
+    return redirect(url_for('index') + '#add-patient-form') # Added fragment
 
 # Update the schedule_patient route
 @app.route('/schedule_patient/<patient_id>', methods=['POST'])
@@ -207,7 +211,8 @@ def schedule_patient(patient_id):
         flash('Patient scheduled successfully.', 'success')
     else:
         flash('Failed to schedule patient.', 'danger')
-    return redirect(url_for('index'))
+    # Redirect back to the index page, focusing on the waitlist table
+    return redirect(url_for('index') + '#waitlist-table') # Added fragment
 
 # Update the remove_patient route
 @app.route('/remove_patient/<patient_id>', methods=['POST'])
@@ -216,7 +221,8 @@ def remove_patient(patient_id):
         flash('Patient removed successfully.', 'success')
     else:
         flash('Failed to remove patient.', 'danger')
-    return redirect(url_for('index'))
+    # Redirect back to the index page, focusing on the waitlist table
+    return redirect(url_for('index') + '#waitlist-table') # Added fragment
 
 # --- Add New Route for Manual Backup ---
 @app.route('/save_backup', methods=['POST'])
@@ -228,7 +234,8 @@ def save_backup():
     except Exception as e:
         print(f"Error during manual backup: {str(e)}")
         flash(f'Error saving backup: {str(e)}', 'danger')
-    return redirect(url_for('index'))
+    # Redirect back to index, maybe near the top or an actions area
+    return redirect(url_for('index') + '#page-top') # Added fragment (use a relevant ID)
 # --- End New Route ---
 
 # Add these helper functions
@@ -416,7 +423,8 @@ def upload_csv():
         flash('Invalid file format. Please upload a .csv file.', 'danger')
             
     print("--- DEBUG: Reaching end of /upload_csv route ---")
-    return redirect(url_for('index'))
+    # Redirect back to the index page, focusing on the waitlist table after upload attempt
+    return redirect(url_for('index') + '#waitlist-table') # Added fragment
 
 @app.route('/providers', methods=['GET'])
 def list_providers():
@@ -438,7 +446,8 @@ def add_provider():
     else:
         flash('First name is required', 'danger')
         
-    return redirect(url_for('list_providers'))
+    # Redirect back to providers list
+    return redirect(url_for('list_providers') + '#provider-list') # Added fragment
 
 @app.route('/providers/remove', methods=['POST'])
 def remove_provider():
@@ -450,7 +459,8 @@ def remove_provider():
     else:
         flash('Provider not found')
         
-    return redirect(url_for('list_providers'))
+    # Redirect back to providers list
+    return redirect(url_for('list_providers') + '#provider-list') # Added fragment
 
 @app.route('/providers/upload_csv', methods=['POST'])
 def upload_providers_csv():
@@ -497,7 +507,8 @@ def upload_providers_csv():
         except Exception as e:
             flash(f'Error processing CSV: {str(e)}', 'danger')
     
-    return redirect(url_for('list_providers'))
+    # Redirect back to providers list
+    return redirect(url_for('list_providers') + '#provider-list') # Added fragment
 
 @app.route('/providers/toggle_active/<provider_name>', methods=['POST'])
 def toggle_provider_active(provider_name):
@@ -506,7 +517,8 @@ def toggle_provider_active(provider_name):
         flash(f'Provider status updated successfully', 'success')
     else:
         flash('Provider not found', 'danger')
-    return redirect(url_for('list_providers'))
+    # Redirect back to providers list
+    return redirect(url_for('list_providers') + '#provider-list') # Added fragment
 
 @app.route('/cancelled_appointments', methods=['GET'])
 def list_cancelled_appointments():
@@ -532,7 +544,8 @@ def create_slot_and_find_matches():
 
     if not provider or not duration:
         flash('Please select both a provider and a duration.', 'warning')
-        return redirect(url_for('index'))
+        # Redirect back to the main list if form validation fails
+        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form') # Added fragment
 
     # 1. Create the slot using the manager
     new_appointment = slot_manager.add_slot(
@@ -555,7 +568,8 @@ def create_slot_and_find_matches():
                            cancelled_appointments=current_slots, # Pass the updated list from manager
                            eligible_patients=eligible_patients,
                            current_appointment=new_appointment, # Pass the newly created slot dict
-                           is_temporary_search=False)
+                           is_temporary_search=False,
+                           focus_element_id='eligible-patients-list' if eligible_patients else 'add-slot-form') # Suggestion for JS focus
 
 @app.route('/add_cancelled_appointment', methods=['POST'])
 def add_cancelled_appointment():
@@ -565,7 +579,7 @@ def add_cancelled_appointment():
 
     if not provider or not duration:
         flash('Please fill in all required fields', 'danger')
-        return redirect(url_for('list_cancelled_appointments'))
+        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form') # Added fragment
 
     # Create appointment object using the manager
     appointment = slot_manager.add_slot(provider, duration, notes)
@@ -589,7 +603,8 @@ def add_cancelled_appointment():
                           cancelled_appointments=current_slots, # Use list from manager
                           eligible_patients=eligible_patients,
                           current_appointment=appointment,
-                          is_temporary_search=False)
+                          is_temporary_search=False,
+                          focus_element_id='eligible-patients-list' if eligible_patients else 'add-slot-form') # Suggestion for JS focus
 
 @app.route('/find_matches_for_appointment/<appointment_id>', methods=['POST'])
 def find_matches_for_appointment(appointment_id):
@@ -598,12 +613,12 @@ def find_matches_for_appointment(appointment_id):
 
     if not appointment:
         flash('Appointment not found', 'danger')
-        return redirect(url_for('list_cancelled_appointments'))
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
     # If already matched, show info message
     if appointment.get('matched_patient'):
         flash('This appointment is already matched with a patient', 'info')
-        return redirect(url_for('list_cancelled_appointments'))
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
     # Find eligible patients
     eligible_patients = find_eligible_patients(appointment)
@@ -624,7 +639,8 @@ def find_matches_for_appointment(appointment_id):
                         cancelled_appointments=current_slots, # Use list from manager
                         eligible_patients=eligible_patients,
                         current_appointment=appointment,
-                        is_temporary_search=False)
+                        is_temporary_search=False,
+                        focus_element_id='eligible-patients-list' if eligible_patients else f'slot-{appointment_id}') # Suggestion for JS focus
 
 @app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
 def assign_appointment(patient_id, appointment_id):
@@ -645,29 +661,33 @@ def assign_appointment(patient_id, appointment_id):
 
     if not patient:
         flash('Patient not found', 'danger')
-        logging.debug("Patient not found, redirecting to list_cancelled_appointments")
-        return redirect(url_for('list_cancelled_appointments'))
+        logging.debug("Patient not found, redirecting")
+        # Redirect back to the list, maybe focused on the specific (now known to be problematic) appointment
+        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
 
     # Find the appointment using the manager
     appointment = slot_manager.get_slot_by_id(appointment_id)
 
     if not appointment:
         flash('Appointment not found', 'danger')
-        logging.debug("Appointment not found, redirecting to list_cancelled_appointments")
-        return redirect(url_for('list_cancelled_appointments'))
+        logging.debug("Appointment not found, redirecting")
+        # Redirect back to the main list if appointment is gone
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
     # Check if already matched
     if appointment.get('matched_patient'):
         flash(f'Slot already assigned to {appointment["matched_patient"].get("name", "another patient")}.', 'warning')
-        logging.debug("Slot already matched, redirecting to list_cancelled_appointments")
-        return redirect(url_for('list_cancelled_appointments'))
+        logging.debug("Slot already matched, redirecting")
+        # Redirect back to the list, focused on the specific appointment
+        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
 
     # Check if patient is eligible (using the same helper function)
     match_score = calculate_match_score(patient, appointment) # calculate_match_score uses dicts, compatible
     if match_score == 'none':
         flash(f'{patient.get("name", "Unknown Patient")} is not eligible for this appointment slot.', 'danger')
-        logging.debug("Patient not eligible, redirecting to list_cancelled_appointments")
-        return redirect(url_for('list_cancelled_appointments'))
+        logging.debug("Patient not eligible, redirecting")
+        # Redirect back to the list, focused on the specific appointment
+        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
 
     # Attempt to remove patient from waitlist FIRST
     try:
@@ -681,24 +701,26 @@ def assign_appointment(patient_id, appointment_id):
 
             if assigned:
                 flash(f'Successfully assigned {patient.get("name", "Unknown Patient")} to the appointment and removed them from the waitlist.', 'success')
-                target_url = url_for('list_cancelled_appointments') # Redirect back to the slots list
+                target_url = url_for('list_cancelled_appointments') + '#cancelled-slots-list' # Added fragment
                 logging.debug(f"Patient removed and assigned successfully, redirecting to: {target_url}")
                 return redirect(target_url)
             else:
                 # This case means patient was removed but slot assignment failed (e.g., slot disappeared between check and assignment)
                 flash('Patient removed from waitlist, but failed to assign to the slot (slot may have been removed). Please check the lists.', 'warning')
                 logging.error(f"Removed patient {patient_id} but failed to assign to slot {appointment_id}")
-                # Maybe try re-adding the patient? For now, just warn.
-                return redirect(url_for('list_cancelled_appointments'))
+                # Redirect back to the list
+                return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
         else:
             # Patient removal failed
             flash('Failed to remove patient from waitlist. Assignment cancelled.', 'danger')
-            logging.debug("Patient removal failed, assignment cancelled, redirecting to list_cancelled_appointments")
-            return redirect(url_for('list_cancelled_appointments'))
+            logging.debug("Patient removal failed, assignment cancelled, redirecting")
+            # Redirect back to the list
+            return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
     except Exception as e:
         logging.error(f"Exception during patient removal or assignment: {e}", exc_info=True)
         flash('An unexpected error occurred while assigning the patient.', 'danger')
-        return redirect(url_for('list_cancelled_appointments'))
+        # Redirect back to the list
+        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
 
 def calculate_match_score(patient, appointment):
     score = 0
@@ -770,7 +792,8 @@ def remove_cancelled_slot(appointment_id):
         # Manager already logs warnings for non-existent IDs
         flash('Cancelled appointment slot not found or already removed.', 'warning')
 
-    return redirect(url_for('list_cancelled_appointments'))
+    # Redirect back to the list
+    return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
 @app.route('/edit_cancelled_slot/<appointment_id>', methods=['GET'])
 def edit_cancelled_slot(appointment_id):
@@ -780,12 +803,12 @@ def edit_cancelled_slot(appointment_id):
 
     if not appointment_to_edit:
         flash('Cancelled appointment slot not found.', 'danger')
-        return redirect(url_for('list_cancelled_appointments'))
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
     # Prevent editing if already matched
     if appointment_to_edit.get('matched_patient'):
         flash('Cannot edit a slot that is already matched.', 'warning')
-        return redirect(url_for('list_cancelled_appointments'))
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
     providers = provider_manager.get_provider_list()
     return render_template('edit_cancelled_slot.html',
@@ -800,12 +823,12 @@ def update_cancelled_slot(appointment_id):
 
     if not appointment_to_update:
         flash('Cancelled appointment slot not found.', 'danger')
-        return redirect(url_for('list_cancelled_appointments'))
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
     # Check if already matched (manager's update method also checks this)
     if appointment_to_update.get('matched_patient'):
          flash('Cannot edit a slot that is already matched.', 'warning')
-         return redirect(url_for('list_cancelled_appointments'))
+         return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
     # Get updated data from form
     provider = request.form.get('provider')
@@ -815,7 +838,7 @@ def update_cancelled_slot(appointment_id):
     # Basic validation
     if not provider or not duration:
         flash('Provider and Duration are required.', 'danger')
-        # Redirect back to edit page, passing original appointment data again
+        # Re-render edit page on validation failure - no redirect change needed here
         providers = provider_manager.get_provider_list()
         return render_template('edit_cancelled_slot.html',
                                appointment=appointment_to_update, # Use the dict fetched earlier
@@ -831,7 +854,8 @@ def update_cancelled_slot(appointment_id):
         # Manager handles logging, maybe flash a generic error or rely on previous checks
         flash('Failed to update cancelled appointment slot. It might have been removed or matched.', 'danger')
 
-    return redirect(url_for('list_cancelled_appointments'))
+    # Redirect back to the list after successful update or if update fails
+    return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
 if __name__ == '__main__':
     # Ensure provider.csv exists (even if empty)
