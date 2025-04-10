@@ -116,14 +116,14 @@ class CancelledSlotManager:
         except Exception as e:
             logging.error(f"Error saving cancelled slots to {filepath}: {e}", exc_info=True)
 
-    def add_slot(self, provider, duration, notes):
+    def add_slot(self, provider, duration, notes=''):
         """Adds a new cancelled slot and saves the list."""
         new_id = str(uuid.uuid4())
         new_slot = {
             'id': new_id,
             'provider': provider,
             'duration': str(duration), # Ensure duration is stored as string
-            'notes': notes,
+            'notes': notes, # Use the provided notes, or the default ''
             'matched_patient': None
         }
         self.slots.append(new_slot)

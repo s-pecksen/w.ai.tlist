@@ -537,8 +537,7 @@ def create_slot_and_find_matches():
     # 1. Create the slot using the manager
     new_appointment = slot_manager.add_slot(
         provider=provider,
-        duration=duration,
-        notes='Slot created from main page search' # Optional note
+        duration=duration
     )
     logging.debug(f"Created and saved new cancelled slot via manager: {new_appointment.get('id')}")
 
