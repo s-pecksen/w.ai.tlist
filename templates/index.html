@@ -199,69 +199,79 @@
                             <th>Name</th>
                             <th>Contact</th>
                             <th>Appointment Details</th>
-                            <th>Availability</th> {# Added Column #}
+                            <th>Provider Pref.</th> {# Renamed from Provider #}
+                            <th>Availability</th>
                             <th>Wait Time</th>
-                            <th>Urgency</th>
+                            {# Removed Urgency and Status Headers #}
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for patient in waitlist %}
-                            <tr class="
-                                {% if patient.status == 'scheduled' %}table-success scheduled
-                                {% elif patient.appointment_type == 'emergency_exam' %}table-danger high {# Match exact type #}
-                                {% elif patient.urgency == 'high' %}table-warning high
-                                {% elif patient.urgency == 'medium' %}medium
-                                {% else %}low{% endif %}
-                            ">
-                                <td>
-                                    {{ patient.name }}
-                                    {% if patient.appointment_type == 'emergency_exam' %} {# Match exact type #}
-                                        <br><span style="color: red; font-weight: bold;">[EMERGENCY]</span>
-                                    {% endif %}
-                                </td>
+                            {# --- MODIFIED Row Classes --- #}
+                            {% set row_class = '' %}
+                            {% if patient.status == 'scheduled' %}
+                                {% set row_class = 'table-secondary' %}
+                            {% elif patient.appointment_type.lower() == 'emergency_exam' %}
+                                {% set row_class = 'table-danger' %} {# Emergency overrides urgency color #}
+                            {% elif patient.status == 'waiting' %}
+                                {% if patient.urgency == 'high' %}
+                                    {% set row_class = 'urgency-high' %}
+                                {% elif patient.urgency == 'medium' %}
+                                    {% set row_class = 'urgency-medium' %}
+                                {% else %} {# low urgency #}
+                                    {% set row_class = 'urgency-low' %}
+                                {% endif %}
+                            {% endif %}
+                            <tr class="{{ row_class }}">
+                            {# --- END MODIFIED Row Classes --- #}
+                                <td>{{ patient.name }}</td>
                                 <td>
                                     {{ patient.phone }}<br>
-                                    {% if patient.email %}
-                                        <small>{{ patient.email }}</small>
-                                    {% endif %}
+                                    <small>{{ patient.email or "No email" }}</small>
                                 </td>
                                 <td>
-                                    {# Use the macro to format appointment type #}
-                                    <strong>Type:</strong> {{ format_appointment_type(patient) }}<br>
-                                    <strong>Duration:</strong> {{ patient.duration }} mins<br>
-                                    <strong>Provider:</strong> {{ patient.provider|capitalize if patient.provider and patient.provider != 'no preference' else 'No Preference' }}<br>
-                                    {% if patient.reason and patient.appointment_type.lower() != 'custom' %} {# Don't show notes if already shown by custom type #}
-                                        <small><strong>Notes:</strong> {{ patient.reason }}</small>
-                                    {% endif %}
+                                    {# Use the macro #}
+                                    {{ format_appointment_type(patient) }}
+                                    <br>
+                                    <small>Duration: {{ patient.duration }} min</small>
                                 </td>
-                                {# --- Display Availability Days --- #}
-                                <td>
-                                    {% if patient.availability_days %}
+                                <td>{{ patient.provider|title }}</td>
+                                 <td>
+                                     {% if patient.availability_days %}
                                         {{ patient.availability_days|join(', ') }}
                                     {% else %}
-                                        <span class="text-muted">Any Day</span> {# Or N/A #}
+                                        <span class="text-muted">Any Day</span>
                                     {% endif %}
                                 </td>
-                                {# --- End Availability Display --- #}
+                                <td>{{ patient.wait_time }}</td>
+                                {# --- REMOVED Urgency Column --- #}
+                                {# --- REMOVED Status Column --- #}
                                 <td>
+                                    {# Actions #}
                                     {% if patient.status == 'waiting' %}
-                                        {{ patient.wait_time }}
-                                    {% else %}
-                                        <span class="badge bg-success">Scheduled</span>
+                                    <div class="btn-group" role="group" aria-label="Patient Actions">
+                                        {# --- MODIFIED: Button Text to "Assign" --- #}
+                                        <a href="{{ url_for('propose_slots', patient_id=patient.id) }}" class="btn btn-sm btn-success" title="Find & Assign Slot">
+                                            <i class="bi bi-calendar-check"></i> Assign
+                                        </a>
+                                        {# --- END MODIFIED Button Text --- #}
+
+                                        {# Remove Button - Remains the same #}
+                                        <form action="{{ url_for('remove_patient', patient_id=patient.id) }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove {{ patient.name }} from the waitlist?');">
+                                            <button type="submit" class="btn btn-sm btn-danger" title="Remove Patient">
+                                                 <i class="bi bi-trash"></i> Remove
+                                            </button>
+                                        </form>
+                                    </div>
+                                    {% elif patient.status == 'scheduled' %}
+                                     {# Action for already scheduled patients (e.g., just Remove) #}
+                                      <form action="{{ url_for('remove_patient', patient_id=patient.id) }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove {{ patient.name }} (already scheduled) from the list?');">
+                                            <button type="submit" class="btn btn-sm btn-danger" title="Remove Patient">
+                                                 <i class="bi bi-trash"></i> Remove
+                                            </button>
+                                        </form>
                                     {% endif %}
-                                </td>
-                                <td>{{ patient.urgency|capitalize }}</td>
-                                <td class="action-buttons">
-                                    {# Add Schedule Button if waiting #}
-                                    {% if patient.status == 'waiting' %}
-                                    <form action="{{ url_for('schedule_patient', patient_id=patient.id) }}" method="post" style="display: inline;">
-                                        <button type="submit" class="btn btn-sm btn-success" title="Mark as Scheduled">Schedule</button>
-                                    </form>
-                                    {% endif %}
-                                    <form action="/remove_patient/{{ patient.id }}" method="post" style="display: inline;">
-                                        <button type="submit" class="btn btn-sm btn-danger" title="Remove from Waitlist">Remove</button>
-                                    </form>
                                 </td>
                             </tr>
                         {% endfor %}
@@ -306,4 +316,5 @@
 
     });
 </script>
+
 {% endblock %}

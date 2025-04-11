@@ -10,6 +10,19 @@
   --font-primary: 'Open Sans', sans-serif;
   --font-headers: 'Montserrat', sans-serif;
   --border-radius: 8px;
+
+  /* Urgency row styling */
+  --urgency-high-bg: #f8d7da;  /* Subtle red */
+  --urgency-medium-bg: #fff3cd; /* Subtle yellow */
+  --urgency-low-bg: #cfe2ff;   /* Subtle blue */
+  --urgency-high-hover: #f1c2c6;
+  --urgency-medium-hover: #ffeeba;
+  --urgency-low-hover: #bfd7ff;
+  --scheduled-bg: #e2e3e5; /* Bootstrap grey */
+  --scheduled-text: #6c757d; /* Muted text color */
+  --scheduled-hover: #d6d8db;
+  --emergency-bg: #f8d7da; /* Bootstrap red (same as high urgency) */
+  --emergency-hover: #f1c2c6;
 }
 
 body {
@@ -270,4 +283,57 @@ tr.emergency {
   color: #333333;
   font-family: 'Open Sans', sans-serif;
   line-height: 1.6;
+}
+
+/* Urgency Row Styling */
+/* Apply background to the row and its cells for consistency */
+#waitlist-table tbody tr.urgency-high,
+#waitlist-table tbody tr.urgency-high > td {
+    background-color: var(--urgency-high-bg) !important;
+}
+
+#waitlist-table tbody tr.urgency-medium,
+#waitlist-table tbody tr.urgency-medium > td {
+    background-color: var(--urgency-medium-bg) !important;
+}
+
+#waitlist-table tbody tr.urgency-low,
+#waitlist-table tbody tr.urgency-low > td {
+    background-color: var(--urgency-low-bg) !important;
+}
+
+/* Ensure scheduled style overrides urgency */
+#waitlist-table tbody tr.table-secondary,
+#waitlist-table tbody tr.table-secondary > td {
+    background-color: var(--scheduled-bg) !important;
+    color: var(--scheduled-text) !important;
+}
+
+/* Ensure emergency style overrides urgency */
+/* Note: .table-danger already exists in Bootstrap, but we ensure it overrides */
+#waitlist-table tbody tr.table-danger,
+#waitlist-table tbody tr.table-danger > td {
+    background-color: var(--emergency-bg) !important;
+}
+
+/* Hover effects - Target the row */
+.table-hover > tbody > tr.urgency-high:hover,
+.table-hover > tbody > tr.urgency-high:hover > td {
+    background-color: var(--urgency-high-hover) !important;
+}
+.table-hover > tbody > tr.urgency-medium:hover,
+.table-hover > tbody > tr.urgency-medium:hover > td {
+    background-color: var(--urgency-medium-hover) !important;
+}
+.table-hover > tbody > tr.urgency-low:hover,
+.table-hover > tbody > tr.urgency-low:hover > td {
+    background-color: var(--urgency-low-hover) !important;
+}
+.table-hover > tbody > tr.table-secondary:hover,
+.table-hover > tbody > tr.table-secondary:hover > td {
+    background-color: var(--scheduled-hover) !important;
+}
+.table-hover > tbody > tr.table-danger:hover,
+.table-hover > tbody > tr.table-danger:hover > td {
+    background-color: var(--emergency-hover) !important;
 }

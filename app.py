@@ -704,7 +704,7 @@ def find_matches_for_appointment(appointment_id):
 
 @app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
 def assign_appointment(patient_id, appointment_id):
-    """Assign a patient to a cancelled appointment slot and remove from waitlist"""
+    """Assign a patient to a cancelled appointment slot and remove the slot."""
     logging.debug(f"Entering assign_appointment for patient_id={patient_id}, appointment_id={appointment_id}")
     # Update wait times first (may not be strictly needed here but harmless)
     waitlist_manager.update_wait_times()
@@ -715,7 +715,8 @@ def assign_appointment(patient_id, appointment_id):
     if not patient: # Check if patient exists
         flash('Patient not found on waitlist.', 'danger')
         logging.warning(f"Assign appointment: Patient ID {patient_id} not found.")
-        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}')
+        # Redirect back to the main waitlist page if patient not found
+        return redirect(url_for('index') + '#waitlist-table')
 
     # Find the appointment using the manager
     appointment = slot_manager.get_slot_by_id(appointment_id)
@@ -723,64 +724,64 @@ def assign_appointment(patient_id, appointment_id):
     if not appointment:
         flash('Appointment slot not found.', 'danger')
         logging.warning(f"Assign appointment: Slot ID {appointment_id} not found.")
-        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
+        # Redirect back to the main waitlist page if slot not found
+        return redirect(url_for('index') + '#waitlist-table')
 
-    # Check if slot already matched
+    # Check if slot already matched (Although we're removing, this check prevents issues if clicked twice)
     if appointment.get('matched_patient'):
-        flash(f'Slot already assigned to {appointment["matched_patient"].get("name", "another patient")}.', 'warning')
-        logging.debug(f"Assign appointment: Slot {appointment_id} already matched.")
-        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}')
+        flash(f'Slot already assigned to {appointment["matched_patient"].get("name", "another patient")}. Refreshing list.', 'warning')
+        logging.debug(f"Assign appointment: Slot {appointment_id} was already matched. Preventing removal.")
+        # Redirect back to the main waitlist page if already matched
+        return redirect(url_for('index') + '#waitlist-table')
 
     # --- Eligibility Check using Helper ---
-    # Re-find eligible patients for *this specific slot* to confirm this patient is still eligible
-    eligible_patients_for_slot = find_eligible_patients(appointment)
-    is_eligible = any(p.get('id') == patient_id for p in eligible_patients_for_slot)
-
-    if not is_eligible:
-        flash(f'{patient.get("name", "Unknown Patient")} is no longer eligible for this appointment slot (check duration, provider, or day).', 'danger')
-        logging.debug(f"Assign appointment: Patient {patient_id} not eligible for slot {appointment_id}.")
-        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}')
-    # --- End Eligibility Check ---
-
+    # Re-check eligibility based on potentially updated patient/slot data
+    # We will reuse the filtering logic from propose_slots implicitly by checking if the assignment works
+    # Note: Direct eligibility check like in propose_slots could be added here for extra safety,
+    # but the core logic relies on finding the patient/slot and removing them.
 
     # Attempt to remove patient from waitlist FIRST
     try:
-        logging.debug(f"Attempting to remove patient ID: {patient_id}")
-        removed = waitlist_manager.remove_patient(patient_id)
-        logging.debug(f"Removal result: {removed}")
+        logging.debug(f"Attempting to remove patient ID: {patient_id} from waitlist.")
+        patient_removed = waitlist_manager.remove_patient(patient_id)
+        logging.debug(f"Patient removal result: {patient_removed}")
 
-        if removed:
-            # If patient removal was successful, THEN assign patient to appointment using the manager
-            assigned = slot_manager.assign_patient_to_slot(appointment_id, patient) # Pass the patient dict
+        if patient_removed:
+            # If patient removal was successful, THEN REMOVE the cancelled slot
+            logging.debug(f"Patient {patient_id} removed from waitlist. Attempting to remove cancelled slot ID: {appointment_id}")
+            slot_removed = slot_manager.remove_slot(appointment_id) # Use remove_slot instead of assign
 
-            if assigned:
-                flash(f'Successfully assigned {patient.get("name", "Unknown Patient")} to the appointment and removed them from the waitlist.', 'success')
-                target_url = url_for('list_cancelled_appointments') + '#cancelled-slots-list' # Added fragment
-                logging.debug(f"Patient removed and assigned successfully, redirecting to: {target_url}")
-                # --- Save Backup After Successful Assignment ---
+            if slot_removed:
+                flash(f'Successfully assigned {patient.get("name", "Unknown Patient")} to the appointment time. Patient removed from waitlist and slot removed from cancelled list.', 'success')
+                # --- MODIFIED REDIRECT ---
+                target_url = url_for('index') + '#waitlist-table' # Go to waitlist top after success
+                # --- END MODIFIED REDIRECT ---
+                logging.debug(f"Patient {patient_id} removed from waitlist and slot {appointment_id} removed successfully. Redirecting to: {target_url}")
+                # --- Save Backup After Successful Assignment/Removal ---
                 waitlist_manager.save_backup()
-                # slot_manager already saves on assign
+                # slot_manager.remove_slot() handles its own save
                 # --- End Save Backup ---
                 return redirect(target_url)
             else:
-                # This case means patient was removed but slot assignment failed (e.g., slot disappeared)
+                # This case means patient was removed but slot removal failed (e.g., slot disappeared between checks)
                 # CRITICAL: Need to add patient back or handle this state
-                flash('Patient removed from waitlist, but failed to assign to the slot (slot may have been removed). Please manually verify status.', 'danger')
-                logging.error(f"Removed patient {patient_id} but failed to assign to slot {appointment_id}. Patient needs manual re-addition or verification.")
+                flash('Patient removed from waitlist, but failed to REMOVE slot (it may have been removed by another process). Please manually verify patient status and slot list.', 'danger')
+                logging.error(f"Removed patient {patient_id} but failed to REMOVE slot {appointment_id}. Patient needs manual re-addition or verification.")
                 # Consider adding the patient back here if possible, or provide clearer instructions
-                # For now, redirect back to the list
-                return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
+                # Redirect back to waitlist
+                return redirect(url_for('index') + '#waitlist-table')
+
         else:
             # Patient removal failed (e.g., patient wasn't actually on waitlist anymore)
-            flash('Failed to remove patient from waitlist (they may have already been scheduled or removed). Assignment cancelled.', 'danger')
-            logging.debug(f"Patient removal failed for ID {patient_id}, assignment cancelled, redirecting")
-            # Redirect back to the list
-            return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
+            flash('Failed to remove patient from waitlist (they may have already been scheduled or removed). Slot removal cancelled.', 'danger')
+            logging.debug(f"Patient removal failed for ID {patient_id}, slot removal cancelled, redirecting")
+            # Redirect back to waitlist
+            return redirect(url_for('index') + '#waitlist-table')
     except Exception as e:
-        logging.error(f"Exception during patient removal or assignment: {e}", exc_info=True)
-        flash('An unexpected error occurred while assigning the patient.', 'danger')
-        # Redirect back to the list
-        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
+        logging.error(f"Exception during patient removal or slot removal: {e}", exc_info=True)
+        flash('An unexpected error occurred while assigning the patient and removing the slot.', 'danger')
+        # Redirect back to waitlist
+        return redirect(url_for('index') + '#waitlist-table')
 
 
 # This helper function seems redundant with the manager's method, let's remove it
@@ -921,6 +922,70 @@ def update_cancelled_slot(appointment_id):
     # Redirect back to the list after successful update or if update fails
     return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
+# --- Add New Route for Proposing Slots ---
+@app.route('/propose_slots/<patient_id>', methods=['GET'])
+def propose_slots(patient_id):
+    logging.debug(f"Entering propose_slots for patient_id={patient_id}")
+    patient = waitlist_manager.get_patient_by_id(patient_id)
+
+    if not patient:
+        flash('Patient not found.', 'danger')
+        logging.warning(f"Propose slots: Patient ID {patient_id} not found.")
+        return redirect(url_for('index') + '#waitlist-table')
+
+    if patient.get('status') != 'waiting':
+        flash(f'{patient.get("name", "Patient")} is not currently waiting.', 'info')
+        logging.warning(f"Propose slots: Patient ID {patient_id} has status {patient.get('status')}.")
+        return redirect(url_for('index') + '#waitlist-table')
+
+    # Get all slots and filter for available (unmatched) ones
+    all_slots = slot_manager.get_all_slots()
+    available_slots = [s for s in all_slots if s.get('matched_patient') is None]
+    logging.debug(f"Found {len(available_slots)} available slots initially.")
+
+    # Filter available slots based on patient requirements
+    matching_slots = []
+    patient_duration = str(patient.get('duration', ''))
+    patient_provider_pref = patient.get('provider', '').strip().lower()
+    patient_availability = [day.strip().lower() for day in patient.get('availability_days', [])] # Lowercase list
+
+    for slot in available_slots:
+        slot_duration = str(slot.get('duration', ''))
+        slot_provider = slot.get('provider', '').strip().lower()
+        # --- MODIFIED: Safely handle potential None for slot_day_of_week ---
+        slot_day_raw = slot.get('slot_day_of_week')
+        slot_day = slot_day_raw.strip().lower() if slot_day_raw else ''
+        # --- END MODIFICATION ---
+
+        # 1. Check Duration
+        if patient_duration != slot_duration:
+            logging.debug(f"Slot {slot.get('id')} skipped: Duration mismatch (Patient: {patient_duration}, Slot: {slot_duration})")
+            continue
+
+        # 2. Check Provider
+        provider_ok = (patient_provider_pref == 'no preference' or patient_provider_pref == slot_provider)
+        if not provider_ok:
+            logging.debug(f"Slot {slot.get('id')} skipped: Provider mismatch (Patient: {patient_provider_pref}, Slot: {slot_provider})")
+            continue
+
+        # 3. Check Day Availability
+        # If patient availability list is empty, they are available any day.
+        # Otherwise, the slot's day must be in their list.
+        day_ok = (not patient_availability) or (slot_day in patient_availability)
+        if not day_ok:
+            logging.debug(f"Slot {slot.get('id')} skipped: Day mismatch (Patient: {patient_availability}, Slot Day: {slot_day})")
+            continue
+
+        # If all checks pass, add to matching slots
+        logging.debug(f"Slot {slot.get('id')} is a match for patient {patient_id}.")
+        matching_slots.append(slot)
+
+    # Sort matching slots by date (earliest first)
+    matching_slots.sort(key=lambda s: s.get('slot_date') or date.min)
+
+    logging.debug(f"Found {len(matching_slots)} matching slots for patient {patient_id}.")
+    return render_template('propose_slots.html', patient=patient, matching_slots=matching_slots)
+# --- End New Route ---
 
 if __name__ == '__main__':
     # Ensure provider.csv exists (even if empty) - Handled by ProviderManager init now
