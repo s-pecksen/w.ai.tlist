@@ -203,15 +203,8 @@ class PatientWaitlistManager:
 
                 delta = now - timestamp
                 days = delta.days
-                hours = delta.seconds // 3600
-                minutes = (delta.seconds % 3600) // 60
-                new_wait_time = '0 minutes'
-                if days > 0:
-                    new_wait_time = f"{days} days, {hours} hours"
-                elif hours > 0:
-                    new_wait_time = f"{hours} hours, {minutes} minutes"
-                else:
-                    new_wait_time = f"{minutes} minutes"
+                # Simplified wait time: only show days
+                new_wait_time = f"{days} days"
 
                 if patient.get('wait_time') != new_wait_time:
                     patient['wait_time'] = new_wait_time
@@ -245,18 +238,51 @@ class PatientWaitlistManager:
         """Manually trigger saving the current patient list to a timestamped backup file."""
         self._save_timestamped_backup() # This one STAYS for the manual button
 
-    def find_eligible_patients(self, provider_name: str) -> List[Dict[str, Any]]:
-        # This method does not modify data, so no save needed here
+    def find_eligible_patients(self, provider_name: str, slot_duration: str) -> List[Dict[str, Any]]:
         eligible_patients = []
+        provider_matches = []
+        no_preference_matches = []
+
+        # Ensure slot duration is treated as string for comparison
+        slot_duration_str = str(slot_duration)
+        provider_name_lower = provider_name.lower() # Lowercase provider name once
+
         for patient in self.get_waiting_patients():
-            if patient.get('provider', '').lower() == provider_name.lower():
-                 eligible_patients.append(patient)
-        for patient in self.get_waiting_patients():
-             if (patient.get('provider', '').lower() == 'no preference' or not patient.get('provider')):
-                 if not any(p['id'] == patient['id'] for p in eligible_patients):
-                     eligible_patients.append(patient)
-        # Sort by timestamp (wait time calculation happens elsewhere)
-        eligible_patients.sort(key=lambda p: p.get('timestamp', datetime.datetime.min)) # Use min as default for sorting
+            # --- Filter Section ---
+            # 1. Check Duration
+            patient_duration = str(patient.get('duration', '0'))
+            if patient_duration != slot_duration_str:
+                continue # Skip if duration doesn't match
+
+            # 2. Check Provider Preference
+            patient_provider = patient.get('provider', '').strip().lower()
+            is_provider_match = (patient_provider == provider_name_lower)
+            is_no_preference = (patient_provider == 'no preference' or not patient_provider)
+
+            if not (is_provider_match or is_no_preference):
+                continue # Skip if provider doesn't match and isn't 'no preference'
+
+            # --- Add to intermediate lists ---
+            if is_provider_match:
+                provider_matches.append(patient)
+            elif is_no_preference:
+                no_preference_matches.append(patient)
+        
+        # Combine lists: specific provider matches first, then no preference
+        eligible_patients = provider_matches + no_preference_matches
+
+        # --- Sort Section ---
+        urgency_order = {'high': 0, 'medium': 1, 'low': 2}
+        emergency_str = 'emergency exam' # Define comparison string once
+
+        eligible_patients.sort(key=lambda p: (
+            # Primary key: Emergency status (0 for Emergency, 1 for others)
+            0 if p.get('appointment_type', '').strip().lower() == emergency_str else 1,
+            # Secondary key: Date added
+            p.get('timestamp', datetime.datetime.min).date(),
+            # Tertiary key: Urgency
+            urgency_order.get(p.get('urgency', 'medium').strip().lower(), 1) # Default to medium
+        ))
         return eligible_patients
 
     # Removed import_from_list as it conflicts with loading from latest backup

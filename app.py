@@ -737,46 +737,49 @@ def calculate_match_score(patient, appointment):
 
     # Check duration match
     try:
-        patient_duration = int(patient.get('duration', 30))
-        appointment_duration = int(appointment['duration'])
+        # Ensure comparison happens with strings if manager stores duration as string
+        patient_duration = str(patient.get('duration', '30'))
+        appointment_duration = str(appointment['duration'])
     except (ValueError, TypeError):
-        patient_duration = 30 # Default if conversion fails
-        appointment_duration = 30
+        patient_duration = '30' # Default if conversion fails
+        appointment_duration = '30'
 
     if patient_duration == appointment_duration:
         duration_match = True
         score += 2
-    elif patient_duration < appointment_duration:
-        duration_match = True
-        score += 1
+    # Note: Removed the < check as the new manager logic requires exact match
+    # elif patient_duration < appointment_duration:
+    #     duration_match = True
+    #     score += 1
 
-    if provider_match and duration_match and score >= 3:
+    # Perfect match requires exact provider (or no pref) AND exact duration based on new manager logic
+    if provider_match and duration_match:
         return 'perfect'
+    # Partial might still be useful conceptually, but the manager only returns perfect matches now
     elif provider_match or duration_match:
         return 'partial'
     else:
         return 'none'
 
 def find_eligible_patients(cancelled_appointment):
-    provider_name = cancelled_appointment['provider']
-    eligible_patients = []
-    waiting_patients = [p for p in waitlist_manager.get_all_patients() if p.get('status') == 'waiting']
-    
-    for patient in waiting_patients:
-        match_score = calculate_match_score(patient, cancelled_appointment)
-        # Only add patients if they are a perfect match
-        if match_score == 'perfect':
-            patient_copy = patient.copy()
-            patient_copy['match_score'] = match_score # Keep score for consistency if needed later
-            eligible_patients.append(patient_copy)
-            
-    # Sort the perfect matches by wait time (longest first)
-    def sort_key(patient):
-        # Use negative wait time for descending order (longest wait first)
-        wait_minutes = -wait_time_to_minutes(patient.get('wait_time', '0 minutes')) 
-        return wait_minutes # Return only the wait time for sorting
-        
-    eligible_patients.sort(key=sort_key)
+    """
+    Finds eligible patients for a cancelled slot by calling the waitlist manager.
+    Uses the manager's logic for filtering (provider, duration) and sorting
+    (emergency, date, urgency).
+    """
+    provider_name = cancelled_appointment.get('provider')
+    slot_duration = cancelled_appointment.get('duration')
+
+    if not provider_name or not slot_duration:
+        logging.error("Cannot find eligible patients: Missing provider or duration in cancelled_appointment dict.")
+        return [] # Return empty list if essential info is missing
+
+    # Call the waitlist manager's method to get the filtered and sorted list
+    eligible_patients = waitlist_manager.find_eligible_patients(provider_name, str(slot_duration)) # Ensure duration is passed as string
+
+    # The manager now returns only "perfect" matches according to its criteria,
+    # already sorted correctly. No need for further filtering or sorting here.
+    logging.debug(f"Found {len(eligible_patients)} eligible patients via manager for slot {cancelled_appointment.get('id')}")
     return eligible_patients
 
 @app.route('/remove_cancelled_slot/<appointment_id>', methods=['POST'])
