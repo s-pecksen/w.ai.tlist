@@ -1,193 +1,156 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 import os
 import csv
 
 class ProviderManager:
     def __init__(self, provider_file: str = 'provider.csv'):
         """
-        Initialize the Provider Manager with extended functionality
-        
+        Initialize the Provider Manager.
+
         Args:
-            provider_file (str): Path to the CSV file storing provider names
+            provider_file (str): Path to the CSV file storing provider names.
         """
         self.provider_file = provider_file
-        self.providers: List[dict] = self._load_providers()
+        # Store providers as a list of dictionaries {'name': 'Provider Name'}
+        self.providers: List[Dict[str, str]] = self._load_providers()
 
-    def _load_providers(self) -> List[dict]:
+    def _load_providers(self) -> List[Dict[str, str]]:
         """
-        Load existing providers with additional metadata
-        
+        Load existing providers from the CSV file.
+        Only loads the 'name' column.
+
         Returns:
-            List of provider dictionaries
+            List of provider dictionaries [{'name': 'Provider Name'}].
         """
+        providers = []
         if not os.path.exists(self.provider_file):
-            return []
-        
+            # Create the file with a header if it doesn't exist
+            try:
+                with open(self.provider_file, 'w', newline='') as file:
+                     writer = csv.writer(file)
+                     writer.writerow(['name']) # Write only the name header
+                return []
+            except IOError as e:
+                 print(f"Error creating provider file {self.provider_file}: {e}")
+                 return [] # Return empty list if creation fails
+
         try:
-            with open(self.provider_file, 'r') as file:
-                reader = csv.DictReader(file, fieldnames=['name', 'is_active'])
-                providers = []
+            with open(self.provider_file, 'r', newline='') as file:
+                # Use DictReader, expecting only the 'name' field
+                # Use restval='' to handle rows with potentially fewer columns gracefully
+                # Use ignore_missing_fieldnames=True if library supports it or handle manually
+                reader = csv.DictReader(file, fieldnames=['name'], restval='') # Explicitly define expected fieldname
+                header = next(reader, None) # Skip header row
+                if header and header.get('name', '').lower() != 'name':
+                    # If the first row doesn't look like a header, reset and process it
+                    # This handles files without headers or with unexpected first rows
+                    file.seek(0)
+                    reader = csv.DictReader(file, fieldnames=['name'], restval='')
+
                 for row in reader:
-                    if row['name'] and row['name'].strip():
-                        # Handle case where is_active might be None
-                        is_active = False
-                        if row.get('is_active'):
-                            is_active = row['is_active'].lower() == 'true'
-                        
-                        providers.append({
-                            'name': row['name'].strip(),
-                            'is_active': is_active
-                        })
-                return providers
+                    # Ensure 'name' key exists and has a non-empty, non-whitespace value
+                    provider_name = row.get('name', '').strip()
+                    if provider_name:
+                        # Avoid adding duplicates (case-insensitive check)
+                        if not any(p['name'].lower() == provider_name.lower() for p in providers):
+                            providers.append({'name': provider_name})
+                        else:
+                            print(f"Skipping duplicate provider name found during load: {provider_name}")
+                    # else: # Optionally log skipped blank rows
+                    #    print(f"Skipping blank provider name found during load: {row}")
+
         except Exception as e:
-            print(f"Error loading providers: {str(e)}")
-            # Return empty list if there's an error
-            return []
+            print(f"Error loading providers from {self.provider_file}: {e}")
+            return [] # Return empty list on error
+
+        return providers
+
 
     def _save_providers(self):
         """
-        Save current provider list to CSV file
+        Save current provider list (only names) to CSV file.
         """
-        with open(self.provider_file, 'w', newline='') as file:
-            writer = csv.DictWriter(file, fieldnames=['name', 'is_active'])
-            for provider in sorted(self.providers, key=lambda x: x['name']):
-                writer.writerow(provider)
+        try:
+            with open(self.provider_file, 'w', newline='') as file:
+                # Define fieldnames for the writer
+                fieldnames = ['name']
+                writer = csv.DictWriter(file, fieldnames=fieldnames)
 
-    def add_provider(self, first_name: str, last_initial: Optional[str] = None, is_active: bool = True) -> bool:
+                writer.writeheader() # Write the header row
+                # Sort by name before writing
+                for provider_dict in sorted(self.providers, key=lambda x: x.get('name', '')):
+                     # Write only the 'name' field
+                     writer.writerow({'name': provider_dict.get('name')})
+        except IOError as e:
+            print(f"Error saving providers to {self.provider_file}: {e}")
+
+
+    def add_provider(self, first_name: str, last_initial: Optional[str] = None) -> bool:
         """
-        Add a new provider to the list
-        
+        Add a new provider to the list.
+
         Args:
-            first_name (str): First name of the provider
-            last_initial (str, optional): Last initial to differentiate similar names
-            is_active (bool): Whether provider is available for appointments
-        
+            first_name (str): First name of the provider.
+            last_initial (str, optional): Last initial to differentiate similar names.
+
         Returns:
-            bool: True if added successfully, False if already exists
+            bool: True if added successfully, False if already exists.
         """
         # Validate input
         if not first_name or not first_name.strip():
-            raise ValueError("Provider first name cannot be blank")
-        
+            print("Error: Provider first name cannot be blank.") # Changed from raise
+            return False
+
         # Construct full name with optional last initial
         full_name = first_name.strip()
-        if last_initial:
+        if last_initial and last_initial.strip(): # Ensure last_initial is not just whitespace
             full_name += f" {last_initial.strip()}"
-        
+
         # Check for duplicates (case-insensitive)
         if any(p['name'].lower() == full_name.lower() for p in self.providers):
+            print(f"Provider '{full_name}' already exists.")
             return False
-        
+
         # Add provider
-        self.providers.append({
-            'name': full_name,
-            'is_active': is_active
-        })
+        self.providers.append({'name': full_name})
         self._save_providers()
+        print(f"Provider '{full_name}' added.")
         return True
 
-    def is_provider_match(self, cancelled_provider: str, patient_preference: str) -> bool:
+    def get_provider_list(self) -> List[Dict[str, str]]:
         """
-        Determine if a patient is eligible for a cancelled appointment
-        
-        Args:
-            cancelled_provider (str): Name of the provider for the cancelled appointment
-            patient_preference (str): Patient's provider preference
-        
-        Returns:
-            bool: True if patient is eligible, False otherwise
-        """
-        # Check if cancelled provider exists and is active
-        cancelled_provider_exists = any(
-            p['name'].lower() == cancelled_provider.lower() and p['is_active'] 
-            for p in self.providers
-        )
-        
-        # If no preference or preference matches cancelled provider
-        if not patient_preference or patient_preference.lower() == cancelled_provider.lower():
-            return cancelled_provider_exists
-        
-        # If patient has a specific preference
-        return False
+        Get the full list of provider dictionaries (containing just 'name').
 
-    def get_active_providers(self) -> List[str]:
-        """
-        Retrieve the current list of active providers
-        
         Returns:
-            List of active provider names
+            The list of provider dictionaries [{'name': 'Provider Name'}].
         """
-        return [p['name'] for p in self.providers if p['is_active']]
+        # Return a copy to prevent external modification
+        return [p.copy() for p in self.providers]
 
-    def get_provider_list(self) -> List[dict]:
-        """
-        Get the full list of providers
-        
-        Returns:
-            The list of provider dictionaries
-        """
-        return self.providers
-        
     def remove_provider(self, first_name: str, last_initial: Optional[str] = None) -> bool:
         """
-        Remove a provider from the list
-        
+        Remove a provider from the list.
+
         Args:
-            first_name (str): First name of the provider
-            last_initial (str, optional): Last initial to differentiate similar names
-            
+            first_name (str): First name of the provider.
+            last_initial (str, optional): Last initial to differentiate similar names.
+
         Returns:
-            bool: True if removed successfully, False if not found
+            bool: True if removed successfully, False if not found.
         """
         # Construct full name with optional last initial
         full_name = first_name.strip()
-        if last_initial:
+        if last_initial and last_initial.strip(): # Ensure last_initial is not just whitespace
             full_name += f" {last_initial.strip()}"
-        
-        # Search for the provider
-        for i, provider in enumerate(self.providers):
-            if provider['name'].lower() == full_name.lower():
-                self.providers.pop(i)
-                self._save_providers()
-                return True
-        
-        return False
 
-    def toggle_provider_active(self, provider_name: str) -> bool:
-        """
-        Toggle a provider's active status
-        
-        Args:
-            provider_name (str): Name of the provider to toggle
-        
-        Returns:
-            bool: True if toggled successfully, False if not found
-        """
-        for provider in self.providers:
-            if provider['name'] == provider_name:
-                provider['is_active'] = not provider['is_active']
-                self._save_providers()
-                return True
-        return False
+        initial_length = len(self.providers)
+        # Filter out the provider (case-insensitive)
+        self.providers = [p for p in self.providers if p.get('name', '').lower() != full_name.lower()]
 
-# Example usage in matching algorithm
-def find_replacement_patient(cancelled_appointment, patient_waitlist, provider_manager):
-    """
-    Find a suitable replacement patient for a cancelled appointment
-    
-    Args:
-        cancelled_appointment: Details of the cancelled appointment
-        patient_waitlist: List of patients waiting for appointments
-        provider_manager: Instance of ProviderManager
-    
-    Returns:
-        Eligible patient or None
-    """
-    for patient in patient_waitlist:
-        if provider_manager.is_provider_match(
-            cancelled_appointment.provider, 
-            patient.provider_preference
-        ):
-            return patient
-    
-    return None
+        if len(self.providers) < initial_length:
+            self._save_providers()
+            print(f"Provider '{full_name}' removed.")
+            return True
+        else:
+            print(f"Provider '{full_name}' not found for removal.")
+            return False

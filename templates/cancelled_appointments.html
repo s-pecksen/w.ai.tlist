@@ -10,13 +10,13 @@
 <style>
     /* Removed date-time-container and calendar-icon styles */
     .eligibility-match {
-        background-color: #d1e7dd;
+        background-color: #d1e7dd; /* Greenish */
     }
     .eligibility-mismatch {
-        background-color: #f8d7da;
+        background-color: #f8d7da; /* Reddish */
     }
     .eligibility-neutral {
-        background-color: #fff3cd;
+        background-color: #fff3cd; /* Yellowish */
     }
     .patient-match-indicator {
         width: 12px;
@@ -24,7 +24,7 @@
         display: inline-block;
         border-radius: 50%;
         margin-right: 5px;
-        background-color: #198754; /* Always green now */
+        background-color: #198754; /* Green for perfect match */
     }
     .patient-details {
         font-size: 0.9rem;
@@ -32,6 +32,10 @@
     }
     .compatibility-score {
         font-weight: bold;
+    }
+    .slot-details {
+         font-size: 0.9rem;
+         color: #6c757d;
     }
 </style>
 {% endblock %}
@@ -41,16 +45,24 @@
     <h1 class="mb-4">Manage Cancelled Appointments</h1>
 
     <!-- Moved Eligible Patients section to the top -->
-    {% if eligible_patients and current_appointment %}
-    <div class="row mb-4" id="eligible-patients-list"> 
+    {# Ensure current_appointment exists before accessing its properties #}
+    {% if eligible_patients is not none and current_appointment %}
+    <div class="row mb-4" id="eligible-patients-list">
         <div class="col-md-12">
             <div class="card border-primary"> <!-- Added border for emphasis -->
                 <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Perfect Matches Found for Appointment Slot</h5>
-                    {# Removed date display #}
-                    <p class="mb-0">Provider: {{ current_appointment.provider }} | Duration: {{ current_appointment.duration }} minutes</p>
+                    <h5 class="mb-0">Eligible Patients Found for Slot</h5>
+                    {# Display Slot Date and Day #}
+                    <p class="mb-0">
+                        {% if current_appointment.slot_date %}
+                            {{ current_appointment.slot_date.strftime('%A, %B %d, %Y') }}
+                        {% else %}
+                            Date Unknown
+                        {% endif %}
+                        | Provider: {{ current_appointment.provider }} | Duration: {{ current_appointment.duration }} minutes
+                    </p>
                 </div>
-                <div class="card-body">
+                <div class="card-body p-0"> {# Remove padding for table flushness #}
                     {% if eligible_patients|length > 0 %}
                         {# Define the formatting macro HERE, before the table #}
                         {% macro format_appointment_type(patient) %}
@@ -70,12 +82,14 @@
                             {% endif %}
                         {% endmacro %}
 
-                    <table class="table table-hover">
+                    <div class="table-responsive"> {# Added for smaller screens #}
+                    <table class="table table-hover mb-0"> {# Added mb-0 #}
                         <thead>
                             <tr>
                                 <th>Match</th>
                                 <th>Patient</th>
-                                <th>Contact Information</th>
+                                <th>Contact</th>
+                                <th>Availability</th> {# Added #}
                                 <th>Wait Time</th>
                                 <th>Appointment Details</th>
                                 <th>Action</th>
@@ -89,10 +103,11 @@
                                 Patient ID: {{ patient.id | default('MISSING', true) }}
                                 Current Appointment object: {{ current_appointment | string() }}
                                 Current Appointment ID: {{ current_appointment.id | default('MISSING', true) }}
-                                is_temporary_search: {{ is_temporary_search | default('NOT_SET', true) }}
+                                Slot Day: {{ current_appointment.slot_day_of_week | default('MISSING', true) }}
+                                Patient Availability: {{ patient.availability_days | default('MISSING', true) }}
                             -->
                             {# --- End Debug Output --- #}
-                            <tr class="eligibility-match"> <!-- Always eligibility-match class -->
+                            <tr class="eligibility-match"> <!-- Always eligibility-match class based on manager filtering -->
                                 <td>
                                     <span class="patient-match-indicator"></span> <!-- Simplified indicator -->
                                     <span class="fw-bold">Perfect</span> <!-- Simplified text -->
@@ -102,6 +117,15 @@
                                     {{ patient.phone }}<br>
                                     <small>{{ patient.email or "No email" }}</small>
                                 </td>
+                                {# --- Display Patient Availability --- #}
+                                <td>
+                                     {% if patient.availability_days %}
+                                        {{ patient.availability_days|join(', ') }}
+                                    {% else %}
+                                        <span class="text-muted">Any Day</span>
+                                    {% endif %}
+                                </td>
+                                {# --- End Availability Display --- #}
                                 <td>{{ patient.wait_time }}</td>
                                 <td>
                                     <div class="patient-details">
@@ -109,9 +133,11 @@
                                         <div><strong>Type:</strong> {{ format_appointment_type(patient) }}</div>
                                         <div><strong>Duration:</strong> {{ patient.duration }} min</div>
                                         <div><strong>Provider Pref:</strong>
-                                            {% if patient.provider == current_appointment.provider %}
+                                            {% set patient_provider_lower = patient.provider|lower %}
+                                            {% set slot_provider_lower = current_appointment.provider|lower %}
+                                            {% if patient_provider_lower == slot_provider_lower %}
                                                 <span class="text-success">{{ patient.provider }}</span>
-                                            {% elif patient.provider == 'no preference' or not patient.provider %}
+                                            {% elif patient_provider_lower == 'no preference' or not patient.provider %}
                                                 <span class="text-muted">No Preference</span>
                                             {% else %}
                                                  <!-- This case shouldn't happen with perfect match filter, but kept for safety -->
@@ -132,21 +158,27 @@
                                             <button type="submit" class="btn btn-sm btn-success">Assign</button>
                                         </form>
                                     {# Removed the elif condition - if IDs are missing, something else is wrong #}
+                                    {% else %}
+                                        <button class="btn btn-sm btn-secondary" disabled>Error</button>
                                     {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                    </div>
                     {% else %}
                     <div class="alert alert-info mb-0"> <!-- Added mb-0 -->
-                        No patients found with a perfect match for this appointment slot.
+                        No eligible patients found matching the provider, duration, and day of the week for this slot.
                     </div>
                     {% endif %}
                 </div>
             </div>
         </div>
     </div>
+    {% elif eligible_patients is not none and not current_appointment %}
+     {# Handle case where finding matches failed to create/find appointment #}
+     <div class="alert alert-warning">Could not find or create the specified appointment slot to check for matches.</div>
     {% endif %}
     <!-- End Moved Eligible Patients section -->
 
@@ -156,32 +188,34 @@
             <div class="card" id="add-slot-form">
                 <div class="card-body">
                     <h5 class="card-title">Add Cancelled Appointment Slot</h5>
+                    {# This form now goes to add_cancelled_appointment #}
                     <form action="{{ url_for('add_cancelled_appointment') }}" method="post">
                         <div class="mb-3">
                             <label for="provider" class="form-label">Provider</label>
                             <select class="form-select" id="provider" name="provider" required>
                                 <option value="" selected disabled>Select Provider</option>
-                                {% for provider in providers %}
-                                    <option value="{{ provider.name }}">{{ provider.name }}</option>
+                                {# providers is now list of dicts {'name': '...'} #}
+                                {% for provider_dict in providers %}
+                                    <option value="{{ provider_dict.name }}">{{ provider_dict.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
 
-                        {# Removed Date and Time Input Field #}
-                        <!-- <div class="mb-3">
-                            <label for="date_time" class="form-label">Date and Time</label>
-                            <div class="date-time-container">
-                                <input type="text" class="form-control" id="date_time" name="date_time" placeholder="Click to select date and time" required>
-                                <i class="bi bi-calendar calendar-icon"></i>
-                            </div>
-                        </div> -->
+                        {# --- Add Date Input Field --- #}
+                        <div class="mb-3">
+                            <label for="slot_date" class="form-label">Date of Slot</label>
+                            <input type="date" class="form-control" id="slot_date" name="slot_date" required>
+                        </div>
+                        {# --- End Date Input --- #}
 
                         <div class="mb-3">
                             <label for="duration" class="form-label">Duration</label>
                             <select class="form-select" id="duration" name="duration" required>
+                                <option value="" disabled selected>Select Duration</option> {# Added default #}
                                 <option value="30">30 minutes</option>
                                 <option value="60">1 hour</option>
                                 <option value="70">70 minutes</option>
+                                <option value="90">1.5 hours</option> {# Ensure 90 available #}
                                 <option value="120">2 hours</option>
                             </select>
                         </div>
@@ -189,7 +223,6 @@
                             <label for="notes" class="form-label">Notes (Optional)</label>
                             <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
                         </div>
-                        {# Changed button text slightly #}
                         <button type="submit" class="btn btn-primary">Add Slot & Find Matches</button>
                     </form>
                 </div>
@@ -202,48 +235,58 @@
                 <div class="card-header">
                     <h5 class="mb-0">Available Cancelled Slots</h5>
                 </div>
-                <ul class="list-group list-group-flush">
+                <div class="list-group list-group-flush"> {# Use div for overflow later if needed #}
                     {% if cancelled_appointments %}
                         {% for appointment in cancelled_appointments %}
                             {# Add id to the list item for individual slot focusing #}
-                            <li class="list-group-item" id="slot-{{ appointment.id }}">
-                                <div class="d-flex justify-content-between align-items-center"> {# Use align-items-center for better vertical alignment #}
+                            <div class="list-group-item" id="slot-{{ appointment.id }}"> {# Changed li to div #}
+                                <div class="d-flex justify-content-between align-items-start"> {# Changed to align-items-start #}
                                     <div>
                                         <strong>{{ appointment.provider }}</strong><br>
-                                        Duration: {{ appointment.duration }} minutes
-                                        {% if appointment.notes %}
-                                            <br><small class="text-muted">Notes: {{ appointment.notes }}</small>
-                                        {% endif %}
+                                        <div class="slot-details">
+                                            {# Display Date and Day #}
+                                            {% if appointment.slot_date %}
+                                                {{ appointment.slot_date.strftime('%a, %b %d, %Y') }} <!-- Short format -->
+                                            {% else %}
+                                                Date Unknown
+                                            {% endif %}
+                                            <br>
+                                            Duration: {{ appointment.duration }} minutes
+                                            {% if appointment.notes %}
+                                                <br>Notes: {{ appointment.notes }}
+                                            {% endif %}
+                                        </div>
                                     </div>
-                                    <div class="text-end"> {# Group buttons #}
+                                    <div class="text-end action-buttons"> {# Group buttons #}
                                         {% if appointment.matched_patient %}
                                             <span class="badge bg-success">Matched: {{ appointment.matched_patient.name }}</span>
+                                            {# Maybe add an 'Unmatch' button later? #}
                                         {% else %}
                                             {# Find Matches Form #}
-                                            <form action="{{ url_for('find_matches_for_appointment', appointment_id=appointment.id) }}" method="post" style="display: inline-block; margin-right: 5px;">
-                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Find Matches">
+                                            <form action="{{ url_for('find_matches_for_appointment', appointment_id=appointment.id) }}" method="post" style="display: inline-block; margin-bottom: 5px;">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary w-100" title="Find Matches">
                                                     <i class="bi bi-search"></i> Find Matches
                                                 </button>
                                             </form>
                                             {# Edit Button (links to GET route) #}
-                                            <a href="{{ url_for('edit_cancelled_slot', appointment_id=appointment.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit Slot" style="display: inline-block; margin-right: 5px;">
+                                            <a href="{{ url_for('edit_cancelled_slot', appointment_id=appointment.id) }}" class="btn btn-sm btn-outline-secondary w-100 mb-1" title="Edit Slot" style="display: inline-block;">
                                                  <i class="bi bi-pencil"></i> Edit
                                             </a>
                                             {# Remove Form #}
                                             <form action="{{ url_for('remove_cancelled_slot', appointment_id=appointment.id) }}" method="post" style="display: inline-block;" onsubmit="return confirm('Are you sure you want to remove this cancelled slot?');">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Slot">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger w-100" title="Remove Slot">
                                                     <i class="bi bi-trash"></i> Remove
                                                 </button>
                                             </form>
                                         {% endif %}
                                     </div>
                                 </div>
-                            </li>
+                            </div>
                         {% endfor %}
                     {% else %}
-                        <li class="list-group-item text-center">No cancelled slots</li>
+                        <div class="list-group-item text-center">No cancelled slots available.</div> {# Changed li to div #}
                     {% endif %}
-                </ul>
+                </div>
             </div>
             <!-- Removed legend card -->
         </div>
@@ -251,17 +294,17 @@
 </div>
 
 {# Removed Flatpickr Script #}
-<!-- <script>
+<script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Initialize flatpickr for date/time selection
-        flatpickr("#date_time", {
-            // ... options ...
-            // disable: [ ... ]
-        });
-        // Make the calendar icon also open the date picker
-        document.querySelector('.calendar-icon').addEventListener('click', function() {
-            document.getElementById('date_time')._flatpickr.open();
+        // Ensure date inputs default to today or prevent past dates if desired
+        const dateInputs = document.querySelectorAll('input[type="date"]');
+        const today = new Date().toISOString().split('T')[0];
+        dateInputs.forEach(input => {
+            if (!input.value) { // Only set default if no value is pre-filled (like in edit form)
+               // input.value = today; // Optionally default to today
+            }
+            input.min = today; // Prevent selecting past dates
         });
     });
-</script> -->
+</script>
 {% endblock %} 

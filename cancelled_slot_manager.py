@@ -1,7 +1,7 @@
 import os
 import csv
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 import glob
 import shutil
 import logging
@@ -14,7 +14,7 @@ class CancelledSlotManager:
         self.slots_file_prefix = "cancelled_slots_"
         self.slots_file_suffix = ".csv"
         self.slots = []  # In-memory list of slot dictionaries
-        self.headers = ['id', 'provider', 'duration', 'notes', 'matched_patient_id', 'matched_patient_name'] # Define CSV headers
+        self.headers = ['id', 'provider', 'duration', 'slot_date', 'notes', 'matched_patient_id', 'matched_patient_name'] # Define CSV headers
 
         os.makedirs(self.backup_dir, exist_ok=True)
         self._load_slots()
@@ -57,11 +57,24 @@ class CancelledSlotManager:
                                  'id': row.get('matched_patient_id'),
                                  'name': row.get('matched_patient_name')
                              }
+                        # Parse slot_date and derive day_of_week
+                        slot_date_obj = None
+                        slot_day_of_week = None
+                        slot_date_str = row.get('slot_date')
+                        if slot_date_str:
+                            try:
+                                slot_date_obj = date.fromisoformat(slot_date_str)
+                                # Monday is 0, Sunday is 6. We want names.
+                                slot_day_of_week = slot_date_obj.strftime('%A')
+                            except ValueError:
+                                logging.warning(f"Could not parse slot_date '{slot_date_str}' for slot ID {row.get('id')}. Setting to None.")
                         # Build the slot dictionary using known headers, handling missing optional ones
                         slot = {
                             'id': row.get('id'), # Required
                             'provider': row.get('provider'), # Required (assuming)
                             'duration': row.get('duration'), # Required (assuming)
+                            'slot_date': slot_date_obj, # Store date object
+                            'slot_day_of_week': slot_day_of_week, # Store derived day name
                             'notes': row.get('notes', ''), # Optional
                             'matched_patient': matched_patient # Reconstructed or None
                         }
@@ -101,11 +114,12 @@ class CancelledSlotManager:
                 writer = csv.DictWriter(csvfile, fieldnames=self.headers)
                 writer.writeheader()
                 for slot in self.slots:
-                    # Prepare row, flattening matched_patient
+                    # Prepare row, flattening matched_patient and formatting date
                     row_data = {
                         'id': slot.get('id'),
                         'provider': slot.get('provider'),
                         'duration': slot.get('duration'),
+                        'slot_date': slot.get('slot_date').isoformat() if isinstance(slot.get('slot_date'), date) else '',
                         'notes': slot.get('notes', ''),
                         'matched_patient_id': slot.get('matched_patient', {}).get('id', '') if slot.get('matched_patient') else '',
                         'matched_patient_name': slot.get('matched_patient', {}).get('name', '') if slot.get('matched_patient') else ''
@@ -116,19 +130,23 @@ class CancelledSlotManager:
         except Exception as e:
             logging.error(f"Error saving cancelled slots to {filepath}: {e}", exc_info=True)
 
-    def add_slot(self, provider, duration, notes=''):
-        """Adds a new cancelled slot and saves the list."""
+    def add_slot(self, provider: str, duration: str, slot_date: date, notes: str = ''):
+        """Adds a new cancelled slot with date and saves the list."""
         new_id = str(uuid.uuid4())
+        day_of_week = slot_date.strftime('%A') if isinstance(slot_date, date) else None
+
         new_slot = {
             'id': new_id,
             'provider': provider,
             'duration': str(duration), # Ensure duration is stored as string
-            'notes': notes, # Use the provided notes, or the default ''
+            'slot_date': slot_date, # Store date object
+            'slot_day_of_week': day_of_week, # Store derived day name
+            'notes': notes,
             'matched_patient': None
         }
         self.slots.append(new_slot)
         self._save_slots()
-        logging.debug(f"Added slot {new_id}. Total slots: {len(self.slots)}")
+        logging.debug(f"Added slot {new_id} for {slot_date} ({day_of_week}). Total slots: {len(self.slots)}")
         return new_slot # Return the created slot with its ID
 
     def remove_slot(self, appointment_id):
@@ -142,9 +160,11 @@ class CancelledSlotManager:
         logging.warning(f"Attempted to remove non-existent slot ID: {appointment_id}")
         return False
 
-    def update_slot(self, appointment_id, provider, duration, notes):
-        """Updates details of an existing slot and saves the list."""
+    def update_slot(self, appointment_id: str, provider: str, duration: str, slot_date: date, notes: str):
+        """Updates details (including date) of an existing slot and saves the list."""
         updated = False
+        day_of_week = slot_date.strftime('%A') if isinstance(slot_date, date) else None
+
         for i, slot in enumerate(self.slots):
             if slot.get('id') == appointment_id:
                  # Don't allow updating matched slots through this method
@@ -154,12 +174,14 @@ class CancelledSlotManager:
 
                  self.slots[i]['provider'] = provider
                  self.slots[i]['duration'] = str(duration) # Ensure duration is string
+                 self.slots[i]['slot_date'] = slot_date # Update date object
+                 self.slots[i]['slot_day_of_week'] = day_of_week # Update derived day name
                  self.slots[i]['notes'] = notes
                  updated = True
                  break
         if updated:
             self._save_slots()
-            logging.debug(f"Updated slot {appointment_id}.")
+            logging.debug(f"Updated slot {appointment_id} to {slot_date} ({day_of_week}).")
         else:
              logging.warning(f"Attempted to update non-existent or matched slot ID: {appointment_id}")
         return updated
@@ -191,7 +213,7 @@ class CancelledSlotManager:
         """Retrieves a single slot by its ID."""
         for slot in self.slots:
             if slot.get('id') == appointment_id:
-                return slot
+                return slot # Returns the dict with slot_date and slot_day_of_week
         return None
 
     def get_all_slots(self):

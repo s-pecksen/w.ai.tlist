@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, Column, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
@@ -126,9 +126,8 @@ def index():
         # Update wait times first
         waitlist_manager.update_wait_times()
         
-        # Get all providers (not just active ones)
+        # Get all providers (list of dictionaries {'name': 'Provider Name'})
         all_providers = provider_manager.get_provider_list()
-        active_providers = provider_manager.get_active_providers()
         
         # Check if we have any providers at all
         has_providers = len(all_providers) > 0
@@ -143,7 +142,7 @@ def index():
                 wait_minutes = -wait_time_to_minutes(x.get('wait_time', '0 minutes'))
                 is_scheduled = x.get('status') == 'scheduled'
                 # Correctly check for emergency type using .get()
-                is_emergency = x.get('appointment_type', '').lower() == 'emergency'
+                is_emergency = x.get('appointment_type', '').lower() == 'emergency_exam' # Match exact type
                 # Sort order: Scheduled (True) last, Emergency (False means emergency comes first) first, then by wait time
                 return (is_scheduled, not is_emergency, wait_minutes)
             except Exception as e:
@@ -155,13 +154,11 @@ def index():
         # Show a different message if there are providers but they're all inactive
         if not has_providers:
             flash('Please upload a list of Provider names to proceed', 'warning')
-        elif not active_providers:
-            flash('All providers are currently marked as inactive. Please activate at least one provider.', 'warning')
         
         logging.debug("Index route: Rendering index.html")
         return render_template('index.html', 
                               waitlist=sorted_waitlist, 
-                              providers=active_providers,
+                              providers=all_providers,
                               has_providers=has_providers)
     except Exception as e:
         logging.error(f"Exception in index route: {e}", exc_info=True)
@@ -180,9 +177,12 @@ def add_patient():
     appointment_type = request.form.get('appointment_type')
     duration = request.form.get('duration')
     provider = request.form.get('provider')
-    
+    # Get the list of selected availability days
+    availability_days = request.form.getlist('availability_days')
+    logging.debug(f"Received availability days: {availability_days}") # Log received days
+
     if name and phone:  # Basic validation
-        # Use the waitlist manager to add the patient
+        # Use the waitlist manager to add the patient, including availability
         waitlist_manager.add_patient(
             name=name,
             phone=phone,
@@ -191,7 +191,8 @@ def add_patient():
             urgency=urgency,
             appointment_type=appointment_type,
             duration=duration,
-            provider=provider
+            provider=provider,
+            availability_days=availability_days # Pass the list
         )
         flash('Patient added successfully.', 'success') # Add feedback
     else:
@@ -253,21 +254,24 @@ def validate_duration(value):
 
 def validate_provider(value):
     # Get the list of valid providers from the provider manager
-    valid_providers = ['no preference'] + [p['name'].lower() for p in provider_manager.get_provider_list()]
-    
+    # Now retrieves dictionaries [{'name': 'Provider Name'}]
+    valid_providers_list = provider_manager.get_provider_list()
+    valid_provider_names = ['no preference'] + [p.get('name', '').lower() for p in valid_providers_list]
+
     # Convert empty string or None to 'no preference'
-    if not value or value.lower() == 'no preference':
+    provider_value_lower = (value or '').strip().lower()
+    if not provider_value_lower or provider_value_lower == 'no preference':
         return 'no preference'
-    
+
     # Check if the provided value is in our list (case-insensitive)
-    for provider in valid_providers:
-        if provider == value.lower():
-            # Return the correctly cased name from the manager if possible
-            for p_dict in provider_manager.get_provider_list():
-                if p_dict['name'].lower() == provider:
-                    return p_dict['name']
-            return provider # Fallback to lowercased if not found (shouldn't happen)
-    
+    if provider_value_lower in valid_provider_names:
+         # Find the original casing from the manager's list
+        for p_dict in valid_providers_list:
+            if p_dict.get('name', '').lower() == provider_value_lower:
+                return p_dict['name'] # Return correctly cased name
+        # Fallback if somehow not found after check (shouldn't happen)
+        return value.strip()
+
     # Default to 'no preference' if not found
     return 'no preference'
 
@@ -278,13 +282,13 @@ def validate_urgency(value):
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
     print("--- DEBUG: /upload_csv route hit ---")
-    # Check if we have providers
-    if not provider_manager.get_active_providers():
-        print("--- DEBUG: No active providers found ---")
+    # Check if we have providers (removed active check)
+    if not provider_manager.get_provider_list():
+        print("--- DEBUG: No providers found ---")
         flash('Please add providers before uploading patient data', 'warning')
         return redirect(url_for('index'))
     
-    print("--- DEBUG: Active providers check passed ---")
+    print("--- DEBUG: Providers check passed ---")
     if 'csv_file' not in request.files:
         print("--- DEBUG: 'csv_file' not in request.files ---")
         flash('No file selected for upload.', 'warning')
@@ -350,29 +354,32 @@ def upload_csv():
                  datetime_str = row.get('date_time_entered', '').strip()
                  parsed_timestamp = None
                  if datetime_str:
-                     # Add %# format for potential missing leading zeros on Windows
-                     possible_formats = [
-                         '%m/%d/%Y %H:%M:%S',    # Standard MM/DD/YYYY HH:MM:SS
-                         '%#m/%#d/%Y %#H:%M:%S', # Attempt M/D/YYYY H:MM:SS (Windows?)
-                         '%m/%d/%y %I:%M %p',    # MM/DD/YY HH:MM AM/PM
-                         '%m/%d/%Y %I:%M %p'     # MM/DD/YYYY HH:MM AM/PM
-                     ]
-                     # First, try ISO format
+                     # Try ISO format first
                      try:
                          parsed_timestamp = datetime.fromisoformat(datetime_str)
                      except ValueError:
-                         # If ISO fails, try other formats
+                         # Fallback: Add other common formats if needed
+                         possible_formats = [
+                             '%m/%d/%Y %H:%M:%S',    # MM/DD/YYYY HH:MM:SS
+                             '%#m/%#d/%Y %#H:%M:%S', # Windows M/D/YYYY H:MM:SS
+                             '%m/%d/%y %I:%M %p',    # MM/DD/YY hh:MM AM/PM
+                             '%m/%d/%Y %I:%M %p'     # MM/DD/YYYY hh:MM AM/PM
+                         ]
                          for fmt in possible_formats:
                              try:
                                  parsed_timestamp = datetime.strptime(datetime_str, fmt)
-                                 break # Stop trying formats if one works
+                                 break
                              except ValueError:
-                                 continue # Try next format
-
-                     if not parsed_timestamp:
-                         # Updated print statement to reflect ISO attempt
-                         print(f"--- DEBUG: Could not parse timestamp '{datetime_str}' for patient {row.get('name')} using ISO or formats {possible_formats} ---")
+                                 continue
+                         if not parsed_timestamp:
+                             print(f"--- DEBUG: Could not parse timestamp '{datetime_str}' for patient {row.get('name')} using ISO or formats {possible_formats} ---")
                  # --- End timestamp parsing ---
+
+                 # --- Parse availability_days from CSV ---
+                 availability_str = row.get('availability_days', '')
+                 availability_list = [day.strip() for day in availability_str.split(',') if day.strip()] if availability_str else []
+                 # --- End availability_days parsing ---
+
 
                  # Add data for non-duplicate patient
                  patients_to_add.append({
@@ -384,22 +391,28 @@ def upload_csv():
                     'appointment_type': validate_appointment_type(row.get('appointment_type')),
                     'duration': validate_duration(row.get('duration', '30')),
                     'provider': validate_provider(provider_value), # Use combined value
-                    'timestamp': parsed_timestamp # Add parsed timestamp here
+                    'timestamp': parsed_timestamp, # Add parsed timestamp here
+                    'availability_days': availability_list # Add parsed availability
                  })
                  added_count += 1
                  # Add to existing set immediately to prevent duplicates *within* the CSV
-                 existing_patients_set.add((csv_name, csv_phone)) 
-            
+                 existing_patients_set.add((csv_name, csv_phone))
+
             print(f"--- DEBUG: Finished reading rows. Added: {added_count}, Skipped: {skipped_count} ---") 
 
             # Now add all collected patients (manager handles appending internally)
             if patients_to_add:
                 print(f"--- DEBUG: Adding {len(patients_to_add)} new patients to manager ---") 
                 for p_data in patients_to_add:
-                    # Extract timestamp before passing the rest as kwargs
-                    patient_timestamp = p_data.pop('timestamp', None) 
+                    # Extract timestamp and availability before passing the rest as kwargs
+                    patient_timestamp = p_data.pop('timestamp', None)
+                    patient_availability = p_data.pop('availability_days', [])
                     # This appends to self.patients in the manager
-                    waitlist_manager.add_patient(timestamp=patient_timestamp, **p_data) # Pass timestamp separately
+                    waitlist_manager.add_patient(
+                        timestamp=patient_timestamp,
+                        availability_days=patient_availability, # Pass separately
+                        **p_data
+                    )
 
             print("--- DEBUG: Finished adding patients to manager ---")
             # --- Update Flash Message ---
@@ -415,7 +428,7 @@ def upload_csv():
 
         except Exception as e:
             print(f"--- DEBUG: Exception caught in /upload_csv: {str(e)} ---") # Added print
-            print(f"Error processing patient CSV: {str(e)}")
+            logging.error(f"Error processing patient CSV: {str(e)}", exc_info=True) # Use logging.error
             flash(f'Error processing CSV file: {str(e)}', 'danger')
             
     else:
@@ -437,8 +450,8 @@ def add_provider():
     last_initial = request.form.get('last_initial')
     
     if first_name:
-        # Set is_active to True by default
-        success = provider_manager.add_provider(first_name, last_initial, is_active=True)
+        # Call add_provider without is_active
+        success = provider_manager.add_provider(first_name, last_initial)
         if success:
             flash('Provider added successfully', 'success')
         else:
@@ -478,137 +491,182 @@ def upload_providers_csv():
         try:
             # Process the uploaded CSV
             stream = StringIO(file.stream.read().decode("UTF8"), newline=None)
-            csv_data = csv.reader(stream)
-            
-            # Skip header row if exists
-            header = next(csv_data, None)
-            
+            # Expecting only 'name' column, handle potential extra columns gracefully
+            reader = csv.DictReader(stream) # Let DictReader determine headers
+
             count = 0
-            for row in csv_data:
-                if len(row) >= 1 and row[0].strip():
-                    # Format: name, is_active (optional)
-                    name_parts = row[0].strip().split()
+            added_names = set() # Keep track of names added in this upload
+
+            for row in reader:
+                 provider_name_raw = row.get('name', '').strip()
+                 if provider_name_raw:
+                    # Simple split assuming "First LastInitial" format if space exists
+                    name_parts = provider_name_raw.split(maxsplit=1)
                     first_name = name_parts[0]
                     last_initial = name_parts[1] if len(name_parts) > 1 else None
-                    
-                    # Set is_active to True by default if not specified
-                    is_active = True
-                    if len(row) >= 2:
-                        is_active = row[1].lower() in ['true', 'yes', '1', 'y', 't']
-                    
-                    if provider_manager.add_provider(first_name, last_initial, is_active):
-                        count += 1
-            
-            if count > 0:
-                flash(f'Successfully added {count} providers', 'success')
-            else:
-                flash('No new providers were added', 'info')
-                
-        except Exception as e:
-            flash(f'Error processing CSV: {str(e)}', 'danger')
-    
-    # Redirect back to providers list
-    return redirect(url_for('list_providers') + '#provider-list') # Added fragment
 
-@app.route('/providers/toggle_active/<provider_name>', methods=['POST'])
-def toggle_provider_active(provider_name):
-    success = provider_manager.toggle_provider_active(provider_name)
-    if success:
-        flash(f'Provider status updated successfully', 'success')
-    else:
-        flash('Provider not found', 'danger')
+                    # Construct the name as the manager expects for checking
+                    full_name_check = first_name
+                    if last_initial:
+                        full_name_check += f" {last_initial}"
+
+                    # Check if already added in this batch to avoid duplicate messages
+                    if full_name_check.lower() not in added_names:
+                         # Call add_provider without is_active
+                        if provider_manager.add_provider(first_name, last_initial):
+                            count += 1
+                            added_names.add(full_name_check.lower()) # Add to set after successful add
+
+
+            if count > 0:
+                flash(f'Successfully added {count} new providers', 'success')
+            else:
+                flash('No new providers were added (duplicates or empty names skipped)', 'info')
+
+        except Exception as e:
+             logging.error(f"Error processing provider CSV: {e}", exc_info=True)
+             flash(f'Error processing CSV: {str(e)}', 'danger')
+
     # Redirect back to providers list
     return redirect(url_for('list_providers') + '#provider-list') # Added fragment
 
 @app.route('/cancelled_appointments', methods=['GET'])
 def list_cancelled_appointments():
-    # Update wait times first
-    waitlist_manager.update_wait_times()
-
-    # Get all providers
-    providers = provider_manager.get_provider_list()
+    # Get all providers (list of dictionaries)
+    all_providers = provider_manager.get_provider_list()
     # Get slots from the manager
     current_slots = slot_manager.get_all_slots()
 
+    # Sort slots by date
+    current_slots.sort(key=lambda s: s.get('slot_date') or date.min, reverse=True)
+
+
     return render_template('cancelled_appointments.html',
-                          providers=providers,
-                          cancelled_appointments=current_slots, # Use data from manager
+                          providers=all_providers, # Pass the full list of dicts
+                          cancelled_appointments=current_slots,
                           eligible_patients=None,
                           current_appointment=None)
 
+# This route seems redundant with add_cancelled_appointment, consider removing or merging?
+# For now, ensure it uses the full provider list if kept
 @app.route('/create_slot_and_find_matches', methods=['POST'])
 def create_slot_and_find_matches():
     """Creates a cancelled slot using the manager and finds matches."""
     provider = request.form.get('provider')
     duration = request.form.get('duration')
+    slot_date_str = request.form.get('slot_date') # Get date string
+    notes = request.form.get('notes', '')
+
+    # --- Date Parsing and Validation ---
+    slot_date_obj = None
+    if slot_date_str:
+        try:
+            slot_date_obj = date.fromisoformat(slot_date_str)
+        except ValueError:
+            flash('Invalid date format provided. Please use YYYY-MM-DD.', 'danger')
+            return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
+    else:
+        flash('Date is required for the cancelled slot.', 'danger')
+        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
+    # --- End Date Handling ---
+
 
     if not provider or not duration:
         flash('Please select both a provider and a duration.', 'warning')
-        # Redirect back to the main list if form validation fails
-        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form') # Added fragment
+        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
 
-    # 1. Create the slot using the manager
+    # 1. Create the slot using the manager, passing the date object
     new_appointment = slot_manager.add_slot(
         provider=provider,
-        duration=duration
+        duration=duration,
+        slot_date=slot_date_obj, # Pass date object
+        notes=notes
     )
+    if not new_appointment:
+         flash('Failed to create appointment slot.', 'danger')
+         # Maybe redirect differently if creation fails?
+         return redirect(url_for('list_cancelled_appointments'))
+
     logging.debug(f"Created and saved new cancelled slot via manager: {new_appointment.get('id')}")
 
-    # 2. Find eligible patients for this *new* slot
+    # 2. Find eligible patients for this *new* slot using the helper
     eligible_patients = find_eligible_patients(new_appointment) # Pass the dict returned by manager
 
-    # Get providers for rendering the target template
-    providers = provider_manager.get_provider_list()
-    # Get all current slots from manager for the list display
+    # Get all providers for rendering the target template
+    all_providers = provider_manager.get_provider_list()
+    # Get all current slots from manager for the list display, sorted
     current_slots = slot_manager.get_all_slots()
+    current_slots.sort(key=lambda s: s.get('slot_date') or date.min, reverse=True)
+
 
     # 3. Render the template
     return render_template('cancelled_appointments.html',
-                           providers=providers,
+                           providers=all_providers, # Pass the full list
                            cancelled_appointments=current_slots, # Pass the updated list from manager
                            eligible_patients=eligible_patients,
                            current_appointment=new_appointment, # Pass the newly created slot dict
-                           is_temporary_search=False,
                            focus_element_id='eligible-patients-list' if eligible_patients else 'add-slot-form') # Suggestion for JS focus
+
 
 @app.route('/add_cancelled_appointment', methods=['POST'])
 def add_cancelled_appointment():
     provider = request.form.get('provider')
     duration = request.form.get('duration')
+    slot_date_str = request.form.get('slot_date') # Get date string
     notes = request.form.get('notes', '')
 
+    # --- Date Parsing and Validation ---
+    slot_date_obj = None
+    if slot_date_str:
+        try:
+            slot_date_obj = date.fromisoformat(slot_date_str)
+        except ValueError:
+            flash('Invalid date format provided. Please use YYYY-MM-DD.', 'danger')
+            return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
+    else:
+        flash('Date is required for the cancelled slot.', 'danger')
+        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
+    # --- End Date Handling ---
+
     if not provider or not duration:
-        flash('Please fill in all required fields', 'danger')
+        flash('Provider and Duration are required', 'danger')
         return redirect(url_for('list_cancelled_appointments') + '#add-slot-form') # Added fragment
 
-    # Create appointment object using the manager
-    appointment = slot_manager.add_slot(provider, duration, notes)
+    # Create appointment object using the manager, passing the date object
+    appointment = slot_manager.add_slot(provider, duration, slot_date_obj, notes)
 
-    # Find eligible patients for this appointment
+    if not appointment:
+        flash('Failed to create appointment slot.', 'danger')
+        return redirect(url_for('list_cancelled_appointments'))
+
+
+    # Find eligible patients for this appointment using the helper
     eligible_patients = find_eligible_patients(appointment)
 
     # --- Logging ---
     logging.debug(f"Rendering cancelled_appointments template from add_cancelled_appointment.")
-    logging.debug(f"Current appointment ID: {appointment.get('id')}")
+    logging.debug(f"Current appointment ID: {appointment.get('id')}, Date: {appointment.get('slot_date')}")
     if not appointment.get('id'):
          logging.error("!!! CRITICAL: appointment['id'] is missing after adding via manager in add_cancelled_appointment !!!")
     # --- End Logging ---
 
-    # Get all slots for rendering
+    # Get all slots for rendering, sorted
     current_slots = slot_manager.get_all_slots()
+    current_slots.sort(key=lambda s: s.get('slot_date') or date.min, reverse=True)
+    all_providers = provider_manager.get_provider_list() # Get all providers
 
     # Render template with eligible patients
     return render_template('cancelled_appointments.html',
-                          providers=provider_manager.get_provider_list(),
+                          providers=all_providers, # Pass the full list
                           cancelled_appointments=current_slots, # Use list from manager
                           eligible_patients=eligible_patients,
                           current_appointment=appointment,
-                          is_temporary_search=False,
                           focus_element_id='eligible-patients-list' if eligible_patients else 'add-slot-form') # Suggestion for JS focus
+
 
 @app.route('/find_matches_for_appointment/<appointment_id>', methods=['POST'])
 def find_matches_for_appointment(appointment_id):
-    # Find the appointment using the manager
+    # Find the appointment using the manager (will include date/day)
     appointment = slot_manager.get_slot_by_id(appointment_id)
 
     if not appointment:
@@ -620,74 +678,70 @@ def find_matches_for_appointment(appointment_id):
         flash('This appointment is already matched with a patient', 'info')
         return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
-    # Find eligible patients
+    # Find eligible patients using the helper function
     eligible_patients = find_eligible_patients(appointment)
 
     # --- Logging ---
     logging.debug(f"Rendering cancelled_appointments template from find_matches_for_appointment.")
-    logging.debug(f"Current appointment ID: {appointment.get('id')}")
+    logging.debug(f"Current appointment ID: {appointment.get('id')}, Date: {appointment.get('slot_date')}")
     if not appointment.get('id'):
          logging.error("!!! CRITICAL: appointment['id'] is missing after getting from manager in find_matches_for_appointment !!!")
     # --- End Logging ---
 
-    # Get all slots for rendering
+    # Get all slots for rendering, sorted
     current_slots = slot_manager.get_all_slots()
+    current_slots.sort(key=lambda s: s.get('slot_date') or date.min, reverse=True)
+    all_providers = provider_manager.get_provider_list() # Get all providers
 
     # Render template with eligible patients
     return render_template('cancelled_appointments.html',
-                        providers=provider_manager.get_provider_list(),
+                        providers=all_providers, # Pass the full list
                         cancelled_appointments=current_slots, # Use list from manager
                         eligible_patients=eligible_patients,
-                        current_appointment=appointment,
-                        is_temporary_search=False,
+                        current_appointment=appointment, # Pass the appointment dict
                         focus_element_id='eligible-patients-list' if eligible_patients else f'slot-{appointment_id}') # Suggestion for JS focus
+
 
 @app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
 def assign_appointment(patient_id, appointment_id):
     """Assign a patient to a cancelled appointment slot and remove from waitlist"""
     logging.debug(f"Entering assign_appointment for patient_id={patient_id}, appointment_id={appointment_id}")
-    # Update wait times
+    # Update wait times first (may not be strictly needed here but harmless)
     waitlist_manager.update_wait_times()
 
-    # Get all patients
-    all_patients = waitlist_manager.get_all_patients()
-
     # Find the patient
-    patient = None
-    for p in all_patients:
-        if p.get('id') == patient_id:
-            patient = p
-            break
+    patient = waitlist_manager.get_patient_by_id(patient_id) # Assuming manager has/will have this method
 
-    if not patient:
-        flash('Patient not found', 'danger')
-        logging.debug("Patient not found, redirecting")
-        # Redirect back to the list, maybe focused on the specific (now known to be problematic) appointment
-        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
+    if not patient: # Check if patient exists
+        flash('Patient not found on waitlist.', 'danger')
+        logging.warning(f"Assign appointment: Patient ID {patient_id} not found.")
+        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}')
 
     # Find the appointment using the manager
     appointment = slot_manager.get_slot_by_id(appointment_id)
 
     if not appointment:
-        flash('Appointment not found', 'danger')
-        logging.debug("Appointment not found, redirecting")
-        # Redirect back to the main list if appointment is gone
-        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
+        flash('Appointment slot not found.', 'danger')
+        logging.warning(f"Assign appointment: Slot ID {appointment_id} not found.")
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
 
-    # Check if already matched
+    # Check if slot already matched
     if appointment.get('matched_patient'):
         flash(f'Slot already assigned to {appointment["matched_patient"].get("name", "another patient")}.', 'warning')
-        logging.debug("Slot already matched, redirecting")
-        # Redirect back to the list, focused on the specific appointment
-        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
+        logging.debug(f"Assign appointment: Slot {appointment_id} already matched.")
+        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}')
 
-    # Check if patient is eligible (using the same helper function)
-    match_score = calculate_match_score(patient, appointment) # calculate_match_score uses dicts, compatible
-    if match_score == 'none':
-        flash(f'{patient.get("name", "Unknown Patient")} is not eligible for this appointment slot.', 'danger')
-        logging.debug("Patient not eligible, redirecting")
-        # Redirect back to the list, focused on the specific appointment
-        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
+    # --- Eligibility Check using Helper ---
+    # Re-find eligible patients for *this specific slot* to confirm this patient is still eligible
+    eligible_patients_for_slot = find_eligible_patients(appointment)
+    is_eligible = any(p.get('id') == patient_id for p in eligible_patients_for_slot)
+
+    if not is_eligible:
+        flash(f'{patient.get("name", "Unknown Patient")} is no longer eligible for this appointment slot (check duration, provider, or day).', 'danger')
+        logging.debug(f"Assign appointment: Patient {patient_id} not eligible for slot {appointment_id}.")
+        return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}')
+    # --- End Eligibility Check ---
+
 
     # Attempt to remove patient from waitlist FIRST
     try:
@@ -703,17 +757,23 @@ def assign_appointment(patient_id, appointment_id):
                 flash(f'Successfully assigned {patient.get("name", "Unknown Patient")} to the appointment and removed them from the waitlist.', 'success')
                 target_url = url_for('list_cancelled_appointments') + '#cancelled-slots-list' # Added fragment
                 logging.debug(f"Patient removed and assigned successfully, redirecting to: {target_url}")
+                # --- Save Backup After Successful Assignment ---
+                waitlist_manager.save_backup()
+                # slot_manager already saves on assign
+                # --- End Save Backup ---
                 return redirect(target_url)
             else:
-                # This case means patient was removed but slot assignment failed (e.g., slot disappeared between check and assignment)
-                flash('Patient removed from waitlist, but failed to assign to the slot (slot may have been removed). Please check the lists.', 'warning')
-                logging.error(f"Removed patient {patient_id} but failed to assign to slot {appointment_id}")
-                # Redirect back to the list
+                # This case means patient was removed but slot assignment failed (e.g., slot disappeared)
+                # CRITICAL: Need to add patient back or handle this state
+                flash('Patient removed from waitlist, but failed to assign to the slot (slot may have been removed). Please manually verify status.', 'danger')
+                logging.error(f"Removed patient {patient_id} but failed to assign to slot {appointment_id}. Patient needs manual re-addition or verification.")
+                # Consider adding the patient back here if possible, or provide clearer instructions
+                # For now, redirect back to the list
                 return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
         else:
-            # Patient removal failed
-            flash('Failed to remove patient from waitlist. Assignment cancelled.', 'danger')
-            logging.debug("Patient removal failed, assignment cancelled, redirecting")
+            # Patient removal failed (e.g., patient wasn't actually on waitlist anymore)
+            flash('Failed to remove patient from waitlist (they may have already been scheduled or removed). Assignment cancelled.', 'danger')
+            logging.debug(f"Patient removal failed for ID {patient_id}, assignment cancelled, redirecting")
             # Redirect back to the list
             return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
     except Exception as e:
@@ -722,65 +782,35 @@ def assign_appointment(patient_id, appointment_id):
         # Redirect back to the list
         return redirect(url_for('list_cancelled_appointments') + f'#slot-{appointment_id}') # Added fragment
 
-def calculate_match_score(patient, appointment):
-    score = 0
-    provider_match = False
-    duration_match = False
 
-    # Check provider match
-    if patient.get('provider', '').lower() == appointment['provider'].lower():
-        provider_match = True
-        score += 2
-    elif patient.get('provider', '').lower() == 'no preference' or not patient.get('provider'):
-        provider_match = True
-        score += 1
+# This helper function seems redundant with the manager's method, let's remove it
+# def calculate_match_score(patient, appointment): ...
 
-    # Check duration match
-    try:
-        # Ensure comparison happens with strings if manager stores duration as string
-        patient_duration = str(patient.get('duration', '30'))
-        appointment_duration = str(appointment['duration'])
-    except (ValueError, TypeError):
-        patient_duration = '30' # Default if conversion fails
-        appointment_duration = '30'
 
-    if patient_duration == appointment_duration:
-        duration_match = True
-        score += 2
-    # Note: Removed the < check as the new manager logic requires exact match
-    # elif patient_duration < appointment_duration:
-    #     duration_match = True
-    #     score += 1
-
-    # Perfect match requires exact provider (or no pref) AND exact duration based on new manager logic
-    if provider_match and duration_match:
-        return 'perfect'
-    # Partial might still be useful conceptually, but the manager only returns perfect matches now
-    elif provider_match or duration_match:
-        return 'partial'
-    else:
-        return 'none'
-
-def find_eligible_patients(cancelled_appointment):
+def find_eligible_patients(cancelled_appointment: dict) -> list:
     """
     Finds eligible patients for a cancelled slot by calling the waitlist manager.
-    Uses the manager's logic for filtering (provider, duration) and sorting
-    (emergency, date, urgency).
+    Uses the manager's logic for filtering (provider, duration, day) and sorting.
     """
     provider_name = cancelled_appointment.get('provider')
     slot_duration = cancelled_appointment.get('duration')
+    # Get the day of the week from the appointment dict (added by manager)
+    slot_day_of_week = cancelled_appointment.get('slot_day_of_week')
 
     if not provider_name or not slot_duration:
         logging.error("Cannot find eligible patients: Missing provider or duration in cancelled_appointment dict.")
         return [] # Return empty list if essential info is missing
 
-    # Call the waitlist manager's method to get the filtered and sorted list
-    eligible_patients = waitlist_manager.find_eligible_patients(provider_name, str(slot_duration)) # Ensure duration is passed as string
+    # Call the waitlist manager's method, passing the day of the week
+    eligible_patients = waitlist_manager.find_eligible_patients(
+        provider_name,
+        str(slot_duration), # Ensure duration is passed as string
+        slot_day_of_week # Pass the day name
+    )
 
-    # The manager now returns only "perfect" matches according to its criteria,
-    # already sorted correctly. No need for further filtering or sorting here.
-    logging.debug(f"Found {len(eligible_patients)} eligible patients via manager for slot {cancelled_appointment.get('id')}")
+    logging.debug(f"Found {len(eligible_patients)} eligible patients via manager for slot {cancelled_appointment.get('id')} on {slot_day_of_week}")
     return eligible_patients
+
 
 @app.route('/remove_cancelled_slot/<appointment_id>', methods=['POST'])
 def remove_cancelled_slot(appointment_id):
@@ -813,15 +843,17 @@ def edit_cancelled_slot(appointment_id):
         flash('Cannot edit a slot that is already matched.', 'warning')
         return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
-    providers = provider_manager.get_provider_list()
+    all_providers = provider_manager.get_provider_list() # Use all providers
+    # Pass the date object to the template for pre-filling the date input
     return render_template('edit_cancelled_slot.html',
                            appointment=appointment_to_edit,
-                           providers=providers)
+                           providers=all_providers) # Pass full list
+
 
 @app.route('/update_cancelled_slot/<appointment_id>', methods=['POST'])
 def update_cancelled_slot(appointment_id):
-    """Updates the details of a cancelled appointment slot using the manager."""
-    # Get original slot first to pass back to template on validation failure
+    """Updates the details (including date) of a cancelled appointment slot using the manager."""
+    # Get original slot first to potentially pass back to template on validation failure
     appointment_to_update = slot_manager.get_slot_by_id(appointment_id)
 
     if not appointment_to_update:
@@ -836,19 +868,48 @@ def update_cancelled_slot(appointment_id):
     # Get updated data from form
     provider = request.form.get('provider')
     duration = request.form.get('duration')
+    slot_date_str = request.form.get('slot_date') # Get date string
     notes = request.form.get('notes', '')
 
-    # Basic validation
+    # --- Date Parsing and Validation ---
+    slot_date_obj = None
+    if slot_date_str:
+        try:
+            slot_date_obj = date.fromisoformat(slot_date_str)
+        except ValueError:
+            flash('Invalid date format provided. Please use YYYY-MM-DD.', 'danger')
+            # Re-render edit page on validation failure
+            all_providers = provider_manager.get_provider_list() # Get all providers
+            return render_template('edit_cancelled_slot.html',
+                                   appointment=appointment_to_update, # Pass original data back
+                                   providers=all_providers) # Pass full list
+    else:
+        flash('Date is required for the cancelled slot.', 'danger')
+        # Re-render edit page on validation failure
+        all_providers = provider_manager.get_provider_list() # Get all providers
+        return render_template('edit_cancelled_slot.html',
+                               appointment=appointment_to_update, # Pass original data back
+                               providers=all_providers) # Pass full list
+    # --- End Date Handling ---
+
+
+    # Basic validation for provider/duration
     if not provider or not duration:
         flash('Provider and Duration are required.', 'danger')
         # Re-render edit page on validation failure - no redirect change needed here
-        providers = provider_manager.get_provider_list()
+        all_providers = provider_manager.get_provider_list() # Get all providers
         return render_template('edit_cancelled_slot.html',
                                appointment=appointment_to_update, # Use the dict fetched earlier
-                               providers=providers)
+                               providers=all_providers) # Pass full list
 
-    # Update using the manager
-    updated = slot_manager.update_slot(appointment_id, provider, duration, notes)
+    # Update using the manager, passing the date object
+    updated = slot_manager.update_slot(
+        appointment_id,
+        provider,
+        duration,
+        slot_date_obj, # Pass date object
+        notes
+    )
 
     if updated:
         flash('Cancelled appointment slot updated successfully.', 'success')
@@ -860,27 +921,31 @@ def update_cancelled_slot(appointment_id):
     # Redirect back to the list after successful update or if update fails
     return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
 
+
 if __name__ == '__main__':
-    # Ensure provider.csv exists (even if empty)
-    if not os.path.exists('provider.csv'):
-        with open('provider.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['name', 'is_active'])
-    
+    # Ensure provider.csv exists (even if empty) - Handled by ProviderManager init now
+
+    # --- Add get_patient_by_id to PatientWaitlistManager if missing ---
+    # This is a placeholder; add the actual method to the class if needed
+    if not hasattr(waitlist_manager, 'get_patient_by_id'):
+        def get_patient_by_id_temp(self, patient_id):
+            for p in self.patients:
+                if p.get('id') == patient_id:
+                    return p
+            return None
+        # Monkey-patch the method onto the instance for this run
+        import types
+        waitlist_manager.get_patient_by_id = types.MethodType(get_patient_by_id_temp, waitlist_manager)
+        print("--- NOTE: Temporarily added get_patient_by_id to Waitlist Manager ---")
+    # --- End temporary addition ---
+
     # Load initial data before starting the server - Handled by manager init
-    # try:
-        # existing_patients = waitlist_manager.get_all_patients()
-        # if not existing_patients:
-            # print("Migrating existing waitlist to PatientWaitlistManager...")
-            # waitlist_manager.import_from_list(waitlist_manager.get_all_patients()) # This line also had an issue, using get_all_patients as input
-    # except Exception as e:
-        # print(f"Error during startup: {str(e)}")
-    
+
     # --- Add this line to print the URL map ---
     print("--- Registered URL Routes ---")
     print(app.url_map)
     print("--- End Registered URL Routes ---")
     # --- End added line ---
-    
+
     print("Starting Flask application...")
     app.run(debug=True, host="0.0.0.0", port=7776)

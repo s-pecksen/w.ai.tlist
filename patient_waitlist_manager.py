@@ -87,6 +87,12 @@ class PatientWaitlistManager:
                     else: # Handle case where timestamp column might be missing or empty
                          row['timestamp'] = datetime.datetime.now() # Fallback if column missing/empty
 
+                    # --- Load availability_days ---
+                    # Stored as comma-separated string in CSV, convert to list
+                    availability_str = row.get('availability_days', '')
+                    row['availability_days'] = [day.strip() for day in availability_str.split(',') if day.strip()] if availability_str else []
+                    # --- End availability_days loading ---
+
                     # Ensure required fields exist, provide defaults if necessary
                     row.setdefault('id', str(uuid.uuid4()))
                     row.setdefault('name', row.get('name', 'Unknown')) # Use actual name if present
@@ -116,12 +122,14 @@ class PatientWaitlistManager:
         file_path = self._get_timestamped_filename()
         try:
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                # Define standard headers, excluding 'needs_dentist'
+                # --- Add availability_days to fieldnames ---
                 fieldnames = [
                     'id', 'name', 'phone', 'email', 'reason', 'urgency',
-                    'appointment_type', 'duration', 'provider', # Removed 'needs_dentist'
-                    'status', 'timestamp', 'wait_time'
+                    'appointment_type', 'duration', 'provider',
+                    'status', 'timestamp', 'wait_time', 'availability_days' # Added
                 ]
+                # --- End fieldname update ---
+
                 if not self.patients:
                     # Write headers even for empty file
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -138,6 +146,12 @@ class PatientWaitlistManager:
                     # Convert datetime to ISO format string for CSV
                     if isinstance(patient_copy.get('timestamp'), datetime.datetime):
                         patient_copy['timestamp'] = patient_copy['timestamp'].isoformat()
+
+                    # --- Convert availability_days list to comma-separated string ---
+                    if isinstance(patient_copy.get('availability_days'), list):
+                        patient_copy['availability_days'] = ','.join(patient_copy['availability_days'])
+                    # --- End availability_days conversion ---
+
                     # Removed needs_dentist string conversion
                     # patient_copy['needs_dentist'] = str(patient_copy.get('needs_dentist', False))
 
@@ -151,20 +165,24 @@ class PatientWaitlistManager:
     def add_patient(self, name: str, phone: str, email: str = "",
                    reason: str = "", urgency: str = "medium",
                    appointment_type: str = "consultation", duration: str = "30",
-                   provider: str = "no preference", # Removed needs_dentist
+                   provider: str = "no preference",
+                   availability_days: List[str] = None, # Added parameter
                    timestamp: Optional[datetime.datetime] = None) -> Optional[Dict[str, Any]]:
-        """Adds a new patient."""
+        """Adds a new patient with availability."""
         try:
             patient_id = str(uuid.uuid4())
             # Use provided timestamp or default to now
             entry_timestamp = timestamp if timestamp else datetime.datetime.now()
+            # Use provided availability or default to empty list
+            patient_availability = availability_days if availability_days is not None else []
             patient = {
                 'id': patient_id,
                 'name': name, 'phone': phone, 'email': email, 'reason': reason,
                 'urgency': urgency, 'appointment_type': appointment_type,
                 'duration': str(duration), # Ensure duration is string
-                'provider': provider, # Removed needs_dentist
-                'status': 'waiting', 'timestamp': entry_timestamp, 'wait_time': '0 minutes' # Use entry_timestamp
+                'provider': provider,
+                'status': 'waiting', 'timestamp': entry_timestamp, 'wait_time': '0 minutes', # Use entry_timestamp
+                'availability_days': patient_availability # Store the list
             }
             self.patients.append(patient)
             # self._save_timestamped_backup() # Ensure this is REMOVED/Commented
@@ -238,7 +256,19 @@ class PatientWaitlistManager:
         """Manually trigger saving the current patient list to a timestamped backup file."""
         self._save_timestamped_backup() # This one STAYS for the manual button
 
-    def find_eligible_patients(self, provider_name: str, slot_duration: str) -> List[Dict[str, Any]]:
+    def find_eligible_patients(self, provider_name: str, slot_duration: str, slot_day_of_week: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Finds eligible patients based on provider, duration, and day of the week availability.
+
+        Args:
+            provider_name (str): The name of the provider for the slot.
+            slot_duration (str): The duration of the slot.
+            slot_day_of_week (Optional[str]): The day of the week for the slot (e.g., 'Monday').
+                                              If None, day availability is not checked.
+
+        Returns:
+            List[Dict[str, Any]]: A list of eligible patients, sorted by priority.
+        """
         eligible_patients = []
         provider_matches = []
         no_preference_matches = []
@@ -262,12 +292,19 @@ class PatientWaitlistManager:
             if not (is_provider_match or is_no_preference):
                 continue # Skip if provider doesn't match and isn't 'no preference'
 
+            # 3. Check Day of Week Availability (if slot_day_of_week is provided)
+            if slot_day_of_week:
+                patient_availability = patient.get('availability_days', []) # Should be a list
+                # Case-insensitive check if day name is in the list
+                if not any(day.strip().lower() == slot_day_of_week.strip().lower() for day in patient_availability):
+                    continue # Skip if patient is not available on this day
+
             # --- Add to intermediate lists ---
             if is_provider_match:
                 provider_matches.append(patient)
             elif is_no_preference:
                 no_preference_matches.append(patient)
-        
+
         # Combine lists: specific provider matches first, then no preference
         eligible_patients = provider_matches + no_preference_matches
 

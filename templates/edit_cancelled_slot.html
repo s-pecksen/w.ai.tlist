@@ -9,17 +9,30 @@
     {# Add id to the card containing the form #}
     <div class="card" id="edit-slot-form">
         <div class="card-body">
+            {# Ensure appointment object exists before accessing #}
+            {% if appointment %}
             <form action="{{ url_for('update_cancelled_slot', appointment_id=appointment.id) }}" method="post">
                 <div class="mb-3">
                     <label for="provider" class="form-label">Provider</label>
                     <select class="form-select" id="provider" name="provider" required>
                         <option value="" disabled>Select Provider</option>
-                        {% for p in providers %}
+                        {# providers is now list of dicts {'name': '...'} #}
+                        {% for provider_dict in providers or [] %}
                             {# Check if current provider matches the appointment's provider #}
-                            <option value="{{ p.name }}" {% if p.name == appointment.provider %}selected{% endif %}>{{ p.name }}</option>
+                            <option value="{{ provider_dict.name }}" {% if provider_dict.name == appointment.provider %}selected{% endif %}>{{ provider_dict.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
+
+                {# --- Add Date Input and Pre-fill --- #}
+                <div class="mb-3">
+                    <label for="slot_date" class="form-label">Date of Slot</label>
+                    {# Pre-fill value using isoformat if slot_date exists and is a date object #}
+                    <input type="date" class="form-control" id="slot_date" name="slot_date"
+                           value="{{ appointment.slot_date.isoformat() if appointment.slot_date and appointment.slot_date is instance(date) else '' }}" required>
+                </div>
+                {# --- End Date Input --- #}
+
 
                 <div class="mb-3">
                     <label for="duration" class="form-label">Duration</label>
@@ -28,6 +41,7 @@
                         <option value="30" {% if appointment.duration == '30' %}selected{% endif %}>30 minutes</option>
                         <option value="60" {% if appointment.duration == '60' %}selected{% endif %}>1 hour</option>
                         <option value="70" {% if appointment.duration == '70' %}selected{% endif %}>70 minutes</option>
+                        <option value="90" {% if appointment.duration == '90' %}selected{% endif %}>1.5 hours</option> {# Added 90 #}
                         <option value="120" {% if appointment.duration == '120' %}selected{% endif %}>2 hours</option>
                     </select>
                 </div>
@@ -41,7 +55,23 @@
                 {# The cancel button redirects to the list with a fragment #}
                 <a href="{{ url_for('list_cancelled_appointments') }}#cancelled-slots-list" class="btn btn-secondary">Cancel</a>
             </form>
+            {% else %}
+                <div class="alert alert-danger">Appointment data not found. Cannot edit.</div>
+                <a href="{{ url_for('list_cancelled_appointments') }}#cancelled-slots-list" class="btn btn-secondary">Back to List</a>
+            {% endif %}
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Ensure date inputs prevent past dates if desired, even if pre-filled
+        const dateInputs = document.querySelectorAll('input[type="date"]');
+        const today = new Date().toISOString().split('T')[0];
+        dateInputs.forEach(input => {
+            input.min = today; // Prevent selecting past dates
+        });
+    });
+</script>
+
 {% endblock %} 
