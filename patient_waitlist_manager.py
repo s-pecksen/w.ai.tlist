@@ -310,7 +310,7 @@ class PatientWaitlistManager:
 
         # --- Sort Section ---
         urgency_order = {'high': 0, 'medium': 1, 'low': 2}
-        emergency_str = 'emergency exam' # Define comparison string once
+        emergency_str = 'emergency_exam' # Corrected: Use underscore
 
         eligible_patients.sort(key=lambda p: (
             # Primary key: Emergency status (0 for Emergency, 1 for others)
