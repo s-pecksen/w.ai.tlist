@@ -1015,6 +1015,115 @@ def propose_slots(patient_id):
     return render_template('propose_slots.html', patient=patient, matching_slots=matching_slots)
 # --- End New Route ---
 
+# --- Add Edit Patient Route (GET) ---
+@app.route('/edit_patient/<patient_id>', methods=['GET'])
+def edit_patient(patient_id):
+    """Displays the form to edit an existing patient."""
+    logging.debug(f"Entering edit_patient GET route for ID: {patient_id}")
+    patient = waitlist_manager.get_patient_by_id(patient_id)
+
+    if not patient:
+        flash('Patient not found.', 'danger')
+        logging.warning(f"Edit patient: Patient ID {patient_id} not found.")
+        return redirect(url_for('index') + '#waitlist-table')
+
+    # Ensure availability is a dictionary, even if loaded weirdly (shouldn't happen with current load logic)
+    if not isinstance(patient.get('availability'), dict):
+        patient['availability'] = {}
+
+    all_providers = provider_manager.get_provider_list()
+    has_providers = len(all_providers) > 0 # Check if providers exist
+
+    return render_template('edit_patient.html',
+                           patient=patient,
+                           providers=all_providers,
+                           has_providers=has_providers)
+# --- End Edit Patient Route (GET) ---
+
+# --- Add Update Patient Route (POST) ---
+@app.route('/update_patient/<patient_id>', methods=['POST'])
+def update_patient(patient_id):
+    """Handles the submission of the edited patient form."""
+    logging.debug(f"Entering update_patient POST route for ID: {patient_id}")
+    try:
+        # --- Get Basic Info ---
+        name = request.form.get('name')
+        phone = request.form.get('phone')
+        email = request.form.get('email')
+        reason = request.form.get('reason')
+        urgency = request.form.get('urgency')
+        appointment_type = request.form.get('appointment_type')
+        duration = request.form.get('duration')
+        provider = request.form.get('provider')
+        availability_mode = request.form.get('availability_mode', 'available')
+
+        # --- Process Availability ---
+        availability_prefs = {}
+        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        for day in days:
+            day_lower = day.lower()
+            am_checked = request.form.get(f'avail_{day_lower}_am')
+            pm_checked = request.form.get(f'avail_{day_lower}_pm')
+            periods = []
+            if am_checked:
+                periods.append('AM')
+            if pm_checked:
+                periods.append('PM')
+            if periods:
+                availability_prefs[day] = periods
+
+        logging.debug(f"Received updated availability days/times: {availability_prefs}")
+        logging.debug(f"Received updated availability mode: {availability_mode}")
+
+        # --- Basic Validation ---
+        if not name or not phone:
+            flash('Name and Phone are required fields.', 'warning')
+            # Redirect back to the edit form if validation fails
+            # Need patient data again for the template
+            patient = waitlist_manager.get_patient_by_id(patient_id)
+            all_providers = provider_manager.get_provider_list()
+            has_providers = len(all_providers) > 0
+            # Re-render edit form with error
+            return render_template('edit_patient.html',
+                                   patient=patient,
+                                   providers=all_providers,
+                                   has_providers=has_providers,
+                                   error_flash=True), 400 # Indicate bad request
+
+        # --- Prepare Updated Data Dict ---
+        updated_data = {
+            'name': name,
+            'phone': phone,
+            'email': email,
+            'reason': reason,
+            'urgency': urgency,
+            'appointment_type': appointment_type,
+            'duration': duration,
+            'provider': provider,
+            'availability': availability_prefs,
+            'availability_mode': availability_mode
+        }
+
+        # --- Update Patient via Manager ---
+        success = waitlist_manager.update_patient(patient_id, updated_data)
+
+        if success:
+            waitlist_manager.save_backup() # Save after successful update
+            flash('Patient details updated successfully.', 'success')
+            logging.info(f"Patient {patient_id} updated successfully.")
+        else:
+            # This case means the patient ID wasn't found during the update attempt
+            flash('Failed to update patient details (Patient not found).', 'danger')
+            logging.warning(f"Update patient failed: Patient ID {patient_id} not found during update call.")
+
+    except Exception as e:
+        logging.error(f"Error in update_patient route for ID {patient_id}: {e}", exc_info=True)
+        flash('An unexpected error occurred while updating the patient.', 'danger')
+
+    # Redirect back to the main waitlist after update attempt
+    return redirect(url_for('index') + '#waitlist-table')
+# --- End Update Patient Route (POST) ---
+
 if __name__ == '__main__':
     # Ensure provider.csv exists (even if empty) - Handled by ProviderManager init now
 

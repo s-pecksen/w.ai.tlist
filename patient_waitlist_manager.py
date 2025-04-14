@@ -384,4 +384,61 @@ class PatientWaitlistManager:
             if patient.get('id') == patient_id:
                 return patient
         return None
-    # --- End get_patient_by_id --- 
+    # --- End get_patient_by_id ---
+
+    # --- Add update_patient method ---
+    def update_patient(self, patient_id: str, updated_data: Dict[str, Any]) -> bool:
+        """
+        Updates an existing patient's data.
+
+        Args:
+            patient_id (str): The ID of the patient to update.
+            updated_data (Dict[str, Any]): A dictionary containing the fields to update.
+                                         Expected keys match form fields plus processed
+                                         'availability' dict and 'availability_mode' string.
+
+        Returns:
+            bool: True if the patient was found and updated, False otherwise.
+        """
+        patient_found = False
+        for i, patient in enumerate(self.patients):
+            if patient.get('id') == patient_id:
+                # Preserve original ID and timestamp
+                original_id = patient.get('id')
+                original_timestamp = patient.get('timestamp')
+                original_status = patient.get('status') # Keep original status (e.g., 'waiting')
+                original_wait_time = patient.get('wait_time') # Keep calculated wait time
+
+                # Update the patient dictionary with new data
+                # Make sure availability is stored as a dictionary
+                availability = updated_data.get('availability')
+                if not isinstance(availability, dict):
+                     availability = {} # Default to empty dict if not provided correctly
+
+                # Validate and normalize mode
+                mode = updated_data.get('availability_mode', 'available').lower()
+                valid_mode = mode if mode in ['available', 'unavailable'] else 'available'
+
+                # Construct the updated patient record
+                updated_patient = {
+                    'id': original_id,
+                    'name': updated_data.get('name', patient.get('name')),
+                    'phone': updated_data.get('phone', patient.get('phone')),
+                    'email': updated_data.get('email', patient.get('email', '')),
+                    'reason': updated_data.get('reason', patient.get('reason', '')),
+                    'urgency': updated_data.get('urgency', patient.get('urgency')),
+                    'appointment_type': updated_data.get('appointment_type', patient.get('appointment_type')),
+                    'duration': str(updated_data.get('duration', patient.get('duration'))),
+                    'provider': updated_data.get('provider', patient.get('provider')),
+                    'availability': availability,
+                    'availability_mode': valid_mode,
+                    'timestamp': original_timestamp, # Keep original timestamp
+                    'status': original_status,       # Keep original status
+                    'wait_time': original_wait_time  # Keep calculated wait time
+                }
+                self.patients[i] = updated_patient
+                patient_found = True
+                break # Exit loop once patient is found and updated
+
+        return patient_found
+    # --- End update_patient method --- 

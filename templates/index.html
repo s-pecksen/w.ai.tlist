@@ -307,11 +307,8 @@
                                     {{ format_appointment_type(patient) }}
                                     <small>( {{ patient.duration }} min )</small>
                                     <br>
-                                    <small>Pref: {{ patient.provider|title }} /
-                                        <span class="badge urgency-{{ patient.urgency|lower }}">
-                                            {{ patient.urgency|capitalize }}
-                                        </span>
-                                    </small>
+                                    {# MODIFIED: Removed the urgency badge display #}
+                                    <small>Pref: {{ patient.provider|title }}</small>
                                 </td>
                                  <td>
                                     {# --- Updated Availability Display --- #}
@@ -326,8 +323,19 @@
                                         {% else %}
                                             <strong class="text-danger">NOT Available:</strong>
                                         {% endif %}
-                                        {% for day, periods in availability.items()|sort %} {# Sort days #}
-                                            {{ day[:3] }}({{ periods|join('/') }}){% if not loop.last %}; {% endif %}
+                                        {# Define the desired order #}
+                                        {% set days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] %}
+                                        {# Keep track if we printed anything to manage semicolons #}
+                                        {% set printed_days = [] %}
+                                        {# Iterate through the defined order #}
+                                        {% for day in days_order %}
+                                            {# Check if the day exists in the patient's availability #}
+                                            {% if day.lower() in availability %}
+                                                {# Add semicolon before printing the next day, if it's not the first one #}
+                                                {% if printed_days %}; {% endif %}
+                                                {{- day[:3] }}({{ availability[day.lower()]|join('/') }}){#- Print day and periods #}
+                                                {% set _ = printed_days.append(1) %} {# Mark that we printed a day #}
+                                            {% endif %}
                                         {% endfor %}
                                         </span>
                                     {% endif %}
@@ -343,6 +351,12 @@
                                             <i class="bi bi-calendar-check"></i> Assign
                                         </a>
                                         {# --- END MODIFIED Button Text --- #}
+
+                                        {# --- ADDED: Edit Button --- #}
+                                        <a href="{{ url_for('edit_patient', patient_id=patient.id) }}" class="btn btn-sm btn-warning" title="Edit Patient Details">
+                                            <i class="bi bi-pencil-square"></i> Edit
+                                        </a>
+                                        {# --- END ADDED: Edit Button --- #}
 
                                         {# Remove Button - Remains the same #}
                                         <form action="{{ url_for('remove_patient', patient_id=patient.id) }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove {{ patient.name }} from the waitlist?');">
