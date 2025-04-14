@@ -16,6 +16,7 @@ import shutil
 import glob
 import logging
 from cancelled_slot_manager import CancelledSlotManager
+import json # Needed for handling availability JSON in CSV upload
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -169,21 +170,45 @@ def index():
 
 @app.route('/add_patient', methods=['POST'])
 def add_patient():
-    name = request.form.get('name')
-    phone = request.form.get('phone')
-    email = request.form.get('email')
-    reason = request.form.get('reason')
-    urgency = request.form.get('urgency')
-    appointment_type = request.form.get('appointment_type')
-    duration = request.form.get('duration')
-    provider = request.form.get('provider')
-    # Get the list of selected availability days
-    availability_days = request.form.getlist('availability_days')
-    logging.debug(f"Received availability days: {availability_days}") # Log received days
+    try:
+        # --- Get Basic Info ---
+        name = request.form.get('name')
+        phone = request.form.get('phone')
+        email = request.form.get('email')
+        reason = request.form.get('reason')
+        urgency = request.form.get('urgency')
+        appointment_type = request.form.get('appointment_type')
+        duration = request.form.get('duration')
+        provider = request.form.get('provider')
+        availability_mode = request.form.get('availability_mode', 'available') # Get the mode ('available' or 'unavailable')
 
-    if name and phone:  # Basic validation
-        # Use the waitlist manager to add the patient, including availability
-        waitlist_manager.add_patient(
+        # --- Process Availability ---
+        # Structure: {'Monday': ['AM', 'PM'], 'Tuesday': ['AM'], ...}
+        availability_prefs = {}
+        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        for day in days:
+            day_lower = day.lower()
+            am_checked = request.form.get(f'avail_{day_lower}_am')
+            pm_checked = request.form.get(f'avail_{day_lower}_pm')
+            periods = []
+            if am_checked:
+                periods.append('AM')
+            if pm_checked:
+                periods.append('PM')
+            if periods: # Only add day if AM or PM was selected
+                availability_prefs[day] = periods
+
+        logging.debug(f"Received availability days/times: {availability_prefs}")
+        logging.debug(f"Received availability mode: {availability_mode}")
+
+        # --- Basic Validation ---
+        if not name or not phone:
+            flash('Name and Phone are required to add a patient.', 'warning')
+            return redirect(url_for('index') + '#add-patient-form')
+
+        # --- Add Patient via Manager ---
+        # Use the waitlist manager to add the patient, including structured availability and mode
+        new_patient = waitlist_manager.add_patient(
             name=name,
             phone=phone,
             email=email,
@@ -192,14 +217,21 @@ def add_patient():
             appointment_type=appointment_type,
             duration=duration,
             provider=provider,
-            availability_days=availability_days # Pass the list
+            availability=availability_prefs, # Pass the dictionary
+            availability_mode=availability_mode # Pass the mode
         )
-        flash('Patient added successfully.', 'success') # Add feedback
-    else:
-        flash('Name and Phone are required to add a patient.', 'warning') # Add feedback on failure
-    
-    # Redirect back to the index page, focusing on the add form or waitlist
-    return redirect(url_for('index') + '#add-patient-form') # Added fragment
+
+        if new_patient:
+            flash('Patient added successfully.', 'success')
+        else:
+            # Manager logs the specific error
+            flash('Failed to add patient. Please check logs.', 'danger')
+
+    except Exception as e:
+        logging.error(f"Error in add_patient route: {e}", exc_info=True)
+        flash('An unexpected error occurred while adding the patient.', 'danger')
+
+    return redirect(url_for('index') + '#add-patient-form')
 
 # Update the schedule_patient route
 @app.route('/schedule_patient/<patient_id>', methods=['POST'])
@@ -282,149 +314,153 @@ def validate_urgency(value):
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
     print("--- DEBUG: /upload_csv route hit ---")
-    # Check if we have providers (removed active check)
     if not provider_manager.get_provider_list():
-        print("--- DEBUG: No providers found ---")
         flash('Please add providers before uploading patient data', 'warning')
         return redirect(url_for('index'))
     
-    print("--- DEBUG: Providers check passed ---")
     if 'csv_file' not in request.files:
-        print("--- DEBUG: 'csv_file' not in request.files ---")
         flash('No file selected for upload.', 'warning')
         return redirect(url_for('index'))
     
     file = request.files['csv_file']
-    print(f"--- DEBUG: File found: {file.filename} ---")
     if file.filename == '':
-        print("--- DEBUG: File filename is empty ---")
         flash('No file selected for upload.', 'warning')
         return redirect(url_for('index'))
 
     if file and file.filename.endswith('.csv'):
-        print("--- DEBUG: File format check passed ---")
         try:
-            print("--- DEBUG: Entering try block for CSV processing ---")
             stream = StringIO(file.stream.read().decode("UTF8"), newline=None)
-            # Use pandas or csv reader
-            # Using csv.DictReader for consistency with manager
             reader = csv.DictReader(stream)
             added_count = 0
-            skipped_count = 0 # Added counter for skipped duplicates
-            required_columns = ['name', 'phone'] # Example required
+            skipped_count = 0
+            required_columns = ['name', 'phone'] # Minimum required
 
-            # --- Get existing patients for duplicate check ---
             existing_patients_list = waitlist_manager.get_all_patients()
-            existing_patients_set = {(p.get('name', '').strip(), p.get('phone', '').strip()) 
-                                     for p in existing_patients_list if p.get('name') and p.get('phone')} 
+            existing_patients_set = {(p.get('name', '').strip(), p.get('phone', '').strip())
+                                     for p in existing_patients_list if p.get('name') and p.get('phone')}
             print(f"--- DEBUG: Found {len(existing_patients_set)} existing patients for duplicate check ---")
-            # --- End duplicate check setup ---
 
             patients_to_add = []
-            headers = reader.fieldnames
-            print(f"--- DEBUG: CSV Headers: {headers} ---") # Added print
+            headers = reader.fieldnames or []
+            print(f"--- DEBUG: CSV Headers: {headers} ---")
             if not all(col in headers for col in required_columns):
-                 print(f"--- DEBUG: Missing required columns ({required_columns}) ---") # Added print
                  flash(f'CSV must contain at least {", ".join(required_columns)} columns', 'danger')
-                 return redirect(url_for('index')) # Corrected return placement
+                 return redirect(url_for('index'))
 
-            print("--- DEBUG: Required columns check passed ---") # Added print
-            first_row_processed = False # Added flag
+            print("--- DEBUG: Required columns check passed ---")
+            has_availability_col = 'availability' in headers
+            has_mode_col = 'availability_mode' in headers
+
             for row in reader:
-                 # --- Duplicate Check ---
                  csv_name = row.get('name', '').strip()
                  csv_phone = row.get('phone', '').strip()
-                 if not csv_name or not csv_phone: # Skip rows with missing name or phone
+                 if not csv_name or not csv_phone:
                      print(f"--- DEBUG: Skipping row due to missing name/phone: {row} ---")
                      skipped_count += 1
-                     continue 
+                     continue
                  if (csv_name, csv_phone) in existing_patients_set:
                      print(f"--- DEBUG: Skipping duplicate patient: {csv_name}, {csv_phone} ---")
                      skipped_count += 1
                      continue
-                 # --- End Duplicate Check ---
 
-                 if not first_row_processed: # Added conditional print
-                     print(f"--- DEBUG: Processing first row: {row} ---")
-                     first_row_processed = True
-                 # Use correct provider column name ('provider' vs 'provider')
-                 provider_value = row.get('provider') or row.get('provider', '') # Use 'provider' consistently
+                 provider_value = row.get('provider', '')
 
-                 # --- Try parsing the timestamp ---
+                 # --- Try parsing timestamp ---
                  datetime_str = row.get('date_time_entered', '').strip()
                  parsed_timestamp = None
                  if datetime_str:
-                     # Try ISO format first
-                     try:
-                         parsed_timestamp = datetime.fromisoformat(datetime_str)
-                     except ValueError:
-                         # Fallback: Add other common formats if needed
-                         possible_formats = [
-                             '%m/%d/%Y %H:%M:%S',    # MM/DD/YYYY HH:MM:SS
-                             '%#m/%#d/%Y %#H:%M:%S', # Windows M/D/YYYY H:MM:SS
-                             '%m/%d/%y %I:%M %p',    # MM/DD/YY hh:MM AM/PM
-                             '%m/%d/%Y %I:%M %p'     # MM/DD/YYYY hh:MM AM/PM
-                         ]
-                         for fmt in possible_formats:
-                             try:
-                                 parsed_timestamp = datetime.strptime(datetime_str, fmt)
-                                 break
-                             except ValueError:
-                                 continue
-                         if not parsed_timestamp:
-                             print(f"--- DEBUG: Could not parse timestamp '{datetime_str}' for patient {row.get('name')} using ISO or formats {possible_formats} ---")
-                 # --- End timestamp parsing ---
+                    try:
+                        # Combined parsing attempts
+                        parsed_timestamp = datetime.fromisoformat(datetime_str)
+                    except ValueError:
+                        possible_formats = [
+                            '%m/%d/%Y %H:%M:%S', '%#m/%#d/%Y %#H:%M:%S',
+                            '%m/%d/%y %I:%M %p', '%m/%d/%Y %I:%M %p'
+                        ]
+                        for fmt in possible_formats:
+                            try:
+                                parsed_timestamp = datetime.strptime(datetime_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+                        if not parsed_timestamp:
+                            print(f"--- DEBUG: Could not parse timestamp '{datetime_str}' for patient {csv_name} ---")
 
-                 # --- Parse availability_days from CSV ---
-                 availability_str = row.get('availability_days', '')
-                 availability_list = [day.strip() for day in availability_str.split(',') if day.strip()] if availability_str else []
-                 # --- End availability_days parsing ---
+                 # --- Parse availability from CSV ---
+                 # Expects availability column to contain JSON string like '{"Monday": ["AM", "PM"]}'
+                 # or potentially older format like comma-separated days ('Monday, Tuesday')
+                 availability_data = {}
+                 if has_availability_col:
+                     availability_str = row.get('availability', '').strip()
+                     if availability_str:
+                         try:
+                             # Try parsing as JSON first
+                             loaded_avail = json.loads(availability_str)
+                             if isinstance(loaded_avail, dict):
+                                 # Validate structure (ensure values are lists)
+                                 availability_data = {k: v for k, v in loaded_avail.items() if isinstance(v, list)}
+                             else:
+                                 print(f"--- DEBUG: Parsed availability JSON for {csv_name} is not a dict: '{availability_str}' ---")
+                         except json.JSONDecodeError:
+                             # Fallback: Try parsing as simple comma-separated days (implies full day availability)
+                             # This is for backward compatibility; new uploads should use JSON.
+                             print(f"--- DEBUG: Failed to parse availability as JSON for {csv_name}, trying comma-separated: '{availability_str}' ---")
+                             days_list = [day.strip() for day in availability_str.split(',') if day.strip()]
+                             if days_list:
+                                # Assume AM and PM if parsed this old way
+                                availability_data = {day: ['AM', 'PM'] for day in days_list}
 
 
-                 # Add data for non-duplicate patient
+                 # --- Parse availability_mode from CSV ---
+                 # Defaults to 'available' if column missing or value invalid
+                 availability_mode = 'available'
+                 if has_mode_col:
+                     mode_raw = row.get('availability_mode', '').strip().lower()
+                     if mode_raw in ['available', 'unavailable']:
+                         availability_mode = mode_raw
+
                  patients_to_add.append({
-                    'name': csv_name, # Use stripped name
-                    'phone': csv_phone, # Use stripped phone
+                    'name': csv_name,
+                    'phone': csv_phone,
                     'email': row.get('email', ''),
                     'reason': row.get('reason', ''),
                     'urgency': validate_urgency(row.get('urgency', 'medium')),
                     'appointment_type': validate_appointment_type(row.get('appointment_type')),
                     'duration': validate_duration(row.get('duration', '30')),
-                    'provider': validate_provider(provider_value), # Use combined value
-                    'timestamp': parsed_timestamp, # Add parsed timestamp here
-                    'availability_days': availability_list # Add parsed availability
+                    'provider': validate_provider(provider_value),
+                    'timestamp': parsed_timestamp,
+                    'availability': availability_data, # Pass parsed dict
+                    'availability_mode': availability_mode # Pass parsed mode
                  })
                  added_count += 1
-                 # Add to existing set immediately to prevent duplicates *within* the CSV
                  existing_patients_set.add((csv_name, csv_phone))
 
-            print(f"--- DEBUG: Finished reading rows. Added: {added_count}, Skipped: {skipped_count} ---") 
+            print(f"--- DEBUG: Finished reading rows. Added: {added_count}, Skipped: {skipped_count} ---")
 
-            # Now add all collected patients (manager handles appending internally)
             if patients_to_add:
-                print(f"--- DEBUG: Adding {len(patients_to_add)} new patients to manager ---") 
+                print(f"--- DEBUG: Adding {len(patients_to_add)} new patients to manager ---")
                 for p_data in patients_to_add:
-                    # Extract timestamp and availability before passing the rest as kwargs
+                    # Extract specific args for manager method
                     patient_timestamp = p_data.pop('timestamp', None)
-                    patient_availability = p_data.pop('availability_days', [])
-                    # This appends to self.patients in the manager
+                    patient_availability = p_data.pop('availability', {})
+                    patient_mode = p_data.pop('availability_mode', 'available')
                     waitlist_manager.add_patient(
                         timestamp=patient_timestamp,
-                        availability_days=patient_availability, # Pass separately
+                        availability=patient_availability,
+                        availability_mode=patient_mode,
                         **p_data
                     )
 
             print("--- DEBUG: Finished adding patients to manager ---")
-            # --- Update Flash Message ---
+            # Update Flash Message (logic unchanged)
             if added_count > 0 and skipped_count > 0:
-                flash(f'Successfully added {added_count} new patients. Skipped {skipped_count} duplicates or rows with missing info.', 'success')
+                 flash(f'Successfully added {added_count} new patients. Skipped {skipped_count} duplicates or rows with missing info.', 'success')
             elif added_count > 0:
-                flash(f'Successfully added {added_count} new patients from CSV.', 'success')
+                 flash(f'Successfully added {added_count} new patients from CSV.', 'success')
             elif skipped_count > 0:
-                flash(f'No new patients added. Skipped {skipped_count} duplicates or rows with missing info.', 'info')
+                 flash(f'No new patients added. Skipped {skipped_count} duplicates or rows with missing info.', 'info')
             else:
-                flash('No patients added from CSV.', 'info')
-            # --- End Flash Message Update ---
+                 flash('No patients added from CSV.', 'info')
 
         except Exception as e:
             print(f"--- DEBUG: Exception caught in /upload_csv: {str(e)} ---") # Added print
@@ -532,32 +568,25 @@ def upload_providers_csv():
 
 @app.route('/cancelled_appointments', methods=['GET'])
 def list_cancelled_appointments():
-    # Get all providers (list of dictionaries)
     all_providers = provider_manager.get_provider_list()
-    # Get slots from the manager
-    current_slots = slot_manager.get_all_slots()
-
-    # Sort slots by date
+    current_slots = slot_manager.get_all_slots() # Slots now include 'slot_period'
     current_slots.sort(key=lambda s: s.get('slot_date') or date.min, reverse=True)
 
-
     return render_template('cancelled_appointments.html',
-                          providers=all_providers, # Pass the full list of dicts
+                          providers=all_providers,
                           cancelled_appointments=current_slots,
                           eligible_patients=None,
                           current_appointment=None)
 
-# This route seems redundant with add_cancelled_appointment, consider removing or merging?
-# For now, ensure it uses the full provider list if kept
+# This route uses the manager's add_slot, which now requires slot_period
 @app.route('/create_slot_and_find_matches', methods=['POST'])
 def create_slot_and_find_matches():
-    """Creates a cancelled slot using the manager and finds matches."""
     provider = request.form.get('provider')
     duration = request.form.get('duration')
-    slot_date_str = request.form.get('slot_date') # Get date string
+    slot_date_str = request.form.get('slot_date')
+    slot_period = request.form.get('slot_period') # Get AM/PM
     notes = request.form.get('notes', '')
 
-    # --- Date Parsing and Validation ---
     slot_date_obj = None
     if slot_date_str:
         try:
@@ -566,56 +595,53 @@ def create_slot_and_find_matches():
             flash('Invalid date format provided. Please use YYYY-MM-DD.', 'danger')
             return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
     else:
-        flash('Date is required for the cancelled slot.', 'danger')
-        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
-    # --- End Date Handling ---
-
-
-    if not provider or not duration:
-        flash('Please select both a provider and a duration.', 'warning')
+        flash('Date is required.', 'danger')
         return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
 
-    # 1. Create the slot using the manager, passing the date object
+    # Validate required fields including slot_period
+    if not provider or not duration or not slot_period:
+        flash('Please select Provider, Duration, Date, and Time (AM/PM).', 'warning')
+        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
+
+    # 1. Create the slot using the manager (pass slot_period)
     new_appointment = slot_manager.add_slot(
         provider=provider,
         duration=duration,
-        slot_date=slot_date_obj, # Pass date object
+        slot_date=slot_date_obj,
+        slot_period=slot_period, # Pass AM/PM
         notes=notes
     )
     if not new_appointment:
-         flash('Failed to create appointment slot.', 'danger')
-         # Maybe redirect differently if creation fails?
+         # Manager logs error if period was invalid
+         flash('Failed to create appointment slot (invalid period or other error).', 'danger')
          return redirect(url_for('list_cancelled_appointments'))
 
     logging.debug(f"Created and saved new cancelled slot via manager: {new_appointment.get('id')}")
 
     # 2. Find eligible patients for this *new* slot using the helper
-    eligible_patients = find_eligible_patients(new_appointment) # Pass the dict returned by manager
+    eligible_patients = find_eligible_patients(new_appointment) # Pass the dict
 
-    # Get all providers for rendering the target template
+    # Get data for rendering the template
     all_providers = provider_manager.get_provider_list()
-    # Get all current slots from manager for the list display, sorted
     current_slots = slot_manager.get_all_slots()
     current_slots.sort(key=lambda s: s.get('slot_date') or date.min, reverse=True)
 
-
-    # 3. Render the template
     return render_template('cancelled_appointments.html',
-                           providers=all_providers, # Pass the full list
-                           cancelled_appointments=current_slots, # Pass the updated list from manager
+                           providers=all_providers,
+                           cancelled_appointments=current_slots,
                            eligible_patients=eligible_patients,
-                           current_appointment=new_appointment, # Pass the newly created slot dict
-                           focus_element_id='eligible-patients-list' if eligible_patients else 'add-slot-form') # Suggestion for JS focus
+                           current_appointment=new_appointment,
+                           focus_element_id='eligible-patients-list' if eligible_patients else 'add-slot-form')
 
-
+# This route uses the manager's add_slot, which now requires slot_period
 @app.route('/add_cancelled_appointment', methods=['POST'])
 def add_cancelled_appointment():
     provider = request.form.get('provider')
     duration = request.form.get('duration')
-    slot_date_str = request.form.get('slot_date') # Get date string
+    slot_date_str = request.form.get('slot_date')
+    slot_period = request.form.get('slot_period') # Get AM/PM
     notes = request.form.get('notes', '')
 
-    # --- Date Parsing and Validation ---
     slot_date_obj = None
     if slot_date_str:
         try:
@@ -624,83 +650,74 @@ def add_cancelled_appointment():
             flash('Invalid date format provided. Please use YYYY-MM-DD.', 'danger')
             return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
     else:
-        flash('Date is required for the cancelled slot.', 'danger')
+        flash('Date is required.', 'danger')
         return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
-    # --- End Date Handling ---
 
-    if not provider or not duration:
-        flash('Provider and Duration are required', 'danger')
-        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form') # Added fragment
+    # Validate required fields including slot_period
+    if not provider or not duration or not slot_period:
+        flash('Provider, Duration, Date, and Time (AM/PM) are required', 'danger')
+        return redirect(url_for('list_cancelled_appointments') + '#add-slot-form')
 
-    # Create appointment object using the manager, passing the date object
-    appointment = slot_manager.add_slot(provider, duration, slot_date_obj, notes)
+    # Create appointment object using the manager (pass slot_period)
+    appointment = slot_manager.add_slot(provider, duration, slot_date_obj, slot_period, notes)
 
     if not appointment:
-        flash('Failed to create appointment slot.', 'danger')
+        # Manager logs error if period was invalid
+        flash('Failed to create appointment slot (invalid period or other error).', 'danger')
         return redirect(url_for('list_cancelled_appointments'))
 
-
-    # Find eligible patients for this appointment using the helper
+    # Find eligible patients using the helper
     eligible_patients = find_eligible_patients(appointment)
 
     # --- Logging ---
     logging.debug(f"Rendering cancelled_appointments template from add_cancelled_appointment.")
-    logging.debug(f"Current appointment ID: {appointment.get('id')}, Date: {appointment.get('slot_date')}")
-    if not appointment.get('id'):
-         logging.error("!!! CRITICAL: appointment['id'] is missing after adding via manager in add_cancelled_appointment !!!")
-    # --- End Logging ---
+    logging.debug(f"Current appointment ID: {appointment.get('id')}, Date: {appointment.get('slot_date')}, Period: {appointment.get('slot_period')}") # Log period
+    # ... (rest of logging unchanged) ...
 
-    # Get all slots for rendering, sorted
+    # Get data for rendering
     current_slots = slot_manager.get_all_slots()
     current_slots.sort(key=lambda s: s.get('slot_date') or date.min, reverse=True)
-    all_providers = provider_manager.get_provider_list() # Get all providers
+    all_providers = provider_manager.get_provider_list()
 
-    # Render template with eligible patients
     return render_template('cancelled_appointments.html',
-                          providers=all_providers, # Pass the full list
-                          cancelled_appointments=current_slots, # Use list from manager
+                          providers=all_providers,
+                          cancelled_appointments=current_slots,
                           eligible_patients=eligible_patients,
                           current_appointment=appointment,
-                          focus_element_id='eligible-patients-list' if eligible_patients else 'add-slot-form') # Suggestion for JS focus
+                          focus_element_id='eligible-patients-list' if eligible_patients else 'add-slot-form')
 
-
+# This route finds matches using the helper, which now uses the manager's updated logic
 @app.route('/find_matches_for_appointment/<appointment_id>', methods=['POST'])
 def find_matches_for_appointment(appointment_id):
-    # Find the appointment using the manager (will include date/day)
-    appointment = slot_manager.get_slot_by_id(appointment_id)
+    appointment = slot_manager.get_slot_by_id(appointment_id) # Includes period
 
     if not appointment:
         flash('Appointment not found', 'danger')
-        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
 
-    # If already matched, show info message
     if appointment.get('matched_patient'):
-        flash('This appointment is already matched with a patient', 'info')
-        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
+        flash('This appointment is already matched.', 'info')
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
 
-    # Find eligible patients using the helper function
+    # Find eligible patients using the helper (which calls manager's updated method)
     eligible_patients = find_eligible_patients(appointment)
 
     # --- Logging ---
     logging.debug(f"Rendering cancelled_appointments template from find_matches_for_appointment.")
-    logging.debug(f"Current appointment ID: {appointment.get('id')}, Date: {appointment.get('slot_date')}")
-    if not appointment.get('id'):
-         logging.error("!!! CRITICAL: appointment['id'] is missing after getting from manager in find_matches_for_appointment !!!")
-    # --- End Logging ---
+    logging.debug(f"Current appointment ID: {appointment.get('id')}, Date: {appointment.get('slot_date')}, Period: {appointment.get('slot_period')}") # Log period
+    # ... (rest of logging unchanged) ...
 
-    # Get all slots for rendering, sorted
+    # Get data for rendering
     current_slots = slot_manager.get_all_slots()
     current_slots.sort(key=lambda s: s.get('slot_date') or date.min, reverse=True)
-    all_providers = provider_manager.get_provider_list() # Get all providers
+    all_providers = provider_manager.get_provider_list()
 
-    # Render template with eligible patients
     return render_template('cancelled_appointments.html',
-                        providers=all_providers, # Pass the full list
-                        cancelled_appointments=current_slots, # Use list from manager
+                        providers=all_providers,
+                        cancelled_appointments=current_slots,
                         eligible_patients=eligible_patients,
-                        current_appointment=appointment, # Pass the appointment dict
-                        focus_element_id='eligible-patients-list' if eligible_patients else f'slot-{appointment_id}') # Suggestion for JS focus
-
+                        current_appointment=appointment,
+                        focus_element_id='eligible-patients-list' if eligible_patients else f'slot-{appointment_id}')
 
 @app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
 def assign_appointment(patient_id, appointment_id):
@@ -783,35 +800,31 @@ def assign_appointment(patient_id, appointment_id):
         # Redirect back to waitlist
         return redirect(url_for('index') + '#waitlist-table')
 
-
-# This helper function seems redundant with the manager's method, let's remove it
-# def calculate_match_score(patient, appointment): ...
-
-
 def find_eligible_patients(cancelled_appointment: dict) -> list:
     """
     Finds eligible patients for a cancelled slot by calling the waitlist manager.
-    Uses the manager's logic for filtering (provider, duration, day) and sorting.
+    Uses the manager's logic for filtering (provider, duration, day, period) and sorting.
     """
     provider_name = cancelled_appointment.get('provider')
     slot_duration = cancelled_appointment.get('duration')
-    # Get the day of the week from the appointment dict (added by manager)
     slot_day_of_week = cancelled_appointment.get('slot_day_of_week')
+    slot_period = cancelled_appointment.get('slot_period') # Get AM/PM from slot
 
-    if not provider_name or not slot_duration:
-        logging.error("Cannot find eligible patients: Missing provider or duration in cancelled_appointment dict.")
-        return [] # Return empty list if essential info is missing
+    # Essential info check now includes slot_period
+    if not provider_name or not slot_duration or not slot_day_of_week or not slot_period:
+        logging.error(f"Cannot find eligible patients: Missing essential info in cancelled_appointment dict: {cancelled_appointment}")
+        return []
 
-    # Call the waitlist manager's method, passing the day of the week
+    # Call the waitlist manager's method, passing the period
     eligible_patients = waitlist_manager.find_eligible_patients(
         provider_name,
-        str(slot_duration), # Ensure duration is passed as string
-        slot_day_of_week # Pass the day name
+        str(slot_duration),
+        slot_day_of_week,
+        slot_period # Pass the period
     )
 
-    logging.debug(f"Found {len(eligible_patients)} eligible patients via manager for slot {cancelled_appointment.get('id')} on {slot_day_of_week}")
+    logging.debug(f"Found {len(eligible_patients)} eligible patients via manager for slot {cancelled_appointment.get('id')} on {slot_day_of_week} {slot_period}")
     return eligible_patients
-
 
 @app.route('/remove_cancelled_slot/<appointment_id>', methods=['POST'])
 def remove_cancelled_slot(appointment_id):
@@ -831,84 +844,75 @@ def remove_cancelled_slot(appointment_id):
 
 @app.route('/edit_cancelled_slot/<appointment_id>', methods=['GET'])
 def edit_cancelled_slot(appointment_id):
-    """Shows the form to edit a cancelled appointment slot using the manager."""
-    # Get the slot using the manager
-    appointment_to_edit = slot_manager.get_slot_by_id(appointment_id)
+    """Shows the form to edit a cancelled appointment slot."""
+    appointment_to_edit = slot_manager.get_slot_by_id(appointment_id) # Includes period
 
     if not appointment_to_edit:
         flash('Cancelled appointment slot not found.', 'danger')
-        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
 
-    # Prevent editing if already matched
     if appointment_to_edit.get('matched_patient'):
         flash('Cannot edit a slot that is already matched.', 'warning')
-        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
 
-    all_providers = provider_manager.get_provider_list() # Use all providers
-    # Pass the date object to the template for pre-filling the date input
+    all_providers = provider_manager.get_provider_list()
+    # Pass the full slot dict (including period) to the template
     return render_template('edit_cancelled_slot.html',
                            appointment=appointment_to_edit,
-                           providers=all_providers) # Pass full list
-
+                           providers=all_providers)
 
 @app.route('/update_cancelled_slot/<appointment_id>', methods=['POST'])
 def update_cancelled_slot(appointment_id):
-    """Updates the details (including date) of a cancelled appointment slot using the manager."""
-    # Get original slot first to potentially pass back to template on validation failure
+    """Updates the details (including date and period) of a cancelled slot."""
     appointment_to_update = slot_manager.get_slot_by_id(appointment_id)
 
     if not appointment_to_update:
         flash('Cancelled appointment slot not found.', 'danger')
-        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
+        return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
 
-    # Check if already matched (manager's update method also checks this)
     if appointment_to_update.get('matched_patient'):
          flash('Cannot edit a slot that is already matched.', 'warning')
-         return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
+         return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
 
     # Get updated data from form
     provider = request.form.get('provider')
     duration = request.form.get('duration')
-    slot_date_str = request.form.get('slot_date') # Get date string
+    slot_date_str = request.form.get('slot_date')
+    slot_period = request.form.get('slot_period') # Get AM/PM
     notes = request.form.get('notes', '')
 
-    # --- Date Parsing and Validation ---
     slot_date_obj = None
     if slot_date_str:
         try:
             slot_date_obj = date.fromisoformat(slot_date_str)
         except ValueError:
             flash('Invalid date format provided. Please use YYYY-MM-DD.', 'danger')
-            # Re-render edit page on validation failure
-            all_providers = provider_manager.get_provider_list() # Get all providers
+            all_providers = provider_manager.get_provider_list()
             return render_template('edit_cancelled_slot.html',
-                                   appointment=appointment_to_update, # Pass original data back
-                                   providers=all_providers) # Pass full list
+                                   appointment=appointment_to_update,
+                                   providers=all_providers)
     else:
-        flash('Date is required for the cancelled slot.', 'danger')
-        # Re-render edit page on validation failure
-        all_providers = provider_manager.get_provider_list() # Get all providers
+        flash('Date is required.', 'danger')
+        all_providers = provider_manager.get_provider_list()
         return render_template('edit_cancelled_slot.html',
-                               appointment=appointment_to_update, # Pass original data back
-                               providers=all_providers) # Pass full list
-    # --- End Date Handling ---
+                               appointment=appointment_to_update,
+                               providers=all_providers)
 
-
-    # Basic validation for provider/duration
-    if not provider or not duration:
-        flash('Provider and Duration are required.', 'danger')
-        # Re-render edit page on validation failure - no redirect change needed here
-        all_providers = provider_manager.get_provider_list() # Get all providers
+    # Basic validation including period
+    if not provider or not duration or not slot_period:
+        flash('Provider, Duration, Date, and Time (AM/PM) are required.', 'danger')
+        all_providers = provider_manager.get_provider_list()
         return render_template('edit_cancelled_slot.html',
-                               appointment=appointment_to_update, # Use the dict fetched earlier
-                               providers=all_providers) # Pass full list
+                               appointment=appointment_to_update,
+                               providers=all_providers)
 
-    # Update using the manager, passing the date object
+    # Update using the manager (pass slot_period)
     updated = slot_manager.update_slot(
         appointment_id,
         provider,
         duration,
-        slot_date_obj, # Pass date object
+        slot_date_obj,
+        slot_period, # Pass AM/PM
         notes
     )
 
@@ -916,46 +920,52 @@ def update_cancelled_slot(appointment_id):
         flash('Cancelled appointment slot updated successfully.', 'success')
         logging.debug(f"Updated cancelled slot ID: {appointment_id} via manager")
     else:
-        # Manager handles logging, maybe flash a generic error or rely on previous checks
-        flash('Failed to update cancelled appointment slot. It might have been removed or matched.', 'danger')
+        # Manager handles logging, flash error if update failed (e.g., invalid period)
+        flash('Failed to update cancelled appointment slot (invalid period, removed, or matched).', 'danger')
 
-    # Redirect back to the list after successful update or if update fails
-    return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list') # Added fragment
+    return redirect(url_for('list_cancelled_appointments') + '#cancelled-slots-list')
 
 # --- Add New Route for Proposing Slots ---
 @app.route('/propose_slots/<patient_id>', methods=['GET'])
 def propose_slots(patient_id):
     logging.debug(f"Entering propose_slots for patient_id={patient_id}")
-    patient = waitlist_manager.get_patient_by_id(patient_id)
+    patient = waitlist_manager.get_patient_by_id(patient_id) # Patient data includes 'availability' dict and 'availability_mode'
 
     if not patient:
         flash('Patient not found.', 'danger')
-        logging.warning(f"Propose slots: Patient ID {patient_id} not found.")
         return redirect(url_for('index') + '#waitlist-table')
 
     if patient.get('status') != 'waiting':
         flash(f'{patient.get("name", "Patient")} is not currently waiting.', 'info')
-        logging.warning(f"Propose slots: Patient ID {patient_id} has status {patient.get('status')}.")
         return redirect(url_for('index') + '#waitlist-table')
 
-    # Get all slots and filter for available (unmatched) ones
+    # Get available slots (including 'slot_period')
     all_slots = slot_manager.get_all_slots()
-    available_slots = [s for s in all_slots if s.get('matched_patient') is None]
-    logging.debug(f"Found {len(available_slots)} available slots initially.")
+    available_slots = [s for s in all_slots if s.get('matched_patient') is None and s.get('slot_period')] # Ensure slot has period
+    logging.debug(f"Found {len(available_slots)} available slots with defined period initially.")
 
-    # Filter available slots based on patient requirements
+    # Filter available slots based on patient requirements (including mode)
     matching_slots = []
     patient_duration = str(patient.get('duration', ''))
     patient_provider_pref = patient.get('provider', '').strip().lower()
-    patient_availability = [day.strip().lower() for day in patient.get('availability_days', [])] # Lowercase list
+    patient_availability_prefs = patient.get('availability', {})
+    patient_mode = patient.get('availability_mode', 'available')
+    has_patient_preferences = bool(patient_availability_prefs)
+
+    logging.debug(f"Filtering slots for Patient {patient_id} (Mode: {patient_mode}, Prefs: {patient_availability_prefs})")
 
     for slot in available_slots:
         slot_duration = str(slot.get('duration', ''))
         slot_provider = slot.get('provider', '').strip().lower()
-        # --- MODIFIED: Safely handle potential None for slot_day_of_week ---
         slot_day_raw = slot.get('slot_day_of_week')
-        slot_day = slot_day_raw.strip().lower() if slot_day_raw else ''
-        # --- END MODIFICATION ---
+        slot_day = slot_day_raw.strip().lower() if slot_day_raw else None
+        slot_period_raw = slot.get('slot_period')
+        slot_period = slot_period_raw.strip().upper() if slot_period_raw else None
+
+        # Ensure slot has necessary info for matching
+        if not slot_day or not slot_period:
+            logging.debug(f"Slot {slot.get('id')} skipped: Missing day or period.")
+            continue
 
         # 1. Check Duration
         if patient_duration != slot_duration:
@@ -968,19 +978,37 @@ def propose_slots(patient_id):
             logging.debug(f"Slot {slot.get('id')} skipped: Provider mismatch (Patient: {patient_provider_pref}, Slot: {slot_provider})")
             continue
 
-        # 3. Check Day Availability
-        # If patient availability list is empty, they are available any day.
-        # Otherwise, the slot's day must be in their list.
-        day_ok = (not patient_availability) or (slot_day in patient_availability)
-        if not day_ok:
-            logging.debug(f"Slot {slot.get('id')} skipped: Day mismatch (Patient: {patient_availability}, Slot Day: {slot_day})")
-            continue
+        # 3. Check Day/Time Availability (incorporating mode)
+        is_available_for_slot = True # Start assuming available
+
+        # Check if the specific slot day/time matches a preference
+        slot_matches_preference = False
+        if slot_day in patient_availability_prefs:
+            day_prefs = patient_availability_prefs.get(slot_day, [])
+            day_prefs_upper = [p.strip().upper() for p in day_prefs]
+            if slot_period in day_prefs_upper or ('AM' in day_prefs_upper and 'PM' in day_prefs_upper):
+                slot_matches_preference = True
+
+        # Apply mode logic:
+        if patient_mode == 'available':
+            # Available Mode: Must match pref OR have no prefs listed
+            if has_patient_preferences and not slot_matches_preference:
+                is_available_for_slot = False
+                logging.debug(f"Slot {slot.get('id')} skipped: Patient mode 'available', has prefs, but slot doesn't match.")
+        elif patient_mode == 'unavailable':
+            # Unavailable Mode: Must NOT match a listed preference
+            if has_patient_preferences and slot_matches_preference:
+                is_available_for_slot = False
+                logging.debug(f"Slot {slot.get('id')} skipped: Patient mode 'unavailable', has prefs, and slot matches unavailable time.")
+
+        if not is_available_for_slot:
+            continue # Skip if determined unavailable
 
         # If all checks pass, add to matching slots
         logging.debug(f"Slot {slot.get('id')} is a match for patient {patient_id}.")
         matching_slots.append(slot)
 
-    # Sort matching slots by date (earliest first)
+    # Sort matching slots by date
     matching_slots.sort(key=lambda s: s.get('slot_date') or date.min)
 
     logging.debug(f"Found {len(matching_slots)} matching slots for patient {patient_id}.")
@@ -989,20 +1017,6 @@ def propose_slots(patient_id):
 
 if __name__ == '__main__':
     # Ensure provider.csv exists (even if empty) - Handled by ProviderManager init now
-
-    # --- Add get_patient_by_id to PatientWaitlistManager if missing ---
-    # This is a placeholder; add the actual method to the class if needed
-    if not hasattr(waitlist_manager, 'get_patient_by_id'):
-        def get_patient_by_id_temp(self, patient_id):
-            for p in self.patients:
-                if p.get('id') == patient_id:
-                    return p
-            return None
-        # Monkey-patch the method onto the instance for this run
-        import types
-        waitlist_manager.get_patient_by_id = types.MethodType(get_patient_by_id_temp, waitlist_manager)
-        print("--- NOTE: Temporarily added get_patient_by_id to Waitlist Manager ---")
-    # --- End temporary addition ---
 
     # Load initial data before starting the server - Handled by manager init
 

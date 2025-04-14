@@ -16,6 +16,7 @@
          font-size: 0.9rem;
          color: #6c757d;
     }
+    .waitlist-availability { font-size: 0.85em; color: #6c757d; }
 </style>
 {% endblock %}
 
@@ -38,12 +39,25 @@
                     <p><strong>Appointment Type:</strong> {{ patient.appointment_type|replace('_', ' ')|title }}</p>
                     <p><strong>Duration:</strong> {{ patient.duration }} minutes</p>
                     <p><strong>Provider Preference:</strong> {{ patient.provider|title }}</p>
-                    <p><strong>Available Days:</strong>
-                        {% if patient.availability_days %}
-                            {{ patient.availability_days|join(', ') }}
+                    <p><strong>Availability:</strong>
+                        {# --- Updated Availability Display --- #}
+                        {% set availability = patient.get('availability', {}) %}
+                        {% set mode = patient.get('availability_mode', 'available') %}
+                        {% if not availability %}
+                            <span class="text-muted">Any Day/Time</span>
                         {% else %}
-                            <span class="text-muted">Any Day</span>
+                            <span class="waitlist-availability">
+                            {% if mode == 'available' %}
+                                <strong class="text-success">Available:</strong>
+                            {% else %}
+                                <strong class="text-danger">NOT Available:</strong>
+                            {% endif %}
+                            {% for day, periods in availability.items()|sort %}
+                                {{ day[:3] }}({{ periods|join('/') }}){% if not loop.last %}; {% endif %}
+                            {% endfor %}
+                            </span>
                         {% endif %}
+                        {# --- End Updated Availability Display --- #}
                     </p>
                 </div>
             </div>
@@ -65,7 +79,13 @@
                         <h5 class="card-title">{{ slot.provider }}</h5>
                         <div class="slot-details mb-3">
                             {% if slot.slot_date %}
-                                <i class="bi bi-calendar-check"></i> {{ slot.slot_date.strftime('%A, %B %d, %Y') }}<br>
+                                <i class="bi bi-calendar-check"></i> {{ slot.slot_date.strftime('%A, %b %d, %Y') }}
+                                {# --- Display Slot Period --- #}
+                                {% if slot.slot_period %}
+                                    ({{ slot.slot_period }})
+                                {% endif %}
+                                {# --- End Slot Period --- #}
+                                <br>
                             {% else %}
                                 <i class="bi bi-calendar-x"></i> Date Unknown<br>
                             {% endif %}
@@ -75,7 +95,7 @@
                             {% endif %}
                         </div>
                         {# Assign Button Form #}
-                        <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=slot.id) }}" method="post" onsubmit="return confirm('Are you sure you want to assign {{ patient.name }} to this slot on {{ slot.slot_date.strftime('%a, %b %d') if slot.slot_date else 'this date' }} with {{ slot.provider }}?');">
+                        <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=slot.id) }}" method="post" onsubmit="return confirm('Are you sure you want to assign {{ patient.name }} to this slot on {{ slot.slot_date.strftime('%a, %b %d') if slot.slot_date else 'this date' }} {{ slot.slot_period or '' }} with {{ slot.provider }}?');">
                             <button type="submit" class="btn btn-success w-100">
                                 <i class="bi bi-check-circle-fill"></i> Assign this Slot
                             </button>
@@ -88,9 +108,9 @@
     {% else %}
         <div class="alert alert-info" role="alert">
             <h4 class="alert-heading">No Matches Found</h4>
-            <p>There are currently no available cancelled appointment slots that perfectly match this patient's requirements for provider preference, appointment duration, and day of the week availability.</p>
+            <p>There are currently no available open slots that perfectly match this patient's requirements for provider preference, appointment duration, day, and time period availability.</p>
             <hr>
-            <p class="mb-0">You can check the <a href="{{ url_for('list_cancelled_appointments') }}" class="alert-link">Cancelled Appointments page</a> to view all slots or add a new one.</p>
+            <p class="mb-0">You can check the <a href="{{ url_for('list_cancelled_appointments') }}" class="alert-link">Open Slots page</a> to view all slots or add a new one.</p>
         </div>
     {% endif %}
 

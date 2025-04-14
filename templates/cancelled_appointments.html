@@ -37,12 +37,13 @@
          font-size: 0.9rem;
          color: #6c757d;
     }
+    .waitlist-availability { font-size: 0.85em; color: #6c757d; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container">
-    <h1 class="display-5 text-center">Manage Cancelled Appointments</h1>
+    <h1 class="display-5 text-center">Manage Open Slots</h1>
 
     <!-- Moved Eligible Patients section to the top -->
     {# Ensure current_appointment exists before accessing its properties #}
@@ -56,6 +57,11 @@
                     <p class="mb-0">
                         {% if current_appointment.slot_date %}
                             {{ current_appointment.slot_date.strftime('%A, %B %d, %Y') }}
+                            {# --- Display Slot Period --- #}
+                            {% if current_appointment.slot_period %}
+                                ({{ current_appointment.slot_period }})
+                            {% endif %}
+                            {# --- End Slot Period --- #}
                         {% else %}
                             Date Unknown
                         {% endif %}
@@ -89,7 +95,7 @@
                                 <th>Match</th>
                                 <th>Patient</th>
                                 <th>Contact</th>
-                                <th>Availability</th> {# Added #}
+                                <th>Availability</th> {# Updated Display #}
                                 <th>Wait Time</th>
                                 <th>Appointment Details</th>
                                 <th>Action</th>
@@ -187,7 +193,7 @@
              {# Add id to the add slot form section #}
             <div class="card" id="add-slot-form">
                 <div class="card-body">
-                    <h5 class="card-title">Add Cancelled Appointment Slot</h5>
+                    <h5 class="card-title">Add Open Slot</h5>
                     {# This form now goes to add_cancelled_appointment #}
                     <form action="{{ url_for('add_cancelled_appointment') }}" method="post">
                         <div class="mb-3">
@@ -202,9 +208,21 @@
                         </div>
 
                         {# --- Add Date Input Field --- #}
-                        <div class="mb-3">
-                            <label for="slot_date" class="form-label">Date of Slot</label>
-                            <input type="date" class="form-control" id="slot_date" name="slot_date" required>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="slot_date" class="form-label">Date</label>
+                                <input type="date" class="form-control" id="slot_date" name="slot_date" required>
+                            </div>
+                             {# --- Add AM/PM selector --- #}
+                            <div class="col-md-6 mb-3">
+                                <label for="slot_period" class="form-label">Time</label>
+                                <select class="form-select" id="slot_period" name="slot_period" required>
+                                    <option value="" selected disabled>Select AM/PM</option>
+                                    <option value="AM">AM</option>
+                                    <option value="PM">PM</option>
+                                </select>
+                            </div>
+                            {# --- End AM/PM selector --- #}
                         </div>
                         {# --- End Date Input --- #}
 
@@ -233,7 +251,7 @@
             {# Add id to the card containing the list #}
             <div class="card" id="cancelled-slots-list">
                 <div class="card-header">
-                    <h5 class="mb-0">Available Cancelled Slots</h5>
+                    <h5 class="mb-0">Current Open Slots</h5>
                 </div>
                 <div class="list-group list-group-flush"> {# Use div for overflow later if needed #}
                     {% if cancelled_appointments %}
@@ -284,7 +302,7 @@
                             </div>
                         {% endfor %}
                     {% else %}
-                        <div class="list-group-item text-center">No cancelled slots available.</div> {# Changed li to div #}
+                        <div class="list-group-item text-center">No open slots available.</div> {# Changed li to div #}
                     {% endif %}
                 </div>
             </div>

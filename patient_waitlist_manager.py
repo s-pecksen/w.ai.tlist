@@ -17,6 +17,14 @@ class PatientWaitlistManager:
         """
         self.app_name = app_name
         self.backup_dir = backup_dir
+        # Define fieldnames early, including the new availability structure and mode
+        self.fieldnames = [
+            'id', 'name', 'phone', 'email', 'reason', 'urgency',
+            'appointment_type', 'duration', 'provider',
+            'status', 'timestamp', 'wait_time',
+            'availability', # Stores JSON of day/time prefs
+            'availability_mode' # Stores 'available' or 'unavailable'
+        ]
         self._ensure_backup_dir_exists()
         self._cleanup_old_backups()
 
@@ -67,46 +75,67 @@ class PatientWaitlistManager:
             print(f"Error during backup cleanup: {e}")
 
     def _load_patients(self, file_path: str) -> List[Dict[str, Any]]:
-        """Load patients from a specific CSV file."""
+        """Load patients from a specific CSV file, handling availability mode."""
         patients = []
         try:
             with open(file_path, 'r', newline='', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
+                # Basic header check - ensure 'id' and 'availability' exist at minimum
+                # 'availability_mode' is optional for backward compatibility
+                if not all(h in reader.fieldnames for h in ['id', 'availability']):
+                    print(f"Warning: Missing essential headers ('id', 'availability') in {file_path}. Cannot load.")
+                    return []
+
+                has_mode_column = 'availability_mode' in reader.fieldnames
+
                 for row in reader:
                     # Convert timestamp string back to datetime if it exists
-                    original_timestamp_str = row.get('timestamp', '') # Get original string
+                    original_timestamp_str = row.get('timestamp', '')
                     if 'timestamp' in row and row['timestamp']:
                         try:
-                            # Attempt ISO format first
                             row['timestamp'] = datetime.datetime.fromisoformat(original_timestamp_str)
                         except ValueError:
-                            # Fallback to trying other formats if needed (example)
-                            # Or simply default to now if parsing fails broadly
                             print(f"Warning: Could not parse timestamp '{original_timestamp_str}' as ISO format for row: {row.get('name')}. Using current time.")
-                            row['timestamp'] = datetime.datetime.now() # Fallback
-                    else: # Handle case where timestamp column might be missing or empty
-                         row['timestamp'] = datetime.datetime.now() # Fallback if column missing/empty
+                            row['timestamp'] = datetime.datetime.now()
+                    else:
+                         row['timestamp'] = datetime.datetime.now()
 
-                    # --- Load availability_days ---
-                    # Stored as comma-separated string in CSV, convert to list
-                    availability_str = row.get('availability_days', '')
-                    row['availability_days'] = [day.strip() for day in availability_str.split(',') if day.strip()] if availability_str else []
-                    # --- End availability_days loading ---
+                    # --- Load availability (JSON dictionary) ---
+                    availability_json_str = row.get('availability', '{}')
+                    try:
+                        loaded_avail = json.loads(availability_json_str)
+                        if isinstance(loaded_avail, dict):
+                             row['availability'] = {k: v for k, v in loaded_avail.items() if isinstance(v, list)}
+                        else:
+                             print(f"Warning: Parsed availability for {row.get('name')} is not a dictionary. Setting to empty.")
+                             row['availability'] = {}
+                    except json.JSONDecodeError:
+                        print(f"Warning: Could not parse availability JSON '{availability_json_str}' for patient {row.get('name')}. Setting to empty.")
+                        row['availability'] = {}
+
+                    # --- Load availability_mode ---
+                    if has_mode_column:
+                         mode = row.get('availability_mode', 'available').lower()
+                         # Validate the mode, default to 'available' if invalid
+                         row['availability_mode'] = mode if mode in ['available', 'unavailable'] else 'available'
+                    else:
+                         # Default for older files without the column
+                         row['availability_mode'] = 'available'
+                    # --- End availability_mode loading ---
+
 
                     # Ensure required fields exist, provide defaults if necessary
                     row.setdefault('id', str(uuid.uuid4()))
-                    row.setdefault('name', row.get('name', 'Unknown')) # Use actual name if present
-                    row.setdefault('phone', row.get('phone', 'N/A')) # Use actual phone if present
+                    row.setdefault('name', row.get('name', 'Unknown'))
+                    row.setdefault('phone', row.get('phone', 'N/A'))
                     row.setdefault('email', row.get('email', ''))
                     row.setdefault('reason', row.get('reason', ''))
                     row.setdefault('urgency', row.get('urgency', 'medium'))
                     row.setdefault('appointment_type', row.get('appointment_type', 'consultation'))
                     row.setdefault('duration', row.get('duration', '30'))
-                    # Use 'provider' column if present, otherwise default
                     row.setdefault('provider', row.get('provider', 'no preference'))
-                    row.setdefault('status', 'waiting') # Default status if not in CSV
-                    row.setdefault('wait_time', '0 minutes') # Default wait_time if not in CSV
-                    # Timestamp is handled above
+                    row.setdefault('status', 'waiting')
+                    row.setdefault('wait_time', '0 minutes')
 
                     patients.append(row)
             return patients
@@ -115,45 +144,36 @@ class PatientWaitlistManager:
             return []
         except Exception as e:
             print(f"Error loading patients from {file_path}: {str(e)}")
-            return [] # Return empty list on error
+            return []
 
     def _save_timestamped_backup(self):
-        """Save the current patient list to a new timestamped CSV file."""
+        """Save the current patient list to a new timestamped CSV file, including availability mode."""
         file_path = self._get_timestamped_filename()
         try:
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                # --- Add availability_days to fieldnames ---
-                fieldnames = [
-                    'id', 'name', 'phone', 'email', 'reason', 'urgency',
-                    'appointment_type', 'duration', 'provider',
-                    'status', 'timestamp', 'wait_time', 'availability_days' # Added
-                ]
-                # --- End fieldname update ---
-
-                if not self.patients:
-                    # Write headers even for empty file
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    print(f"Saved empty waitlist backup to: {file_path}")
-                    return
-
-                # Ensure all patient dicts have all keys for DictWriter
+                # Use the fieldnames defined in __init__ (which now includes availability_mode)
+                fieldnames = self.fieldnames
                 writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
                 writer.writeheader()
 
+                if not self.patients:
+                    print(f"Saved empty waitlist backup to: {file_path}")
+                    return
+
                 for patient in self.patients:
                     patient_copy = patient.copy()
-                    # Convert datetime to ISO format string for CSV
+                    # Convert datetime to ISO format string
                     if isinstance(patient_copy.get('timestamp'), datetime.datetime):
                         patient_copy['timestamp'] = patient_copy['timestamp'].isoformat()
 
-                    # --- Convert availability_days list to comma-separated string ---
-                    if isinstance(patient_copy.get('availability_days'), list):
-                        patient_copy['availability_days'] = ','.join(patient_copy['availability_days'])
-                    # --- End availability_days conversion ---
+                    # Convert availability dict to JSON string
+                    if isinstance(patient_copy.get('availability'), dict):
+                        patient_copy['availability'] = json.dumps(patient_copy['availability'])
+                    else:
+                        patient_copy['availability'] = json.dumps({})
 
-                    # Removed needs_dentist string conversion
-                    # patient_copy['needs_dentist'] = str(patient_copy.get('needs_dentist', False))
+                    # Ensure availability_mode is present (default if somehow missing)
+                    patient_copy.setdefault('availability_mode', 'available')
 
                     # Write only the defined fieldnames
                     writer.writerow({k: patient_copy.get(k, '') for k in fieldnames})
@@ -166,30 +186,34 @@ class PatientWaitlistManager:
                    reason: str = "", urgency: str = "medium",
                    appointment_type: str = "consultation", duration: str = "30",
                    provider: str = "no preference",
-                   availability_days: List[str] = None, # Added parameter
+                   availability: Optional[Dict[str, List[str]]] = None,
+                   availability_mode: str = 'available', # Added parameter
                    timestamp: Optional[datetime.datetime] = None) -> Optional[Dict[str, Any]]:
-        """Adds a new patient with availability."""
+        """Adds a new patient with structured availability and mode."""
         try:
             patient_id = str(uuid.uuid4())
-            # Use provided timestamp or default to now
             entry_timestamp = timestamp if timestamp else datetime.datetime.now()
-            # Use provided availability or default to empty list
-            patient_availability = availability_days if availability_days is not None else []
+            patient_availability = availability if availability is not None else {}
+            # Validate and normalize mode
+            mode = availability_mode.lower() if availability_mode else 'available'
+            valid_mode = mode if mode in ['available', 'unavailable'] else 'available'
+
             patient = {
                 'id': patient_id,
                 'name': name, 'phone': phone, 'email': email, 'reason': reason,
                 'urgency': urgency, 'appointment_type': appointment_type,
-                'duration': str(duration), # Ensure duration is string
+                'duration': str(duration),
                 'provider': provider,
-                'status': 'waiting', 'timestamp': entry_timestamp, 'wait_time': '0 minutes', # Use entry_timestamp
-                'availability_days': patient_availability # Store the list
+                'status': 'waiting', 'timestamp': entry_timestamp, 'wait_time': '0 minutes',
+                'availability': patient_availability,
+                'availability_mode': valid_mode # Store validated mode
             }
             self.patients.append(patient)
-            # self._save_timestamped_backup() # Ensure this is REMOVED/Commented
+            # self._save_timestamped_backup() # Manual save preferred
             return patient
         except Exception as e:
             print(f"Error adding patient: {e}")
-            return None # Return None or raise exception
+            return None
 
     def get_all_patients(self) -> List[Dict[str, Any]]:
         """Get all patients currently loaded in memory."""
@@ -256,15 +280,18 @@ class PatientWaitlistManager:
         """Manually trigger saving the current patient list to a timestamped backup file."""
         self._save_timestamped_backup() # This one STAYS for the manual button
 
-    def find_eligible_patients(self, provider_name: str, slot_duration: str, slot_day_of_week: Optional[str] = None) -> List[Dict[str, Any]]:
+    def find_eligible_patients(self, provider_name: str, slot_duration: str,
+                               slot_day_of_week: Optional[str] = None,
+                               slot_period: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Finds eligible patients based on provider, duration, and day of the week availability.
+        Finds eligible patients based on provider, duration, day, time period (AM/PM),
+        and patient's availability mode.
 
         Args:
             provider_name (str): The name of the provider for the slot.
             slot_duration (str): The duration of the slot.
-            slot_day_of_week (Optional[str]): The day of the week for the slot (e.g., 'Monday').
-                                              If None, day availability is not checked.
+            slot_day_of_week (Optional[str]): The day of the week (e.g., 'Monday').
+            slot_period (Optional[str]): The time period ('AM' or 'PM').
 
         Returns:
             List[Dict[str, Any]]: A list of eligible patients, sorted by priority.
@@ -273,54 +300,88 @@ class PatientWaitlistManager:
         provider_matches = []
         no_preference_matches = []
 
-        # Ensure slot duration is treated as string for comparison
         slot_duration_str = str(slot_duration)
-        provider_name_lower = provider_name.lower() # Lowercase provider name once
+        provider_name_lower = provider_name.lower()
+        slot_day_lower = slot_day_of_week.strip().lower() if slot_day_of_week else None
+        slot_period_upper = slot_period.strip().upper() if slot_period else None
 
         for patient in self.get_waiting_patients():
-            # --- Filter Section ---
-            # 1. Check Duration
+            # 1. Check Duration (Same as before)
             patient_duration = str(patient.get('duration', '0'))
             if patient_duration != slot_duration_str:
-                continue # Skip if duration doesn't match
+                continue
 
-            # 2. Check Provider Preference
+            # 2. Check Provider Preference (Same as before)
             patient_provider = patient.get('provider', '').strip().lower()
             is_provider_match = (patient_provider == provider_name_lower)
             is_no_preference = (patient_provider == 'no preference' or not patient_provider)
-
             if not (is_provider_match or is_no_preference):
-                continue # Skip if provider doesn't match and isn't 'no preference'
+                continue
 
-            # 3. Check Day of Week Availability (if slot_day_of_week is provided)
-            if slot_day_of_week:
-                patient_availability = patient.get('availability_days', []) # Should be a list
-                # Case-insensitive check if day name is in the list
-                if not any(day.strip().lower() == slot_day_of_week.strip().lower() for day in patient_availability):
-                    continue # Skip if patient is not available on this day
+            # 3. Check Day and Time Availability (with Mode Logic)
+            patient_availability_prefs = patient.get('availability', {}) # The dict of day/time prefs
+            # Default to 'available' if mode is missing for any reason
+            patient_mode = patient.get('availability_mode', 'available')
 
-            # --- Add to intermediate lists ---
+            # Assume patient is available by default, then check conditions
+            is_available_for_slot = True
+
+            # Only apply checks if a specific day/period is being matched
+            if slot_day_lower and slot_period_upper:
+                # Does the patient have any preferences listed at all?
+                has_preferences = bool(patient_availability_prefs)
+
+                # Check if the specific slot day/time matches a preference
+                slot_matches_preference = False
+                if slot_day_lower in patient_availability_prefs:
+                    day_prefs = patient_availability_prefs.get(slot_day_lower, [])
+                    day_prefs_upper = [p.strip().upper() for p in day_prefs]
+                    if slot_period_upper in day_prefs_upper or ('AM' in day_prefs_upper and 'PM' in day_prefs_upper):
+                        slot_matches_preference = True
+
+                # Apply mode logic:
+                if patient_mode == 'available':
+                    # Available Mode: Must match pref OR have no prefs listed
+                    if has_preferences and not slot_matches_preference:
+                        is_available_for_slot = False
+                elif patient_mode == 'unavailable':
+                    # Unavailable Mode: Must NOT match a listed preference
+                    # (Having no preferences listed still means available)
+                    if has_preferences and slot_matches_preference:
+                        is_available_for_slot = False
+                # else: mode is invalid, treat as 'available' (covered by default)
+
+            # If the patient is determined unavailable by the checks, skip them
+            if not is_available_for_slot:
+                continue
+
+            # --- Add to intermediate lists (Same as before) ---
             if is_provider_match:
                 provider_matches.append(patient)
             elif is_no_preference:
                 no_preference_matches.append(patient)
 
-        # Combine lists: specific provider matches first, then no preference
+        # Combine lists (Same as before)
         eligible_patients = provider_matches + no_preference_matches
 
-        # --- Sort Section ---
+        # --- Sort Section (Same as before) ---
         urgency_order = {'high': 0, 'medium': 1, 'low': 2}
-        emergency_str = 'emergency_exam' # Corrected: Use underscore
-
+        emergency_str = 'emergency_exam'
         eligible_patients.sort(key=lambda p: (
-            # Primary key: Emergency status (0 for Emergency, 1 for others)
             0 if p.get('appointment_type', '').strip().lower() == emergency_str else 1,
-            # Secondary key: Date added
             p.get('timestamp', datetime.datetime.min).date(),
-            # Tertiary key: Urgency
-            urgency_order.get(p.get('urgency', 'medium').strip().lower(), 1) # Default to medium
+            urgency_order.get(p.get('urgency', 'medium').strip().lower(), 1)
         ))
         return eligible_patients
 
     # Removed import_from_list as it conflicts with loading from latest backup
-    # If migration is needed, it should be a separate script or handled carefully. 
+    # If migration is needed, it should be a separate script or handled carefully.
+
+    # --- Add get_patient_by_id needed by app.py ---
+    def get_patient_by_id(self, patient_id: str) -> Optional[Dict[str, Any]]:
+        """Finds a patient by their unique ID."""
+        for patient in self.patients:
+            if patient.get('id') == patient_id:
+                return patient
+        return None
+    # --- End get_patient_by_id --- 

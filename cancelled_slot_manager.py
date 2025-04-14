@@ -14,7 +14,7 @@ class CancelledSlotManager:
         self.slots_file_prefix = "cancelled_slots_"
         self.slots_file_suffix = ".csv"
         self.slots = []  # In-memory list of slot dictionaries
-        self.headers = ['id', 'provider', 'duration', 'slot_date', 'notes', 'matched_patient_id', 'matched_patient_name'] # Define CSV headers
+        self.headers = ['id', 'provider', 'duration', 'slot_date', 'slot_period', 'notes', 'matched_patient_id', 'matched_patient_name'] # Define CSV headers
 
         os.makedirs(self.backup_dir, exist_ok=True)
         self._load_slots()
@@ -39,10 +39,11 @@ class CancelledSlotManager:
             try:
                 with open(latest_backup, 'r', newline='', encoding='utf-8') as csvfile:
                     reader = csv.DictReader(csvfile)
-                    if reader.fieldnames != self.headers:
-                         # Handle potential header mismatch or older format if necessary
-                         logging.warning(f"Header mismatch in {latest_backup}. Expected {self.headers}, got {reader.fieldnames}. Attempting load anyway.")
-                         # Basic check: ensure essential 'id' is present
+                    # Check for essential headers including slot_period
+                    required_headers = ['id', 'provider', 'duration', 'slot_date', 'slot_period']
+                    if not all(h in reader.fieldnames for h in required_headers):
+                         logging.warning(f"Header mismatch or missing essential headers {required_headers} in {latest_backup}. Got {reader.fieldnames}. Attempting load anyway, but some data may be missing.")
+                         # Allow loading if 'id' is present, but warn heavily
                          if 'id' not in reader.fieldnames:
                              logging.error("Critical header 'id' missing. Cannot load slots.")
                              self.slots = []
@@ -68,6 +69,9 @@ class CancelledSlotManager:
                                 slot_day_of_week = slot_date_obj.strftime('%A')
                             except ValueError:
                                 logging.warning(f"Could not parse slot_date '{slot_date_str}' for slot ID {row.get('id')}. Setting to None.")
+                        # Get slot_period, normalize to uppercase AM/PM or None
+                        slot_period_raw = row.get('slot_period', '').strip().upper()
+                        slot_period = slot_period_raw if slot_period_raw in ['AM', 'PM'] else None
                         # Build the slot dictionary using known headers, handling missing optional ones
                         slot = {
                             'id': row.get('id'), # Required
@@ -75,13 +79,14 @@ class CancelledSlotManager:
                             'duration': row.get('duration'), # Required (assuming)
                             'slot_date': slot_date_obj, # Store date object
                             'slot_day_of_week': slot_day_of_week, # Store derived day name
+                            'slot_period': slot_period, # Store loaded period
                             'notes': row.get('notes', ''), # Optional
                             'matched_patient': matched_patient # Reconstructed or None
                         }
-                        if slot['id'] and slot['provider'] and slot['duration']: # Basic validation
+                        if slot['id'] and slot['provider'] and slot['duration'] and slot['slot_date'] and slot['slot_period']: # Basic validation
                              loaded_slots.append(slot)
                         else:
-                            logging.warning(f"Skipping row due to missing essential data: {row}")
+                            logging.warning(f"Skipping row due to missing essential data (ID, Provider, Duration, Date, Period): {row}")
 
                     self.slots = loaded_slots
                     logging.info(f"Successfully loaded {len(self.slots)} slots from {latest_backup}")
@@ -120,6 +125,7 @@ class CancelledSlotManager:
                         'provider': slot.get('provider'),
                         'duration': slot.get('duration'),
                         'slot_date': slot.get('slot_date').isoformat() if isinstance(slot.get('slot_date'), date) else '',
+                        'slot_period': slot.get('slot_period', ''), # Save AM/PM
                         'notes': slot.get('notes', ''),
                         'matched_patient_id': slot.get('matched_patient', {}).get('id', '') if slot.get('matched_patient') else '',
                         'matched_patient_name': slot.get('matched_patient', {}).get('name', '') if slot.get('matched_patient') else ''
@@ -130,24 +136,31 @@ class CancelledSlotManager:
         except Exception as e:
             logging.error(f"Error saving cancelled slots to {filepath}: {e}", exc_info=True)
 
-    def add_slot(self, provider: str, duration: str, slot_date: date, notes: str = ''):
-        """Adds a new cancelled slot with date and saves the list."""
+    def add_slot(self, provider: str, duration: str, slot_date: date, slot_period: str, notes: str = ''):
+        """Adds a new cancelled slot with date and time period (AM/PM) and saves."""
         new_id = str(uuid.uuid4())
         day_of_week = slot_date.strftime('%A') if isinstance(slot_date, date) else None
+        # Normalize period input
+        period_upper = slot_period.strip().upper() if slot_period else None
+        if period_upper not in ['AM', 'PM']:
+             logging.error(f"Invalid slot_period '{slot_period}' provided for add_slot. Must be 'AM' or 'PM'.")
+             # Decide how to handle: raise error, return None, or default? Let's return None.
+             return None
 
         new_slot = {
             'id': new_id,
             'provider': provider,
-            'duration': str(duration), # Ensure duration is stored as string
-            'slot_date': slot_date, # Store date object
-            'slot_day_of_week': day_of_week, # Store derived day name
+            'duration': str(duration),
+            'slot_date': slot_date,
+            'slot_day_of_week': day_of_week,
+            'slot_period': period_upper, # Store normalized AM/PM
             'notes': notes,
             'matched_patient': None
         }
         self.slots.append(new_slot)
         self._save_slots()
-        logging.debug(f"Added slot {new_id} for {slot_date} ({day_of_week}). Total slots: {len(self.slots)}")
-        return new_slot # Return the created slot with its ID
+        logging.debug(f"Added slot {new_id} for {slot_date} ({day_of_week} {period_upper}). Total slots: {len(self.slots)}")
+        return new_slot
 
     def remove_slot(self, appointment_id):
         """Removes a slot by its ID and saves the list."""
@@ -160,10 +173,15 @@ class CancelledSlotManager:
         logging.warning(f"Attempted to remove non-existent slot ID: {appointment_id}")
         return False
 
-    def update_slot(self, appointment_id: str, provider: str, duration: str, slot_date: date, notes: str):
-        """Updates details (including date) of an existing slot and saves the list."""
+    def update_slot(self, appointment_id: str, provider: str, duration: str, slot_date: date, slot_period: str, notes: str):
+        """Updates details (date, time period) of an existing slot and saves."""
         updated = False
         day_of_week = slot_date.strftime('%A') if isinstance(slot_date, date) else None
+        # Normalize period input
+        period_upper = slot_period.strip().upper() if slot_period else None
+        if period_upper not in ['AM', 'PM']:
+             logging.error(f"Invalid slot_period '{slot_period}' provided for update_slot. Must be 'AM' or 'PM'.")
+             return False # Fail update if period is invalid
 
         for i, slot in enumerate(self.slots):
             if slot.get('id') == appointment_id:
@@ -173,15 +191,16 @@ class CancelledSlotManager:
                      return False # Or raise an error
 
                  self.slots[i]['provider'] = provider
-                 self.slots[i]['duration'] = str(duration) # Ensure duration is string
-                 self.slots[i]['slot_date'] = slot_date # Update date object
-                 self.slots[i]['slot_day_of_week'] = day_of_week # Update derived day name
+                 self.slots[i]['duration'] = str(duration)
+                 self.slots[i]['slot_date'] = slot_date
+                 self.slots[i]['slot_day_of_week'] = day_of_week
+                 self.slots[i]['slot_period'] = period_upper # Update period
                  self.slots[i]['notes'] = notes
                  updated = True
                  break
         if updated:
             self._save_slots()
-            logging.debug(f"Updated slot {appointment_id} to {slot_date} ({day_of_week}).")
+            logging.debug(f"Updated slot {appointment_id} to {slot_date} ({day_of_week} {period_upper}).")
         else:
              logging.warning(f"Attempted to update non-existent or matched slot ID: {appointment_id}")
         return updated
