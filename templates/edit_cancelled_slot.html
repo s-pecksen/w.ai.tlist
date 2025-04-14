@@ -24,7 +24,7 @@
                     <div class="col-md-6 mb-3">
                         <label for="slot_date" class="form-label">Date</label>
                         <input type="date" class="form-control" id="slot_date" name="slot_date"
-                               value="{{ appointment.slot_date.isoformat() if appointment.slot_date and appointment.slot_date is instance(date) else '' }}" required>
+                               value="{{ appointment.slot_date.isoformat() if appointment.slot_date else '' }}" required>
                     </div>
                      {# --- Add AM/PM selector and Pre-fill --- #}
                     <div class="col-md-6 mb-3">

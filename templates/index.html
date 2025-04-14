@@ -401,27 +401,26 @@
             if (durationMap.hasOwnProperty(selectedType)) {
                 // Type has a predefined duration
                 durationSelect.value = durationMap[selectedType];
-                durationSelect.disabled = true; // Disable manual selection
-                durationSelect.classList.add('bg-light'); // Optional: visual cue
+                durationSelect.classList.add('bg-light'); // Optional: visual cue remains
+                // Add pointer-events: none to prevent clicking when auto-set
+                durationSelect.style.pointerEvents = 'none'; 
             } else if (selectedType === 'custom' || selectedType === 'emergency_exam' || selectedType === '') {
                 // Type requires manual duration selection or is the placeholder
-                durationSelect.disabled = false; // Enable manual selection
-                 durationSelect.classList.remove('bg-light'); // Remove visual cue
+                durationSelect.classList.remove('bg-light'); // Remove visual cue
+                durationSelect.style.pointerEvents = 'auto'; // Re-enable clicking
                 // Optionally reset if it was previously auto-set and now needs manual input
-                if (selectedType !== '' && !durationMap.hasOwnProperty(selectedType)) {
-                     // Clear selection only if moving to manual from auto? Or always clear?
-                     // Let's clear it to force a choice.
-                     // durationSelect.value = ''; // Clear selection - may cause validation issue if nothing selected
-                     // Alternative: Keep previous value but enable? Let's keep it enabled but don't clear.
-                }
+                // If going back to placeholder, clear the selection
                 if (selectedType === '') {
-                    durationSelect.value = ''; // Clear if going back to placeholder
+                    durationSelect.value = ''; 
                 }
+                 // For 'custom' or 'emergency', keep the previously selected value (if any) but make it editable.
+                 // If you want to force selection for these, uncomment the next line:
+                 // else { durationSelect.value = ''; } 
 
             } else {
                  // Should not happen with current types, but good practice
-                 durationSelect.disabled = false;
                  durationSelect.classList.remove('bg-light');
+                 durationSelect.style.pointerEvents = 'auto';
             }
 
             // --- Custom Reason/Notes Logic ---
