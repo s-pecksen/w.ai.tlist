@@ -323,19 +323,10 @@
                                         {% else %}
                                             <strong class="text-danger">NOT Available:</strong>
                                         {% endif %}
-                                        {# Define the desired order #}
-                                        {% set days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] %}
-                                        {# Keep track if we printed anything to manage semicolons #}
-                                        {% set printed_days = [] %}
-                                        {# Iterate through the defined order #}
-                                        {% for day in days_order %}
-                                            {# Check if the day exists in the patient's availability #}
-                                            {% if day.lower() in availability %}
-                                                {# Add semicolon before printing the next day, if it's not the first one #}
-                                                {% if printed_days %}; {% endif %}
-                                                {{- day[:3] }}({{ availability[day.lower()]|join('/') }}){#- Print day and periods #}
-                                                {% set _ = printed_days.append(1) %} {# Mark that we printed a day #}
-                                            {% endif %}
+                                        {# MODIFIED: Iterate directly over availability items #}
+                                        {% for day_key, periods in availability.items() %}
+                                            {# Attempt to display whatever key/value pairs exist #}
+                                            {{ day_key[:3]|capitalize }}({{ periods|join('/') }}){% if not loop.last %}; {% endif %}
                                         {% endfor %}
                                         </span>
                                     {% endif %}
