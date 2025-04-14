@@ -95,7 +95,9 @@
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="duration" class="form-label">Duration*</label>
+                                    {# Duration field is initially enabled #}
                                     <select class="form-select" id="duration" name="duration" required>
+                                        <option value="" disabled selected>Select Duration</option> {# Added a default placeholder #}
                                         <option value="30">30 minutes</option>
                                         <option value="60">1 hour</option>
                                         <option value="70">70 minutes</option>
@@ -370,33 +372,81 @@
     </div>
 </div>
 
-<!-- Add JavaScript to handle the reason field visibility -->
+<!-- Add JavaScript to handle the reason field visibility and auto-duration -->
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const appointmentTypeSelect = document.getElementById('appointment_type');
-        if (appointmentTypeSelect) {
-            appointmentTypeSelect.addEventListener('change', function() {
-                const reasonLabel = document.querySelector('label[for="reason"]');
-                const reasonField = document.getElementById('reason');
-                if (!reasonLabel || !reasonField) return;
+        const durationSelect = document.getElementById('duration'); // Get duration select
+        const reasonLabel = document.querySelector('label[for="reason"]');
+        const reasonField = document.getElementById('reason');
 
-                if (this.value === 'custom') {
+        // Define the duration mapping
+        const durationMap = {
+            'resto': '60',
+            'np_spec': '30',
+            'recall': '70',
+            'hygiene': '70',
+            'spec_exam': '30',
+            'x-ray': '30',
+            'rct': '90'
+            // 'emergency_exam' and 'custom' are handled separately
+        };
+
+        function updateFormBasedOnAppointmentType() {
+            if (!appointmentTypeSelect || !durationSelect) return; // Safety check
+
+            const selectedType = appointmentTypeSelect.value;
+
+            // --- Duration Logic ---
+            if (durationMap.hasOwnProperty(selectedType)) {
+                // Type has a predefined duration
+                durationSelect.value = durationMap[selectedType];
+                durationSelect.disabled = true; // Disable manual selection
+                durationSelect.classList.add('bg-light'); // Optional: visual cue
+            } else if (selectedType === 'custom' || selectedType === 'emergency_exam' || selectedType === '') {
+                // Type requires manual duration selection or is the placeholder
+                durationSelect.disabled = false; // Enable manual selection
+                 durationSelect.classList.remove('bg-light'); // Remove visual cue
+                // Optionally reset if it was previously auto-set and now needs manual input
+                if (selectedType !== '' && !durationMap.hasOwnProperty(selectedType)) {
+                     // Clear selection only if moving to manual from auto? Or always clear?
+                     // Let's clear it to force a choice.
+                     // durationSelect.value = ''; // Clear selection - may cause validation issue if nothing selected
+                     // Alternative: Keep previous value but enable? Let's keep it enabled but don't clear.
+                }
+                if (selectedType === '') {
+                    durationSelect.value = ''; // Clear if going back to placeholder
+                }
+
+            } else {
+                 // Should not happen with current types, but good practice
+                 durationSelect.disabled = false;
+                 durationSelect.classList.remove('bg-light');
+            }
+
+            // --- Custom Reason/Notes Logic ---
+            if (reasonLabel && reasonField) {
+                if (selectedType === 'custom') {
                     reasonLabel.innerHTML = 'Custom Appointment Type:*'; // Use innerHTML to include asterisk
                     reasonField.required = true;
                 } else {
                     reasonLabel.textContent = 'Additional Notes:';
                     reasonField.required = false;
                 }
-            });
-            // Trigger change event on load in case 'custom' is pre-selected
-            appointmentTypeSelect.dispatchEvent(new Event('change'));
+            }
         }
 
-        // Ensure date inputs default to today or prevent past dates if desired
+        // --- Event Listener ---
+        if (appointmentTypeSelect) {
+            appointmentTypeSelect.addEventListener('change', updateFormBasedOnAppointmentType);
+            // Trigger change event on load to set initial state for duration and reason
+            updateFormBasedOnAppointmentType(); // Call directly on load
+        }
+
+        // --- Date Input Logic ---
         const dateInputs = document.querySelectorAll('input[type="date"]');
         const today = new Date().toISOString().split('T')[0];
         dateInputs.forEach(input => {
-            // input.value = today; // Optionally default to today
             input.min = today; // Prevent selecting past dates
         });
 
