@@ -110,7 +110,8 @@
                                 Current Appointment object: {{ current_appointment | string() }}
                                 Current Appointment ID: {{ current_appointment.id | default('MISSING', true) }}
                                 Slot Day: {{ current_appointment.slot_day_of_week | default('MISSING', true) }}
-                                Patient Availability: {{ patient.availability_days | default('MISSING', true) }}
+                                Patient Availability: {{ patient.availability | default('MISSING', true) }} {# Changed from availability_days #}
+                                Patient Mode: {{ patient.availability_mode | default('MISSING', true) }} {# Added mode #}
                             -->
                             {# --- End Debug Output --- #}
                             <tr class="eligibility-match"> <!-- Always eligibility-match class based on manager filtering -->
@@ -123,15 +124,26 @@
                                     {{ patient.phone }}<br>
                                     <small>{{ patient.email or "No email" }}</small>
                                 </td>
-                                {# --- Display Patient Availability --- #}
+                                {# --- MODIFIED: Display Patient Availability with Mode --- #}
                                 <td>
-                                     {% if patient.availability_days %}
-                                        {{ patient.availability_days|join(', ') }}
+                                    {% set availability = patient.get('availability', {}) %}
+                                    {% set mode = patient.get('availability_mode', 'available') %}
+                                    {% if not availability %}
+                                        <span class="text-muted">Any Day/Time</span>
                                     {% else %}
-                                        <span class="text-muted">Any Day</span>
+                                        <span class="waitlist-availability">
+                                        {% if mode == 'available' %}
+                                            <strong class="text-success">Available:</strong>
+                                        {% else %}
+                                            <strong class="text-danger">NOT Available:</strong>
+                                        {% endif %}
+                                        {% for day, periods in availability.items()|sort %}
+                                            {{ day[:3] }}({{ periods|join('/') }}){% if not loop.last %}; {% endif %}
+                                        {% endfor %}
+                                        </span>
                                     {% endif %}
                                 </td>
-                                {# --- End Availability Display --- #}
+                                {# --- END MODIFIED Availability Display --- #}
                                 <td>{{ patient.wait_time }}</td>
                                 <td>
                                     <div class="patient-details">

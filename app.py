@@ -88,35 +88,45 @@ def wait_time_to_minutes(wait_time_str):
             # Update remaining string ONLY if days parsing succeeds
             if len(parts) > 1 and ',' in parts[1]:
                 remaining = parts[1].split(',')[1].strip()
+            else: # Handle cases like "X days" with no comma/hours/mins
+                remaining = ''
         except (ValueError, IndexError):
             # Handle error: print a warning, keep original 'remaining' for next steps
-            print(f"Warning: Could not parse days from '{wait_time_str}'.")
-            remaining = wait_time_str # Fallback to original if days parsing failed
+            logging.warning(f"Warning: Could not parse days from '{wait_time_str}'.")
+            # Don't reset remaining, let subsequent parsers try
 
     # Process hours from the potentially updated 'remaining' string
     if 'hours' in remaining:
         try:
             parts = remaining.split('hours')
-            hours = int(parts[0].strip())
+            hours_str = parts[0].strip()
+             # Handle potential leading comma if days failed but hours exist
+            if hours_str.startswith(','):
+                 hours_str = hours_str[1:].strip()
+            hours = int(hours_str)
             total_minutes += hours * 60 # INSIDE try
             # Update remaining string ONLY if hours parsing succeeds
             if len(parts) > 1 and ',' in parts[1]:
                 remaining = parts[1].split(',')[1].strip()
-            else:
+            else: # Handle "X hours" with no following minutes
                 remaining = '' # Successfully parsed 'X hours', nothing left for mins
         except (ValueError, IndexError):
              # Handle error: print warning, proceed to minutes with current 'remaining'
-             print(f"Warning: Could not parse hours from '{remaining}'.")
+             logging.warning(f"Warning: Could not parse hours from '{remaining}'.")
              # No need to reset 'remaining', just let minute parsing try
 
     # Process minutes from the potentially updated 'remaining' string
     if 'minutes' in remaining:
         try:
-            minutes = int(remaining.split('minutes')[0].strip())
+            minutes_str = remaining.split('minutes')[0].strip()
+             # Handle potential leading comma
+            if minutes_str.startswith(','):
+                 minutes_str = minutes_str[1:].strip()
+            minutes = int(minutes_str)
             total_minutes += minutes
         except (ValueError, IndexError):
              # Handle error: print warning
-             print(f"Warning: Could not parse minutes from '{remaining}'.")
+             logging.warning(f"Warning: Could not parse minutes from '{remaining}'.")
         
     return total_minutes
 
@@ -802,28 +812,110 @@ def assign_appointment(patient_id, appointment_id):
 
 def find_eligible_patients(cancelled_appointment: dict) -> list:
     """
-    Finds eligible patients for a cancelled slot by calling the waitlist manager.
-    Uses the manager's logic for filtering (provider, duration, day, period) and sorting.
+    Finds eligible patients for a cancelled slot by fetching waiting patients
+    and applying filtering logic directly within this function.
+    Handles provider, duration, day, and availability mode correctly.
+    Sorts eligible patients by emergency status, urgency, and wait time.
     """
-    provider_name = cancelled_appointment.get('provider')
-    slot_duration = cancelled_appointment.get('duration')
-    slot_day_of_week = cancelled_appointment.get('slot_day_of_week')
-    slot_period = cancelled_appointment.get('slot_period') # Get AM/PM from slot
+    slot_provider_name = cancelled_appointment.get('provider')
+    slot_duration = str(cancelled_appointment.get('duration')) # Ensure string comparison
+    slot_day_of_week = cancelled_appointment.get('slot_day_of_week') # e.g., 'Wednesday'
+    slot_period = cancelled_appointment.get('slot_period') # e.g., 'AM'
 
-    # Essential info check now includes slot_period
-    if not provider_name or not slot_duration or not slot_day_of_week or not slot_period:
-        logging.error(f"Cannot find eligible patients: Missing essential info in cancelled_appointment dict: {cancelled_appointment}")
+    # Essential slot info check
+    if not slot_provider_name or not slot_duration or not slot_day_of_week or not slot_period:
+        logging.error(f"Cannot find eligible patients: Missing essential slot info: Provider={slot_provider_name}, Duration={slot_duration}, Day={slot_day_of_week}, Period={slot_period}")
         return []
 
-    # Call the waitlist manager's method, passing the period
-    eligible_patients = waitlist_manager.find_eligible_patients(
-        provider_name,
-        str(slot_duration),
-        slot_day_of_week,
-        slot_period # Pass the period
-    )
+    logging.debug(f"Finding eligible patients for Slot: Provider={slot_provider_name}, Duration={slot_duration}, Day={slot_day_of_week}, Period={slot_period}")
 
-    logging.debug(f"Found {len(eligible_patients)} eligible patients via manager for slot {cancelled_appointment.get('id')} on {slot_day_of_week} {slot_period}")
+    # Get all waiting patients from the manager
+    all_waiting_patients = []
+    try:
+        all_waiting_patients = waitlist_manager.get_all_patients(status_filter='waiting')
+        if not isinstance(all_waiting_patients, list):
+             raise AttributeError
+        logging.debug("Fetched waiting patients using manager's status_filter.")
+    except (AttributeError, TypeError):
+         logging.debug("Manager does not support status_filter or returned unexpected type. Filtering manually.")
+         all_patients = waitlist_manager.get_all_patients()
+         all_waiting_patients = [p for p in all_patients if p.get('status') == 'waiting']
+
+
+    eligible_patients = []
+    for patient in all_waiting_patients:
+        patient_id = patient.get('id', 'Unknown')
+        patient_name = patient.get('name', 'Unknown')
+        patient_duration = str(patient.get('duration', ''))
+        patient_provider_pref_raw = patient.get('provider', 'no preference')
+        patient_provider_pref = patient_provider_pref_raw.strip().lower() if patient_provider_pref_raw else 'no preference'
+        patient_availability_prefs = patient.get('availability', {})
+        patient_mode = patient.get('availability_mode', 'available')
+
+        # 1. Check Duration
+        if patient_duration != slot_duration:
+            # logging.debug(f"Patient {patient_id} ({patient_name}) skipped: Duration mismatch") # Reduced verbosity
+            continue
+
+        # 2. Check Provider
+        slot_provider_lower = slot_provider_name.strip().lower()
+        provider_ok = (patient_provider_pref == 'no preference' or patient_provider_pref == slot_provider_lower)
+        if not provider_ok:
+            # logging.debug(f"Patient {patient_id} ({patient_name}) skipped: Provider mismatch") # Reduced verbosity
+            continue
+
+        # 3. Check Day/Time Availability (incorporating mode)
+        is_available_for_slot = True
+        has_patient_preferences = bool(patient_availability_prefs)
+        slot_matches_a_preference = False
+        slot_day_lower = slot_day_of_week.lower()
+        matching_day_key = None
+        for day_key in patient_availability_prefs.keys():
+            if day_key.lower() == slot_day_lower:
+                matching_day_key = day_key
+                break
+
+        if matching_day_key:
+            day_prefs = patient_availability_prefs.get(matching_day_key, [])
+            day_prefs_upper = [str(p).strip().upper() for p in day_prefs]
+            slot_period_upper = slot_period.strip().upper()
+            if slot_period_upper in day_prefs_upper:
+                slot_matches_a_preference = True
+
+        if patient_mode == 'available':
+            if has_patient_preferences and not slot_matches_a_preference:
+                is_available_for_slot = False
+        elif patient_mode == 'unavailable':
+            if has_patient_preferences and slot_matches_a_preference:
+                is_available_for_slot = False
+
+        if is_available_for_slot:
+            # logging.debug(f"Patient {patient_id} ({patient_name}) added as eligible.") # Reduced verbosity
+            eligible_patients.append(patient)
+
+
+    # --- CORRECTED SORTING LOGIC ---
+    def sort_eligible_key(patient):
+        try:
+            is_emergency = patient.get('appointment_type', '').lower() == 'emergency_exam'
+            urgency = patient.get('urgency', 'low').lower()
+            wait_minutes = -wait_time_to_minutes(patient.get('wait_time', '0 minutes')) # Negative for descending
+
+            # Map urgency to sortable numbers (lower number = higher priority)
+            urgency_map = {'high': 0, 'medium': 1, 'low': 2}
+            urgency_level = urgency_map.get(urgency, 2) # Default to low if invalid
+
+            # Sort order: Emergency first, then Urgency, then Wait Time
+            # Emergency (False comes first), Urgency (0 comes first), Wait Time (higher negative comes first)
+            return (not is_emergency, urgency_level, wait_minutes)
+        except Exception as e:
+            logging.error(f"Error calculating sort key for eligible patient {patient.get('id')}: {e}", exc_info=True)
+            return (True, 2, 0) # Default to lowest priority on error
+
+    eligible_patients.sort(key=sort_eligible_key)
+    # --- END CORRECTED SORTING LOGIC ---
+
+    logging.debug(f"Found and sorted {len(eligible_patients)} eligible patients for slot {cancelled_appointment.get('id')}")
     return eligible_patients
 
 @app.route('/remove_cancelled_slot/<appointment_id>', methods=['POST'])
