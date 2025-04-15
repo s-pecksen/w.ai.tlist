@@ -2,11 +2,12 @@
 
 :root {
   /* Color palette inspired by the logo */
-  --primary-blue: #2B7BB9;
+  --primary-blue: #3ea5ab;
   --light-blue: #8CC7F3;
   --softer-blue: #E5F2FB;
   --navy: #1B4965;
   --white: #FFFFFF;
+  --primary-hover: #2E7C7D;
   
   /* Font families */
   --font-primary: 'Open Sans', sans-serif;
@@ -33,7 +34,7 @@
   --secondary-color: #4F6367; /* Slightly bluer green/grey */
 
   /* Navigation bar styling */
-  --navbar-bg: var(--secondary-color); /* --secondary-color is #4F6367 */
+  --navbar-bg: #3ea5ab;
   --navbar-text: var(--text-color-light); /* --text-color-light is #FFFFFF */
   --accent-color: #A4B0A0; /* Lighter grey-green */
 
@@ -122,7 +123,8 @@ h1 {
 }
 
 .button {
-  background-color: var(--primary-blue);
+  /* UPDATED: Add !important */
+  background-color: var(--primary-blue) !important;
   color: var(--white);
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
@@ -134,7 +136,8 @@ h1 {
 }
 
 .button:hover {
-  background-color: var(--navy);
+  /* UPDATED: Add !important */
+  background-color: var(--primary-hover) !important;
 }
 
 /* Responsive design */
@@ -188,9 +191,16 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--primary-blue);
 }
 
+/* --- ADDED: Style for checked radio buttons --- */
+input[type="radio"]:checked {
+  /* UPDATED: Add !important */
+  accent-color: var(--primary-blue) !important; /* Use the primary color for the check accent */
+}
+
 button {
   padding: 12px;
-  background-color: var(--primary-blue);
+  /* UPDATED: Add !important */
+  background-color: var(--primary-blue) !important;
   color: var(--white);
   border: none;
   border-radius: 4px;
@@ -201,7 +211,8 @@ button {
 }
 
 button:hover {
-  background-color: var(--dark-blue);
+  /* UPDATED: Add !important */
+  background-color: var(--primary-hover) !important;
 }
 
 table {
@@ -306,7 +317,8 @@ tr.emergency {
 
 /* Button styling */
 .cta-button {
-  background: var(--primary-blue);
+  /* UPDATED: Add !important */
+  background: var(--primary-blue) !important;
   color: var(--white);
   padding: 1rem 2rem;
   border: none;
@@ -317,7 +329,8 @@ tr.emergency {
 }
 
 .cta-button:hover {
-  background: var(--dark-blue);
+  /* UPDATED: Add !important */
+  background: var(--primary-hover) !important;
 }
 
 /* Text content styling */
@@ -382,8 +395,8 @@ tr.emergency {
 
 /* Navigation bar styling */
 .navbar {
-  /* Keep !important removed here for now */
-  background-color: var(--navbar-bg);
+  /* UPDATED: Add !important to ensure this rule takes precedence */
+  background-color: var(--navbar-bg) !important;
   box-shadow: var(--box-shadow-light);
 }
 
