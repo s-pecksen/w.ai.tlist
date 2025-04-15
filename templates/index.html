@@ -40,10 +40,15 @@
 {% endblock %}
 
 {% block content %}
+{# --- Move Logo HERE, inside container but before row --- #}
+<img src="{{ url_for('static', filename='waitlist-logo.png') }}" alt="Waitlist Manager Logo" class="header-logo">
+
+{# The container div from base.html wraps this block #}
 <div class="container">
-    {# Note: id="page-top" is now in base.html's main container #}
-    <h1 class="display-5 text-center">Patient Waitlist Manager</h1>
-    
+    {# Note: id="page-top" is now in base.html's main container - This comment might be slightly misplaced now, page-top is elsewhere #}
+
+    {# --- Logo was moved from here --- #}
+
     <div class="row">
         <div class="col-lg-7 col-md-12"> {# Make patient form wider #}
             <div class="card mb-4">

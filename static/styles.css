@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@500;600;700&display=swap');
+
 :root {
   /* Color palette inspired by the logo */
   --primary-blue: #2B7BB9;
@@ -23,33 +25,73 @@
   --scheduled-hover: #d6d8db;
   --emergency-bg: #f8d7da; /* Bootstrap red (same as high urgency) */
   --emergency-hover: #f1c2c6;
+
+  --bg-image-url: url('/static/waitlist-background.png');
+  /* --bg-image-overlay: rgba(255, 255, 255, 0.75); */ /* REMOVED overlay */
+  --bg-main: #F5F5F5; /* Light grey fallback */
+  --primary-color: #587D71; /* Muted green from shadows */
+  --secondary-color: #4F6367; /* Slightly bluer green/grey */
+
+  /* Navigation bar styling */
+  --navbar-bg: var(--secondary-color); /* --secondary-color is #4F6367 */
+  --navbar-text: var(--text-color-light); /* --text-color-light is #FFFFFF */
+  --accent-color: #A4B0A0; /* Lighter grey-green */
+
+  /* --- ADDED: Specific color for navbar links --- */
+  --navbar-link-color: #f8eddd;
+  /* --- Keep these for reference/other elements if needed --- */
+  --text-color-dark: #333333;
+  --text-color-light: #FFFFFF;
 }
 
 body {
-  font-family: 'Open Sans', sans-serif;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-  background-color: var(--light-gray);
-  color: #333333;
+  font-family: var(--font-primary);
+  color: var(--text-color-dark);
+
+  /* --- Use simplified background - only image and fallback color --- */
+  background:
+    var(--bg-image-url)
+    center center / cover no-repeat fixed
+    var(--bg-main);
+  /* Removed !important as the simple version seemed to work initially */
+  /* --- END Simplified Background --- */
+
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
 }
 
+/* --- REMOVE H1 Styling or ensure it doesn't conflict --- */
+/* H1 styling might not be needed anymore if replaced by logo */
 h1, h2 {
   font-family: 'Montserrat', sans-serif;
-  color: var(--dark-blue);
+  color: var(--dark-blue); /* Keep for H2 */
 }
 
+/* Remove specific H1 style if logo replaces it */
+/*
 h1 {
   font-size: 2.2rem;
   margin-bottom: 1.5rem;
   text-align: center;
 }
+*/
+
+/* --- ADD Logo Styling --- */
+.header-logo {
+  display: block; /* Center using margin auto */
+  /* Reduce top/bottom margin significantly */
+  margin: 0 auto 1.5rem auto; /* Example: 0 top, auto left/right, 1.5rem bottom */
+  max-width: 250px; /* Maybe slightly smaller */
+  height: auto; /* Maintain aspect ratio */
+}
 
 .container {
-  background-color: var(--white);
   max-width: 1200px;
-  margin: 0 auto;
+  /* Reduce top margin to bring container closer to logo/navbar */
+  margin: 1rem auto 2rem auto; /* Example: 1rem top, auto left/right, 2rem bottom */
   padding: 2rem;
+  background-color: transparent;
 }
 
 .header {
@@ -336,4 +378,22 @@ tr.emergency {
 .table-hover > tbody > tr.table-danger:hover,
 .table-hover > tbody > tr.table-danger:hover > td {
     background-color: var(--emergency-hover) !important;
+}
+
+/* Navigation bar styling */
+.navbar {
+  /* Keep !important removed here for now */
+  background-color: var(--navbar-bg);
+  box-shadow: var(--box-shadow-light);
+}
+
+.navbar-brand, .nav-link {
+  /* Use the new variable and add !important back */
+  color: var(--navbar-link-color) !important;
+  font-weight: 500;
+}
+
+.nav-link:hover {
+  /* Use white or a slightly lighter color for hover */
+  color: var(--text-color-light) !important; /* Use white for hover */
 }
