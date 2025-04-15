@@ -179,21 +179,22 @@
         </div>
         
         <div class="col-lg-5 col-md-12"> {# Made quick search narrower #}
-             {# Add id to the form section container #}
-            <div class="card mb-4" id="find-matches-form">
+             {# --- MODIFIED CARD: Changed ID, title, action, fields, button text --- #}
+            <div class="card mb-4" id="add-slot-form-index">
                 <div class="card-body">
-                    <h5 class="card-title">Quick Search for Slot</h5>
-                    <p class="text-muted"><small>Temporarily check for matches. Manage permanent slots on the <a href="{{ url_for('list_cancelled_appointments') }}">Open Slots</a> page.</small></p>
+                    <h5 class="card-title">Add Open Slot</h5>
+                    {# Removed helper text #}
                     {% if not has_providers %}
                     <div class="alert alert-warning" role="alert">
                         Please add providers first.
                     </div>
                     {% else %}
-                    {# This form now goes to 'create_slot_and_find_matches' #}
-                    <form action="{{ url_for('create_slot_and_find_matches') }}" method="post">
+                    {# Changed form action to add_cancelled_appointment #}
+                    <form action="{{ url_for('add_cancelled_appointment') }}" method="post">
                         <div class="mb-3">
-                            <label for="cancel_provider" class="form-label">Available Provider</label>
-                            <select class="form-select" id="cancel_provider" name="provider" required>
+                            {# Ensure name matches route: 'provider' #}
+                            <label for="slot_provider" class="form-label">Provider</label>
+                            <select class="form-select" id="slot_provider" name="provider" required>
                                 <option value="" selected disabled>Select Provider</option>
                                 {# providers is now a list of dicts {'name': 'Provider Name'} #}
                                 {% for provider_dict in providers %}
@@ -203,13 +204,15 @@
                         </div>
                          <div class="row">
                              <div class="col-md-6 mb-3">
-                                <label for="cancel_slot_date" class="form-label">Date of Slot</label>
-                                <input type="date" class="form-control" id="cancel_slot_date" name="slot_date" required>
+                                {# Ensure name matches route: 'slot_date' #}
+                                <label for="slot_date_index" class="form-label">Date of Slot</label>
+                                <input type="date" class="form-control" id="slot_date_index" name="slot_date" required>
                             </div>
                             {# --- Add AM/PM selector --- #}
                             <div class="col-md-6 mb-3">
-                                <label for="cancel_slot_period" class="form-label">Time</label>
-                                <select class="form-select" id="cancel_slot_period" name="slot_period" required>
+                                {# Ensure name matches route: 'slot_period' #}
+                                <label for="slot_period_index" class="form-label">Time</label>
+                                <select class="form-select" id="slot_period_index" name="slot_period" required>
                                     <option value="" selected disabled>Select AM/PM</option>
                                     <option value="AM">AM</option>
                                     <option value="PM">PM</option>
@@ -218,8 +221,10 @@
                             {# --- End AM/PM selector --- #}
                          </div>
                         <div class="mb-3">
-                            <label for="cancel_duration" class="form-label">Available Duration</label>
-                            <select class="form-select" id="cancel_duration" name="duration" required>
+                             {# Ensure name matches route: 'duration' #}
+                            <label for="slot_duration_index" class="form-label">Duration</label>
+                            <select class="form-select" id="slot_duration_index" name="duration" required>
+                                <option value="" disabled selected>Select Duration</option> {# Added default #}
                                 <option value="30">30 minutes</option>
                                 <option value="60">1 hour</option>
                                 <option value="70">70 minutes</option>
@@ -227,11 +232,19 @@
                                 <option value="120">2 hours</option>
                             </select>
                         </div>
-                        <button type="submit" class="btn btn-info">Find Matching Patients</button>
+                        {# --- ADDED: Notes field --- #}
+                        <div class="mb-3">
+                            <label for="slot_notes_index" class="form-label">Notes (Optional)</label>
+                            <textarea class="form-control" id="slot_notes_index" name="notes" rows="2"></textarea>
+                        </div>
+                        {# --- END ADDED: Notes field --- #}
+                        {# Changed button text #}
+                        <button type="submit" class="btn btn-primary">Add Slot</button>
                     </form>
                     {% endif %}
                 </div>
             </div>
+            {# --- END MODIFIED CARD --- #}
         </div>
     </div>
 
