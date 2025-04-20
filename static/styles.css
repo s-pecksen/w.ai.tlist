@@ -123,8 +123,8 @@ h1 {
 }
 
 .button {
-  /* UPDATED: Add !important */
-  background-color: var(--primary-blue) !important;
+  /* REMOVED: !important from background-color */
+  background-color: var(--primary-blue);
   color: var(--white);
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
@@ -136,8 +136,8 @@ h1 {
 }
 
 .button:hover {
-  /* UPDATED: Add !important */
-  background-color: var(--primary-hover) !important;
+  /* REMOVED: !important from background-color */
+  background-color: var(--primary-hover);
 }
 
 /* Responsive design */
@@ -199,8 +199,8 @@ input[type="radio"]:checked {
 
 button {
   padding: 12px;
-  /* UPDATED: Add !important */
-  background-color: var(--primary-blue) !important;
+  /* REMOVED: !important (again) */
+  background-color: var(--primary-blue);
   color: var(--white);
   border: none;
   border-radius: 4px;
@@ -211,8 +211,8 @@ button {
 }
 
 button:hover {
-  /* UPDATED: Add !important */
-  background-color: var(--primary-hover) !important;
+  /* REMOVED: !important (again) */
+  background-color: var(--primary-hover);
 }
 
 table {
@@ -259,11 +259,13 @@ th {
 }
 
 .action-buttons button[style*="background-color: #f44336"] {
-  background-color: #EF4444;
+  /* UPDATED: Add !important */
+  background-color: #EF4444 !important;
 }
 
 .action-buttons button[style*="background-color: #f44336"]:hover {
-  background-color: #DC2626;
+  /* UPDATED: Add !important */
+  background-color: #DC2626 !important;
 }
 
 tr.emergency {

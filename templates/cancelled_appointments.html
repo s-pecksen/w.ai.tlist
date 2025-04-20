@@ -169,16 +169,26 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <!-- Assign Button Logic -->
-                                    {# Simplified check: just ensure both IDs exist #}
-                                    {% if patient.id and current_appointment.id %}
-                                        <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=current_appointment.id) }}" method="post">
-                                            <button type="submit" class="btn btn-sm btn-success">Assign</button>
-                                        </form>
-                                    {# Removed the elif condition - if IDs are missing, something else is wrong #}
+                                    {# --- MODIFIED: Changed to Propose Button triggering modal --- #}
+                                    {# Ensure patient and appointment data is available #}
+                                    {% if patient.id and current_appointment.id and current_appointment.slot_date and current_appointment.slot_time %}
+                                        <button type="button" class="btn btn-sm btn-info propose-slot-btn"
+                                                data-bs-toggle="modal" data-bs-target="#proposeSlotModal"
+                                                data-patient-id="{{ patient.id }}"
+                                                data-patient-name="{{ patient.name }}"
+                                                data-patient-first-name="{{ patient.name.split()[0] }}" {# Simple first name extraction #}
+                                                data-appointment-id="{{ current_appointment.id }}"
+                                                data-slot-weekday="{{ current_appointment.slot_date.strftime('%A') }}"
+                                                data-slot-date-str="{{ current_appointment.slot_date.strftime('%B %d, %Y') }}"
+                                                data-slot-time="{{ current_appointment.slot_time }}"
+                                                data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}" {# Reuse macro, clean up #}
+                                                data-provider-name="{{ current_appointment.provider }}">
+                                            <i class="bi bi-send"></i> Propose Slot
+                                        </button>
                                     {% else %}
-                                        <button class="btn btn-sm btn-secondary" disabled>Error</button>
+                                        <button class="btn btn-sm btn-secondary" disabled title="Missing patient/slot data">Error</button>
                                     {% endif %}
+                                    {# --- END MODIFIED Button --- #}
                                 </td>
                             </tr>
                             {% endfor %}
@@ -221,13 +231,19 @@
 
                         {# --- Add Date Input Field --- #}
                         <div class="row">
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-4 mb-3"> {# Adjusted grid size #}
                                 <label for="slot_date" class="form-label">Date</label>
                                 <input type="date" class="form-control" id="slot_date" name="slot_date" required>
                             </div>
-                             {# --- Add AM/PM selector --- #}
-                            <div class="col-md-6 mb-3">
-                                <label for="slot_period" class="form-label">Time</label>
+                             {# --- Add Time Input --- #}
+                            <div class="col-md-4 mb-3"> {# Adjusted grid size #}
+                                <label for="slot_time" class="form-label">Time*</label>
+                                <input type="time" class="form-control" id="slot_time" name="slot_time" required>
+                            </div>
+                            {# --- End Time Input --- #}
+                             {# --- Modified AM/PM selector --- #}
+                            <div class="col-md-4 mb-3"> {# Adjusted grid size #}
+                                <label for="slot_period" class="form-label">Period</label> {# Changed label, removed * #}
                                 <select class="form-select" id="slot_period" name="slot_period" required>
                                     <option value="" selected disabled>Select AM/PM</option>
                                     <option value="AM">AM</option>
@@ -236,7 +252,7 @@
                             </div>
                             {# --- End AM/PM selector --- #}
                         </div>
-                        {# --- End Date Input --- #}
+                        {# --- End Date/Time/Period Input --- #}
 
                         <div class="mb-3">
                             <label for="duration" class="form-label">Duration</label>
@@ -277,8 +293,14 @@
                                             {# Display Date and Day #}
                                             {% if appointment.slot_date %}
                                                 {{ appointment.slot_date.strftime('%a, %b %d, %Y') }} <!-- Short format -->
+                                                {# Display specific time if available #}
+                                                {% if appointment.slot_time %}
+                                                    at {{ appointment.slot_time }}
+                                                {% elif appointment.slot_period %}
+                                                    ({{ appointment.slot_period }}) {# Fallback to period #}
+                                                {% endif %}
                                             {% else %}
-                                                Date Unknown
+                                                Date/Time Unknown
                                             {% endif %}
                                             <br>
                                             Duration: {{ appointment.duration }} minutes

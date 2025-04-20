@@ -208,15 +208,21 @@
                             </select>
                         </div>
                          <div class="row">
-                             <div class="col-md-6 mb-3">
+                             <div class="col-md-4 mb-3"> {# Adjusted grid size #}
                                 {# Ensure name matches route: 'slot_date' #}
-                                <label for="slot_date_index" class="form-label">Date of Slot</label>
+                                <label for="slot_date_index" class="form-label">Date</label>
                                 <input type="date" class="form-control" id="slot_date_index" name="slot_date" required>
                             </div>
-                            {# --- Add AM/PM selector --- #}
-                            <div class="col-md-6 mb-3">
+                            {# --- Add Time Input --- #}
+                            <div class="col-md-4 mb-3"> {# Adjusted grid size #}
+                                <label for="slot_time_index" class="form-label">Time*</label>
+                                <input type="time" class="form-control" id="slot_time_index" name="slot_time" required>
+                            </div>
+                            {# --- End Time Input --- #}
+                            {# --- Modified AM/PM selector --- #}
+                            <div class="col-md-4 mb-3"> {# Adjusted grid size #}
                                 {# Ensure name matches route: 'slot_period' #}
-                                <label for="slot_period_index" class="form-label">Time</label>
+                                <label for="slot_period_index" class="form-label">Period</label> {# Changed label, removed * #}
                                 <select class="form-select" id="slot_period_index" name="slot_period" required>
                                     <option value="" selected disabled>Select AM/PM</option>
                                     <option value="AM">AM</option>
