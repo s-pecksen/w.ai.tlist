@@ -17,6 +17,10 @@
          color: #6c757d;
     }
     .waitlist-availability { font-size: 0.85em; color: #6c757d; }
+    /* Style for the email template textarea */
+    #emailTemplate {
+        min-height: 200px; /* Adjust as needed */
+    }
 </style>
 {% endblock %}
 
@@ -74,8 +78,8 @@
         <div class="row">
             {% for slot in matching_slots %}
             <div class="col-md-6 col-lg-4">
-                <div class="card slot-card shadow-sm">
-                    <div class="card-body">
+                <div class="card slot-card shadow-sm mb-4"> {# Added mb-4 for spacing #}
+                    <div class="card-body d-flex flex-column"> {# Use flexbox for button alignment #}
                         <h5 class="card-title">{{ slot.provider }}</h5>
                         <div class="slot-details mb-3">
                             {% if slot.slot_date %}
@@ -94,17 +98,76 @@
                                 <br><i class="bi bi-journal-text"></i> Notes: {{ slot.notes }}
                             {% endif %}
                         </div>
-                        {# Assign Button Form #}
-                        <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=slot.id) }}" method="post" onsubmit="return confirm('Are you sure you want to assign {{ patient.name }} to this slot on {{ slot.slot_date.strftime('%a, %b %d') if slot.slot_date else 'this date' }} {{ slot.slot_period or '' }} with {{ slot.provider }}?');">
-                            <button type="submit" class="btn btn-success w-100">
-                                <i class="bi bi-check-circle-fill"></i> Assign this Slot
-                            </button>
-                        </form>
+                        {# Propose Slot Button - Triggers Modal #}
+                        <button type="button" class="btn btn-primary w-100 mt-auto" data-bs-toggle="modal" data-bs-target="#proposeModal-{{ slot.id }}">
+                            <i class="bi bi-send"></i> Propose Slot
+                        </button>
                     </div>
                 </div>
             </div>
+            {# Modal definition moved outside this loop/row #}
             {% endfor %}
-        </div>
+        </div> {# End .row #}
+
+        {# --- Modal Definitions (Placed Outside the Row) --- #}
+        {% for slot in matching_slots %}
+            <div class="modal fade" id="proposeModal-{{ slot.id }}" tabindex="-1" aria-labelledby="proposeModalLabel-{{ slot.id }}" aria-hidden="true">
+              <div class="modal-dialog modal-lg"> {# Larger modal #}
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="proposeModalLabel-{{ slot.id }}">Propose Slot to {{ patient.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  {# Form to send email proposal #}
+                  <form action="{{ url_for('send_proposal_email') }}" method="post"> {# TODO: Create this endpoint #}
+                      <input type="hidden" name="patient_id" value="{{ patient.id }}">
+                      <input type="hidden" name="slot_id" value="{{ slot.id }}">
+                      <input type="hidden" name="patient_email" value="{{ patient.email }}">
+                      <div class="modal-body">
+                          <div class="mb-3">
+                              <label for="emailSubject-{{ slot.id }}" class="form-label">Subject:</label>
+                              <input type="text" class="form-control" id="emailSubject-{{ slot.id }}" name="email_subject" value="Appointment Slot Available for {{ patient.appointment_type|replace('_', ' ')|title }}">
+                          </div>
+                          <div class="mb-3">
+                              <label for="emailTemplate-{{ slot.id }}" class="form-label">Email Body:</label>
+                              <textarea class="form-control" id="emailTemplate-{{ slot.id }}" name="email_body" rows="10">
+Dear {{ patient.name }},
+
+Good news! We have an appointment slot available that might fit your needs.
+
+Details:
+Provider: {{ slot.provider }}
+Date: {{ slot.slot_date.strftime('%A, %B %d, %Y') if slot.slot_date else 'Date TBD' }} {% if slot.slot_period %}({{ slot.slot_period }}){% endif %}
+Duration: {{ slot.duration }} minutes
+Appointment Type: {{ patient.appointment_type|replace('_', ' ')|title }}
+
+{% if slot.notes %}Notes: {{ slot.notes }}{% endif %}
+
+Please reply to this email or call us at [Your Phone Number] as soon as possible to confirm if you would like to book this slot. Slots are filled on a first-come, first-served basis.
+
+If this time doesn't work, please let us know, and we'll keep you on the waitlist.
+
+Sincerely,
+[Your Clinic Name]
+                              </textarea>
+                          </div>
+                          <p><small>Recipient: {{ patient.email or 'N/A (Cannot send email)' }}</small></p>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        {# Disable button if no email #}
+                        <button type="submit" class="btn btn-success" {% if not patient.email %}disabled title="Patient has no email address"{% endif %}>
+                            <i class="bi bi-envelope-check-fill"></i> Send Proposal
+                        </button>
+                      </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+            {# --- End Modal --- #}
+        {% endfor %}
+        {# --- End Modal Definitions --- #}
+
     {% else %}
         <div class="alert alert-info" role="alert">
             <h4 class="alert-heading">No Matches Found</h4>
@@ -121,4 +184,8 @@
     </div>
 
 </div>
+
+{# Remove the old confirmation script if it's no longer needed, or adapt if necessary #}
+{# <script> ... </script> #}
+
 {% endblock %} 

@@ -1251,10 +1251,10 @@ if __name__ == '__main__':
     # Load initial data before starting the server - Handled by manager init
 
     # --- Add this line to print the URL map ---
-    print("--- Registered URL Routes ---")
-    print(app.url_map)
-    print("--- End Registered URL Routes ---")
+    # print("--- Registered URL Routes ---")
+    # print(app.url_map)
+    # print("--- End Registered URL Routes ---")
     # --- End added line ---
 
-    print("Starting Flask application...")
+    # print("Starting Flask application...")
     app.run(debug=True, host="0.0.0.0", port=7776)

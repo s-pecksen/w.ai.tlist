@@ -38,6 +38,8 @@
          color: #6c757d;
     }
     .waitlist-availability { font-size: 0.85em; color: #6c757d; }
+    /* Added class for propose button */
+    .propose-slot-btn {}
 </style>
 {% endblock %}
 
@@ -169,26 +171,25 @@
                                     </div>
                                 </td>
                                 <td>
-                                    {# --- MODIFIED: Changed to Propose Button triggering modal --- #}
-                                    {# Ensure patient and appointment data is available #}
+                                    {# Propose Slot Button - Triggers Modal via data attributes #}
                                     {% if patient.id and current_appointment.id and current_appointment.slot_date and current_appointment.slot_time %}
                                         <button type="button" class="btn btn-sm btn-info propose-slot-btn"
                                                 data-bs-toggle="modal" data-bs-target="#proposeSlotModal"
                                                 data-patient-id="{{ patient.id }}"
                                                 data-patient-name="{{ patient.name }}"
-                                                data-patient-first-name="{{ patient.name.split()[0] }}" {# Simple first name extraction #}
+                                                data-patient-first-name="{{ patient.name.split()[0] }}"
                                                 data-appointment-id="{{ current_appointment.id }}"
                                                 data-slot-weekday="{{ current_appointment.slot_date.strftime('%A') }}"
                                                 data-slot-date-str="{{ current_appointment.slot_date.strftime('%B %d, %Y') }}"
                                                 data-slot-time="{{ current_appointment.slot_time }}"
-                                                data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}" {# Reuse macro, clean up #}
-                                                data-provider-name="{{ current_appointment.provider }}">
+                                                data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}"
+                                                data-provider-name="{{ current_appointment.provider }}"
+                                                data-patient-email="{{ patient.email or '' }}"> {# Email still useful for display #}
                                             <i class="bi bi-send"></i> Propose Slot
                                         </button>
                                     {% else %}
                                         <button class="btn btn-sm btn-secondary" disabled title="Missing patient/slot data">Error</button>
                                     {% endif %}
-                                    {# --- END MODIFIED Button --- #}
                                 </td>
                             </tr>
                             {% endfor %}
@@ -357,6 +358,127 @@
             }
             input.min = today; // Prevent selecting past dates
         });
+    });
+</script>
+
+{# --- ADDED: Propose Slot Modal Definition (No Form) --- #}
+<div class="modal fade" id="proposeSlotModal" tabindex="-1" aria-labelledby="proposeSlotModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="proposeSlotModalLabel">Proposal Message</h5> {# Simplified Title #}
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+          {# Removed Subject Line Div #}
+          <div class="mb-3">
+              <label for="modalEmailBody" class="form-label">Message Template:</label>
+              <textarea class="form-control" id="modalEmailBody" name="email_body" rows="10" readonly></textarea> {# Keep readonly #}
+          </div>
+          {# Removed Proposed To Line #}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="copyTemplateButton">
+            <i class="bi bi-clipboard"></i> Copy Message
+        </button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{# --- END Modal Definition --- #}
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }} {# Include base template scripts if needed #}
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Date input logic (unchanged)
+        const dateInputs = document.querySelectorAll('input[type="date"]');
+        const today = new Date().toISOString().split('T')[0];
+        dateInputs.forEach(input => {
+            if (!input.value) {
+               // input.value = today;
+            }
+            input.min = today;
+        });
+
+        // --- MODIFIED: Simplified Modal Population Logic ---
+        const proposeModalElement = document.getElementById('proposeSlotModal');
+        const copyButton = document.getElementById('copyTemplateButton');
+
+        if (proposeModalElement) {
+            proposeModalElement.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget; // The button that triggered the modal
+
+                // Extract needed data from the button's data-* attributes
+                const patientName = button.getAttribute('data-patient-name');
+                const patientFirstName = button.getAttribute('data-patient-first-name');
+                const slotWeekday = button.getAttribute('data-slot-weekday');
+                const slotDateStr = button.getAttribute('data-slot-date-str');
+                const slotTime = button.getAttribute('data-slot-time');
+                const appointmentType = button.getAttribute('data-appointment-type');
+                const providerName = button.getAttribute('data-provider-name');
+
+                // Find elements inside the modal to update
+                const modalTitle = proposeModalElement.querySelector('.modal-title');
+                const modalBodyTextarea = proposeModalElement.querySelector('#modalEmailBody');
+
+                // Update the modal title
+                modalTitle.textContent = `Proposal Message for ${patientName}`;
+
+                // Construct the date/time string
+                let timeString = slotTime ? ` at ${slotTime}` : ''; // Add time if available
+                let dateTimeString = `${slotWeekday}, ${slotDateStr}${timeString}`; // Combine date and time
+
+                // Construct the message body using the specified template
+                const emailBody = `Hi ${patientFirstName || patientName},
+
+This is [Your Name] from [Your Clinic Name]. We have an opening on ${dateTimeString} with ${providerName}, and would love to know if you could make it in for your ${appointmentType}?
+
+If you could confirm with us as soon as you get this, we'll get you booked in and see you then!
+
+Thanks so much!`;
+
+                // Set the value of the textarea
+                modalBodyTextarea.value = emailBody;
+
+                // Reset copy button text/state in case it was changed previously
+                if (copyButton) {
+                    copyButton.textContent = 'Copy Message';
+                    copyButton.disabled = false;
+                }
+
+            }); // End of 'show.bs.modal' event listener
+
+            // --- Copy Button Logic (Remains the same) ---
+            if (copyButton) {
+                copyButton.addEventListener('click', function() {
+                    const messageText = proposeModalElement.querySelector('#modalEmailBody').value;
+                    navigator.clipboard.writeText(messageText).then(() => {
+                        copyButton.textContent = 'Copied!';
+                        copyButton.disabled = true;
+                        setTimeout(() => {
+                           copyButton.textContent = 'Copy Message';
+                           copyButton.disabled = false;
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy text: ', err);
+                        copyButton.textContent = 'Copy Failed!';
+                        setTimeout(() => {
+                            copyButton.textContent = 'Copy Message';
+                        }, 2000);
+                    });
+                });
+            }
+            // --- End Copy Button Logic ---
+
+        } else {
+             console.error("Modal with ID proposeSlotModal not found!");
+        }
+         // --- END Modal Logic ---
     });
 </script>
 {% endblock %} 
