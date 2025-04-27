@@ -93,15 +93,26 @@
                             {% else %}
                                 <i class="bi bi-calendar-x"></i> Date Unknown<br>
                             {% endif %}
+                             {# --- Display Specific Time --- #}
+                            {% if slot.slot_time %}
+                                <i class="bi bi-clock-fill"></i> Time: {{ slot.slot_time }}<br>
+                            {% endif %}
+                             {# --- End Specific Time --- #}
                             <i class="bi bi-clock"></i> Duration: {{ slot.duration }} minutes
                             {% if slot.notes %}
                                 <br><i class="bi bi-journal-text"></i> Notes: {{ slot.notes }}
                             {% endif %}
                         </div>
-                        {# Propose Slot Button - Triggers Modal #}
-                        <button type="button" class="btn btn-primary w-100 mt-auto" data-bs-toggle="modal" data-bs-target="#proposeModal-{{ slot.id }}">
+                        {# Assign Slot Button - Direct POST to assign_appointment #}
+                         <form action="{{ url_for('assign_appointment', patient_id=patient.id, appointment_id=slot.id) }}" method="post" class="mt-auto" onsubmit="return confirm('Assign {{ patient.name }} to this slot on {{ slot.slot_date.strftime('%a, %b %d') if slot.slot_date else 'Unknown Date' }}? This will remove them from the waitlist and remove the open slot.');">
+                             <button type="submit" class="btn btn-success w-100">
+                                 <i class="bi bi-check-circle-fill"></i> Assign & Confirm
+                             </button>
+                         </form>
+                        {# --- REMOVED: Propose Slot Button and Modal Trigger --- #}
+                        {# <button type="button" class="btn btn-primary w-100 mt-auto" data-bs-toggle="modal" data-bs-target="#proposeModal-{{ slot.id }}">
                             <i class="bi bi-send"></i> Propose Slot
-                        </button>
+                        </button> #}
                     </div>
                 </div>
             </div>
@@ -109,71 +120,16 @@
             {% endfor %}
         </div> {# End .row #}
 
-        {# --- Modal Definitions (Placed Outside the Row) --- #}
-        {% for slot in matching_slots %}
-            <div class="modal fade" id="proposeModal-{{ slot.id }}" tabindex="-1" aria-labelledby="proposeModalLabel-{{ slot.id }}" aria-hidden="true">
-              <div class="modal-dialog modal-lg"> {# Larger modal #}
-                <div class="modal-content">
-                  <div class="modal-header">
-                    <h5 class="modal-title" id="proposeModalLabel-{{ slot.id }}">Propose Slot to {{ patient.name }}</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                  </div>
-                  {# Form to send email proposal #}
-                  <form action="{{ url_for('send_proposal_email') }}" method="post"> {# TODO: Create this endpoint #}
-                      <input type="hidden" name="patient_id" value="{{ patient.id }}">
-                      <input type="hidden" name="slot_id" value="{{ slot.id }}">
-                      <input type="hidden" name="patient_email" value="{{ patient.email }}">
-                      <div class="modal-body">
-                          <div class="mb-3">
-                              <label for="emailSubject-{{ slot.id }}" class="form-label">Subject:</label>
-                              <input type="text" class="form-control" id="emailSubject-{{ slot.id }}" name="email_subject" value="Appointment Slot Available for {{ patient.appointment_type|replace('_', ' ')|title }}">
-                          </div>
-                          <div class="mb-3">
-                              <label for="emailTemplate-{{ slot.id }}" class="form-label">Email Body:</label>
-                              <textarea class="form-control" id="emailTemplate-{{ slot.id }}" name="email_body" rows="10">
-Dear {{ patient.name }},
-
-Good news! We have an appointment slot available that might fit your needs.
-
-Details:
-Provider: {{ slot.provider }}
-Date: {{ slot.slot_date.strftime('%A, %B %d, %Y') if slot.slot_date else 'Date TBD' }} {% if slot.slot_period %}({{ slot.slot_period }}){% endif %}
-Duration: {{ slot.duration }} minutes
-Appointment Type: {{ patient.appointment_type|replace('_', ' ')|title }}
-
-{% if slot.notes %}Notes: {{ slot.notes }}{% endif %}
-
-Please reply to this email or call us at [Your Phone Number] as soon as possible to confirm if you would like to book this slot. Slots are filled on a first-come, first-served basis.
-
-If this time doesn't work, please let us know, and we'll keep you on the waitlist.
-
-Sincerely,
-[Your Clinic Name]
-                              </textarea>
-                          </div>
-                          <p><small>Recipient: {{ patient.email or 'N/A (Cannot send email)' }}</small></p>
-                      </div>
-                      <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        {# Disable button if no email #}
-                        <button type="submit" class="btn btn-success" {% if not patient.email %}disabled title="Patient has no email address"{% endif %}>
-                            <i class="bi bi-envelope-check-fill"></i> Send Proposal
-                        </button>
-                      </div>
-                  </form>
-                </div>
-              </div>
-            </div>
-            {# --- End Modal --- #}
-        {% endfor %}
-        {# --- End Modal Definitions --- #}
+        {# --- REMOVED: Modal Definitions --- #}
+        {# {% for slot in matching_slots %} ... modal code ... {% endfor %} #}
 
     {% else %}
         <div class="alert alert-info" role="alert">
             <h4 class="alert-heading">No Matches Found</h4>
-            <p>There are currently no available open slots that perfectly match this patient's requirements for provider preference, appointment duration, day, and time period availability.</p>
+            <p>There are currently no available open slots that perfectly match this patient's requirements for provider preference, appointment duration, and availability.</p> {# Simplified message #}
             <hr>
-            <p class="mb-0">You can check the <a href="{{ url_for('list_cancelled_appointments') }}" class="alert-link">Open Slots page</a> to view all slots or add a new one.</p>
+            {# --- UPDATED LINK --- #}
+            <p class="mb-0">You can check the <a href="{{ url_for('index', _anchor='cancelled-slots-list') }}" class="alert-link">Open Slots list</a> on the main page or add a new one.</p>
         </div>
     {% endif %}
 

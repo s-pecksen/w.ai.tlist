@@ -16,14 +16,14 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary py-3">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/">Waitlist Manager</a>
+            <a class="navbar-brand" href="{{ url_for('index') }}">Waitlist Manager</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav w-100">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('list_cancelled_appointments') }}">Open Slots</a>
+                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#openSlotsModal">Open Slots</a>
                     </li>
                     <li class="nav-item ms-auto">
                         <a class="nav-link" href="{{ url_for('list_providers') }}">Manage Providers</a>
@@ -35,8 +35,7 @@
     <!-- Flash Messages -->
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-            {# This container div now only exists if there are messages #}
-            <div class="container mb-0" id="page-top"> {# Keep mb-0 to avoid extra space below messages when they appear #}
+            <div class="container mb-0" id="page-top">
                 {% for category, message in messages %}
                     <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show">
                         {{ message }}
@@ -48,7 +47,7 @@
     {% endwith %}
 
     <!-- Main Content -->
-    <div class="container"> {# No top margin needed here #}
+    <div class="container">
         {% block content %}{% endblock %}
     </div>
 
@@ -61,26 +60,6 @@
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Add JavaScript for scrolling based on focus_element_id -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Check if a focus_element_id was passed from Flask (might be None or empty)
-            const focusElementId = "{{ focus_element_id or '' }}"; // Get value from template context
-            if (focusElementId) {
-                const elementToFocus = document.getElementById(focusElementId);
-                if (elementToFocus) {
-                    // Wait a brief moment for the page layout to settle, then scroll
-                    setTimeout(() => {
-                       elementToFocus.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                       // Optionally add focus styling or actual focus
-                       // elementToFocus.focus(); // Might be too aggressive depending on the element
-                    }, 100); // Adjust delay if needed
-                } else {
-                    console.warn(`Element with ID '${focusElementId}' not found for scrolling.`);
-                }
-            }
-        });
-    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
