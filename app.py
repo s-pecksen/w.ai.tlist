@@ -804,82 +804,49 @@ def update_patient(patient_id):
     # Redirect back to the main waitlist after update attempt
     return redirect(url_for('index') + '#waitlist-table')
 
-@app.route('/api/matching_slots/<patient_id>', methods=['GET'])
-def api_matching_slots(patient_id):
-    """API endpoint to get matching slots for a patient."""
-    logging.debug(f"API: Entering api_matching_slots for patient_id={patient_id}")
+@app.route('/api/patient/<patient_id>', methods=['GET'])
+def api_get_patient(patient_id):
+    """API endpoint to get patient details for the edit modal"""
+    # Ensure patient_manager is accessible here
     patient = waitlist_manager.get_patient_by_id(patient_id)
-
-    if not patient:
-        logging.warning(f"API: Patient not found for ID {patient_id}")
+    if patient:
+        # Convert patient data (which might be a custom object or dict) to a JSON response
+        return jsonify(patient) 
+    else:
         return jsonify({"error": "Patient not found"}), 404
 
-    if patient.get('status') != 'waiting':
-         logging.info(f"API: Patient {patient_id} is not waiting.")
-         # Return empty list, not an error
-         return jsonify({"patient": patient, "matching_slots": []})
+@app.route('/api/matching_slots/<patient_id>', methods=['GET'])
+def api_get_matching_slots(patient_id):
+    """API endpoint to find matching slots for a patient"""
+    # Ensure patient_manager and appointment_manager are accessible here
+    patient = waitlist_manager.get_patient_by_id(patient_id)
+    if not patient:
+        return jsonify({"error": "Patient not found"}), 404
+    
+    # Make sure this method exists and works in your AppointmentManager
+    matching_slots = find_eligible_patients(patient)
+    
+    # Convert the list of slots (which might be objects or dicts) to JSON
+    # Ensure dates/times are handled correctly if they aren't JSON serializable by default
+    slots_serializable = []
+    for slot in matching_slots:
+         # If slots are dicts, they might be fine. If objects, convert needed fields.
+         # Example simple conversion assuming slots are dicts or have a to_dict() method:
+         if hasattr(slot, 'to_dict'):
+             slots_serializable.append(slot.to_dict())
+         elif isinstance(slot, dict):
+             # Make sure date/time objects are converted to strings if necessary
+             if 'slot_date' in slot and hasattr(slot['slot_date'], 'isoformat'):
+                 slot['slot_date'] = slot['slot_date'].isoformat()
+             slots_serializable.append(slot)
+         else:
+              # Handle other cases or raise an error if slot format is unexpected
+              print(f"Warning: Cannot serialize slot: {slot}")
 
-    # --- Reuse Filtering Logic (similar to propose_slots/find_eligible_patients) ---
-    all_slots = slot_manager.get_all_slots()
-    available_slots = [s for s in all_slots if s.get('matched_patient') is None and s.get('slot_period')]
-    logging.debug(f"API: Found {len(available_slots)} available slots initially.")
-
-    matching_slots = []
-    patient_duration = str(patient.get('duration', ''))
-    patient_provider_pref = patient.get('provider', '').strip().lower()
-    patient_availability_prefs = patient.get('availability', {})
-    patient_mode = patient.get('availability_mode', 'available')
-    has_patient_preferences = bool(patient_availability_prefs)
-
-    for slot in available_slots:
-        # Check if slot is already proposed to *someone else*
-        proposed_to = slot.get('proposed_patient_id')
-        if proposed_to and proposed_to != patient_id:
-             logging.debug(f"API: Slot {slot.get('id')} skipped: Proposed to another patient ({proposed_to})")
-             continue # Skip slots proposed to others
-
-        slot_duration = str(slot.get('duration', ''))
-        slot_provider = slot.get('provider', '').strip().lower()
-        slot_day_raw = slot.get('slot_day_of_week')
-        slot_day = slot_day_raw.strip().lower() if slot_day_raw else None
-        slot_period_raw = slot.get('slot_period')
-        slot_period = slot_period_raw.strip().upper() if slot_period_raw else None
-
-        if not slot_day or not slot_period: continue # Basic check
-        if patient_duration != slot_duration: continue # Duration check
-
-        provider_ok = (patient_provider_pref == 'no preference' or patient_provider_pref == slot_provider)
-        if not provider_ok: continue # Provider check
-
-        # Availability Check (including mode)
-        is_available_for_slot = True
-        slot_matches_preference = False
-        matching_day_key = next((key for key in patient_availability_prefs if key.lower() == slot_day), None)
-
-        if matching_day_key:
-            day_prefs = patient_availability_prefs.get(matching_day_key, [])
-            day_prefs_upper = [str(p).strip().upper() for p in day_prefs]
-            if slot_period in day_prefs_upper:
-                slot_matches_preference = True
-
-        if patient_mode == 'available':
-            if has_patient_preferences and not slot_matches_preference: is_available_for_slot = False
-        elif patient_mode == 'unavailable':
-            if has_patient_preferences and slot_matches_preference: is_available_for_slot = False
-
-        if is_available_for_slot:
-            # Convert date to ISO string for JSON compatibility
-            slot_for_json = slot.copy()
-            if isinstance(slot_for_json.get('slot_date'), date):
-                slot_for_json['slot_date'] = slot_for_json['slot_date'].isoformat()
-            matching_slots.append(slot_for_json)
-    # --- End Filtering Logic ---
-
-    # Sort matching slots by date and time
-    matching_slots.sort(key=lambda s: (s.get('slot_date') or '', s.get('slot_time') or ''))
-    logging.debug(f"API: Found {len(matching_slots)} final matching slots for patient {patient_id}.")
-
-    return jsonify({"patient": patient, "matching_slots": matching_slots})
+    return jsonify({
+        "patient": patient, # Assuming patient is already a dict or jsonify handles it
+        "matching_slots": slots_serializable 
+    })
 
 @app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
 def assign_appointment(patient_id, appointment_id):
