@@ -352,7 +352,6 @@
                                         {% endif %}
                                         {# MODIFIED: Iterate directly over availability items #}
                                         {% for day_key, periods in availability.items() %}
-                                            {# Attempt to display whatever key/value pairs exist #}
                                             {{ day_key[:3]|capitalize }}({{ periods|join('/') }}){% if not loop.last %}; {% endif %}
                                         {% endfor %}
                                         </span>
@@ -409,25 +408,7 @@
     </div>
 
     {# --- Open Slots List Column --- #}
-    {#
-    <div class="col-md-12">
-         <h2 id="cancelled-slots-list">Current Open Slots</h2>
-         <div class="card">
-             <div class="card-body p-0">
-                 {% if cancelled_appointments %}
-                     <div class="list-group list-group-flush">
-                         {% for appointment in cancelled_appointments %}
-                             <div class="list-group-item" id="slot-{{ appointment.id }}">
-                                 {# ... slot details and buttons ... #}
-                             </div>
-                         {% endfor %}
-                     </div>
-                 {% else %}
-                     <p class="p-3 text-center">No open slots available.</p>
-                 {% endif %}
-             </div>
-         </div>
-    </div>{# --- End Open Slots List Column --- #}
+    {# --- End Open Slots List Column --- #}
 </div>
 
 <!-- Add JavaScript to handle the reason field visibility and auto-duration -->
@@ -1303,4 +1284,434 @@ Thanks so much!`;
   </div>
 </div>
 
-{% endblock %}
+{% endblock %} {# End of content block #}
+
+{% block scripts %}
+{{ super() }} {# Optional: Include scripts from base.html if any were defined there #}
+<!-- Add JavaScript to handle the reason field visibility and auto-duration -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const appointmentTypeSelect = document.getElementById('appointment_type');
+        const durationSelect = document.getElementById('duration'); // Get duration select
+        const reasonLabel = document.querySelector('label[for="reason"]');
+        const reasonField = document.getElementById('reason');
+
+        // Define the duration mapping
+        const durationMap = {
+            'resto': '60',
+            'np_spec': '30',
+            'recall': '70',
+            'hygiene': '70',
+            'spec_exam': '30',
+            'x-ray': '30',
+            'rct': '90'
+            // 'emergency_exam' and 'custom' are handled separately
+        };
+
+        function updateFormBasedOnAppointmentType() {
+            if (!appointmentTypeSelect || !durationSelect) return; // Safety check
+
+            const selectedType = appointmentTypeSelect.value;
+
+            // --- Duration Logic ---
+            if (durationMap.hasOwnProperty(selectedType)) {
+                // Type has a predefined duration
+                durationSelect.value = durationMap[selectedType];
+                durationSelect.classList.add('bg-light'); // Optional: visual cue remains
+                // Add pointer-events: none to prevent clicking when auto-set
+                durationSelect.style.pointerEvents = 'none'; 
+            } else if (selectedType === 'custom' || selectedType === 'emergency_exam' || selectedType === '') {
+                // Type requires manual duration selection or is the placeholder
+                durationSelect.classList.remove('bg-light'); // Remove visual cue
+                durationSelect.style.pointerEvents = 'auto'; // Re-enable clicking
+                // Optionally reset if it was previously auto-set and now needs manual input
+                // If going back to placeholder, clear the selection
+                if (selectedType === '') {
+                    durationSelect.value = ''; 
+                }
+                 // For 'custom' or 'emergency', keep the previously selected value (if any) but make it editable.
+                 // If you want to force selection for these, uncomment the next line:
+                 // else { durationSelect.value = ''; } 
+
+            } else {
+                 // Should not happen with current types, but good practice
+                 durationSelect.classList.remove('bg-light');
+                 durationSelect.style.pointerEvents = 'auto';
+            }
+
+            // --- Custom Reason/Notes Logic ---
+            if (reasonLabel && reasonField) {
+                if (selectedType === 'custom') {
+                    reasonLabel.innerHTML = 'Custom Appointment Type:*'; // Use innerHTML to include asterisk
+                    reasonField.required = true;
+                } else {
+                    reasonLabel.textContent = 'Additional Notes:';
+                    reasonField.required = false;
+                }
+            }
+        }
+
+        // --- Event Listener ---
+        if (appointmentTypeSelect) {
+            appointmentTypeSelect.addEventListener('change', updateFormBasedOnAppointmentType);
+            // Trigger change event on load to set initial state for duration and reason
+            updateFormBasedOnAppointmentType(); // Call directly on load
+        }
+
+        // --- Date Input Logic ---
+        const dateInputs = document.querySelectorAll('input[type="date"]');
+        const today = new Date().toISOString().split('T')[0];
+        dateInputs.forEach(input => {
+            input.min = today; // Prevent selecting past dates
+        });
+
+        // --- Assign Patient Modal Logic ---
+        const assignModalElement = document.getElementById('assignPatientModal');
+        if (assignModalElement) {
+            assignModalElement.addEventListener('show.bs.modal', async function (event) {
+                const button = event.relatedTarget; // Button that triggered the modal
+                const patientId = button.getAttribute('data-patient-id');
+                const patientName = button.getAttribute('data-patient-name');
+
+                const modalTitle = assignModalElement.querySelector('.modal-title');
+                const patientNameSpan = assignModalElement.querySelector('#assign-modal-patient-name');
+                const slotListDiv = assignModalElement.querySelector('#assign-modal-slot-list');
+
+                // Update title and patient name placeholder
+                modalTitle.textContent = `Find Matching Slot for ${patientName}`;
+                patientNameSpan.textContent = patientName;
+                slotListDiv.innerHTML = `<div class="text-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>`; // Show spinner
+
+                // Fetch matching slots from the new backend route
+                try {
+                    const response = await fetch(`/api/matching_slots/${patientId}`); // NEW route needed
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json(); // Expect { patient: {...}, matching_slots: [...] }
+
+                    if (data.matching_slots && data.matching_slots.length > 0) {
+                        slotListDiv.innerHTML = ''; // Clear spinner
+                        data.matching_slots.forEach(slot => {
+                            // --- Create Slot Card ---
+                            const card = document.createElement('div');
+                            card.className = 'card mb-3';
+
+                            // Format Date/Time (handle potential nulls)
+                            let dateTimeStr = 'Date/Time Unknown';
+                            if (slot.slot_date) {
+                                const dateObj = new Date(slot.slot_date + 'T00:00:00'); // Treat as local date
+                                const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
+                                dateTimeStr = dateObj.toLocaleDateString(undefined, options);
+                                if (slot.slot_time) {
+                                     // Basic time formatting (can be improved)
+                                     dateTimeStr += ` at ${slot.slot_time}`;
+                                } else if (slot.slot_period) {
+                                     dateTimeStr += ` (${slot.slot_period})`;
+                                }
+                            }
+
+                            let notesHtml = slot.notes ? `<br><i class="bi bi-journal-text"></i> Notes: ${escapeHTML(slot.notes)}` : '';
+
+                            card.innerHTML = `
+                                <div class="card-body">
+                                    <h5 class="card-title">${escapeHTML(slot.provider)}</h5>
+                                    <div class="slot-details mb-2">
+                                        <i class="bi bi-calendar-check"></i> ${dateTimeStr}<br>
+                                        <i class="bi bi-clock"></i> Duration: ${escapeHTML(slot.duration)} minutes
+                                        ${notesHtml}
+                                    </div>
+                                    <form action="/assign_appointment/${escapeHTML(patientId)}/${escapeHTML(slot.id)}" method="post" onsubmit="return confirm('Assign ${escapeHTML(patientName)} to this slot on ${dateTimeStr}? This removes them from the waitlist and removes the slot.');">
+                                        <button type="submit" class="btn btn-sm btn-success w-100">
+                                            <i class="bi bi-check-circle-fill"></i> Assign & Confirm This Slot
+                                        </button>
+                                    </form>
+                                </div>
+                            `;
+                            slotListDiv.appendChild(card);
+                        });
+                    } else {
+                        // Display no matches message
+                        slotListDiv.innerHTML = `
+                            <div class="alert alert-info" role="alert">
+                                <h4 class="alert-heading">No Matches Found</h4>
+                                <p>There are currently no available open slots that perfectly match this patient's requirements.</p>
+                                <hr>
+                                <p class="mb-0">You can check the <a href="/#cancelled-slots-list" onclick="bootstrap.Modal.getInstance(document.getElementById('assignPatientModal')).hide(); return true;">Open Slots list</a> below or add a new one.</p>
+                            </div>`;
+                    }
+                } catch (error) {
+                    console.error('Error fetching matching slots:', error);
+                    slotListDiv.innerHTML = `<div class="alert alert-danger">Error loading slots. Please try again later.</div>`;
+                }
+            });
+        }
+
+        // Helper function to escape HTML characters (simple version)
+        function escapeHTML(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        // Edit Patient Modal Logic
+        const editPatientModal = document.getElementById('editPatientModal');
+        if (editPatientModal) {
+            editPatientModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const patientId = button.getAttribute('data-patient-id');
+                const form = document.getElementById('edit-patient-form');
+                
+                // Update the form action URL with the correct patient ID
+                form.action = form.action.replace('PATIENT_ID_PLACEHOLDER', patientId);
+                
+                // Show loading state
+                const modalBody = editPatientModal.querySelector('.modal-body');
+                const originalContent = modalBody.innerHTML;
+                modalBody.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+                
+                // Fetch patient data
+                fetch(`/api/patient/${patientId}`)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        return response.json();
+                    })
+                    .then(patient => {
+                        // Restore form HTML
+                        modalBody.innerHTML = originalContent;
+                        
+                        // Update title
+                        editPatientModal.querySelector('.modal-title').textContent = `Edit Patient Details: ${patient.name}`;
+                        
+                        // Populate form fields
+                        document.getElementById('edit_name').value = patient.name || '';
+                        document.getElementById('edit_phone').value = patient.phone || '';
+                        document.getElementById('edit_email').value = patient.email || '';
+                        
+                        // Select the right appointment type
+                        const appointmentTypeSelect = document.getElementById('edit_appointment_type');
+                        for (let i = 0; i < appointmentTypeSelect.options.length; i++) {
+                            if (appointmentTypeSelect.options[i].value === patient.appointment_type) {
+                                appointmentTypeSelect.options[i].selected = true;
+                                break;
+                            }
+                        }
+                        
+                        // Select the right duration
+                        const durationSelect = document.getElementById('edit_duration');
+                        for (let i = 0; i < durationSelect.options.length; i++) {
+                            if (durationSelect.options[i].value === patient.duration) {
+                                durationSelect.options[i].selected = true;
+                                break;
+                            }
+                        }
+                        
+                        // Select the right provider
+                        const providerSelect = document.getElementById('edit_provider');
+                        for (let i = 0; i < providerSelect.options.length; i++) {
+                            if (providerSelect.options[i].value === patient.provider) {
+                                providerSelect.options[i].selected = true;
+                                break;
+                            }
+                        }
+                        
+                        // Select the right urgency
+                        const urgencySelect = document.getElementById('edit_urgency');
+                        for (let i = 0; i < urgencySelect.options.length; i++) {
+                            if (urgencySelect.options[i].value === patient.urgency) {
+                                urgencySelect.options[i].selected = true;
+                                break;
+                            }
+                        }
+                        
+                        // Set availability mode
+                        if (patient.availability_mode === 'unavailable') {
+                            document.getElementById('edit_mode_unavailable').checked = true;
+                        } else {
+                            document.getElementById('edit_mode_available').checked = true;
+                        }
+                        
+                        // Check availability checkboxes
+                        const availability = patient.availability || {};
+                        const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+                        // Reset all availability checkboxes first (good practice for reused modals)
+                        daysOfWeek.forEach(day => {
+                            const amCheckbox = document.getElementById(`edit_avail_${day.toLowerCase()}_am`);
+                            const pmCheckbox = document.getElementById(`edit_avail_${day.toLowerCase()}_pm`);
+                            if (amCheckbox) amCheckbox.checked = false;
+                            if (pmCheckbox) pmCheckbox.checked = false;
+                        });
+
+                        // Now, check the boxes based on the fetched availability data
+                        for (const dayKey in availability) {
+                            if (availability.hasOwnProperty(dayKey)) {
+                                const periods = availability[dayKey];
+                                const dayLower = dayKey.toLowerCase();
+
+                                const amCheckbox = document.getElementById(`edit_avail_${dayLower}_am`);
+                                const pmCheckbox = document.getElementById(`edit_avail_${dayLower}_pm`);
+
+                                // Check the AM box if 'AM' is in the periods array and the checkbox exists
+                                if (amCheckbox && Array.isArray(periods) && periods.includes('AM')) {
+                                    amCheckbox.checked = true;
+                                }
+                                // Check the PM box if 'PM' is in the periods array and the checkbox exists
+                                if (pmCheckbox && Array.isArray(periods) && periods.includes('PM')) {
+                                    pmCheckbox.checked = true;
+                                }
+                            }
+                        }
+                        
+                        // Set notes/reason
+                        document.getElementById('edit_reason').value = patient.reason || '';
+                        
+                        // Initialize the dynamic form behavior
+                        updateEditFormBasedOnAppointmentType();
+                    })
+                    .catch(error => {
+                        console.error('Error fetching patient data:', error);
+                        modalBody.innerHTML = `
+                            <div class="alert alert-danger">
+                                Error loading patient data. Please try again later.
+                            </div>
+                        `;
+                    });
+            });
+        }
+
+        // Edit Slot Modal Logic
+        const editSlotModal = document.getElementById('editSlotModal');
+        if (editSlotModal) {
+            editSlotModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const slotId = button.getAttribute('data-slot-id');
+                const form = document.getElementById('edit-slot-form');
+                
+                // Update the form action URL with the correct slot ID
+                form.action = form.action.replace('SLOT_ID_PLACEHOLDER', slotId);
+                
+                // Set field values from data attributes
+                document.getElementById('edit_slot_provider').value = button.getAttribute('data-provider');
+                document.getElementById('edit_slot_date').value = button.getAttribute('data-slot-date');
+                document.getElementById('edit_slot_time').value = button.getAttribute('data-slot-time');
+                document.getElementById('edit_slot_period').value = button.getAttribute('data-slot-period');
+                document.getElementById('edit_slot_duration').value = button.getAttribute('data-duration');
+                document.getElementById('edit_slot_notes').value = button.getAttribute('data-notes');
+            });
+        }
+
+        // Propose Slot Modal Logic
+        const proposeModalElement = document.getElementById('proposeSlotModal');
+        const copyButton = document.getElementById('copyTemplateButton');
+
+        if (proposeModalElement) {
+            proposeModalElement.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                
+                // Extract needed data from the button's data-* attributes
+                const patientName = button.getAttribute('data-patient-name');
+                const patientFirstName = button.getAttribute('data-patient-first-name');
+                const slotWeekday = button.getAttribute('data-slot-weekday');
+                const slotDateStr = button.getAttribute('data-slot-date-str');
+                const slotTime = button.getAttribute('data-slot-time');
+                const appointmentType = button.getAttribute('data-appointment-type');
+                const providerName = button.getAttribute('data-provider-name');
+                
+                // Find elements inside the modal to update
+                const modalTitle = proposeModalElement.querySelector('.modal-title');
+                const modalBodyTextarea = proposeModalElement.querySelector('#modalEmailBody');
+                
+                // Update the modal title
+                modalTitle.textContent = `Proposal Message for ${patientName}`;
+                
+                // Construct the date/time string
+                let timeString = slotTime ? ` at ${slotTime}` : '';
+                let dateTimeString = `${slotWeekday}, ${slotDateStr}${timeString}`;
+                
+                // Construct the message body using the specified template
+                const emailBody = `Hi ${patientFirstName || patientName},
+
+This is [Your Name] from [Your Clinic Name]. We have an opening on ${dateTimeString} with ${providerName}, and would love to know if you could make it in for your ${appointmentType}?
+
+If you could confirm with us as soon as you get this, we'll get you booked in and see you then!
+
+Thanks so much!`;
+                
+                // Set the value of the textarea
+                modalBodyTextarea.value = emailBody;
+                
+                // Reset copy button text/state
+                if (copyButton) {
+                    copyButton.textContent = 'Copy Message';
+                    copyButton.disabled = false;
+                }
+            });
+            
+            // Copy Button Logic
+            if (copyButton) {
+                copyButton.addEventListener('click', function() {
+                    const messageText = proposeModalElement.querySelector('#modalEmailBody').value;
+                    navigator.clipboard.writeText(messageText).then(() => {
+                        copyButton.textContent = 'Copied!';
+                        copyButton.disabled = true;
+                        setTimeout(() => {
+                            copyButton.textContent = 'Copy Message';
+                            copyButton.disabled = false;
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy text: ', err);
+                        copyButton.textContent = 'Copy Failed!';
+                        setTimeout(() => {
+                            copyButton.textContent = 'Copy Message';
+                        }, 2000);
+                    });
+                });
+            }
+        }
+
+        // Helper function for edit patient modal to update form based on appointment type
+        function updateEditFormBasedOnAppointmentType() {
+            const appointmentTypeSelect = document.getElementById('edit_appointment_type');
+            const durationSelect = document.getElementById('edit_duration');
+            const reasonLabel = document.querySelector('label[for="edit_reason"]');
+            const reasonField = document.getElementById('edit_reason');
+            
+            if (!appointmentTypeSelect || !durationSelect) return;
+            
+            const selectedType = appointmentTypeSelect.value;
+            const durationMap = {
+                'resto': '60', 'np_spec': '30', 'recall': '70',
+                'hygiene': '70', 'spec_exam': '30', 'x-ray': '30', 'rct': '90'
+            };
+            
+            if (durationMap.hasOwnProperty(selectedType)) {
+                durationSelect.value = durationMap[selectedType];
+                durationSelect.classList.add('bg-light');
+                durationSelect.style.pointerEvents = 'none';
+            } else if (selectedType === 'custom' || selectedType === 'emergency_exam' || selectedType === '') {
+                durationSelect.classList.remove('bg-light');
+                durationSelect.style.pointerEvents = 'auto';
+            } else {
+                durationSelect.classList.remove('bg-light');
+                durationSelect.style.pointerEvents = 'auto';
+            }
+            
+            if (reasonLabel && reasonField) {
+                if (selectedType === 'custom') {
+                    reasonLabel.innerHTML = 'Custom Appointment Type:*';
+                    reasonField.required = true;
+                } else {
+                    reasonLabel.textContent = 'Additional Notes:';
+                    reasonField.required = false;
+                }
+            }
+        }
+
+        // Add event listener for appointment type change in edit modal
+        const editAppointmentTypeSelect = document.getElementById('edit_appointment_type');
+        if (editAppointmentTypeSelect) {
+            editAppointmentTypeSelect.addEventListener('change', updateEditFormBasedOnAppointmentType);
+        }
+    }); // End DOMContentLoaded
+</script>
+{% endblock %} {# End of scripts block #}
