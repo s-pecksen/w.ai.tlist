@@ -463,6 +463,13 @@
             if (!copyButton) console.error("Copy button not found");
         }
 
+        // --- Scroll to Eligible Patients if Visible ---
+        const eligiblePatientsSection = document.getElementById('eligible-patients-section');
+        if (eligiblePatientsSection && window.getComputedStyle(eligiblePatientsSection).display === 'block') {
+            // Use smooth scrolling if available, otherwise jump
+            eligiblePatientsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
         // Helper function to escape HTML (needed if dynamically adding HTML, less critical now)
         function escapeHTML(str) {
             if (!str) return '';
