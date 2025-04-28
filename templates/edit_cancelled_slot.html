@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Open Slot{% endblock %}
+
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Edit Open Slot</h1>
+
+    <div class="card">
+        <div class="card-body">
+            <form action="{{ url_for('update_cancelled_slot', appointment_id=appointment.id) }}" method="post">
+
+                <div class="mb-3">
+                    <label for="provider" class="form-label">Provider</label>
+                    <select class="form-select" id="provider" name="provider" required>
+                        <option value="" disabled>Select Provider</option>
+                        {% for provider_dict in providers %}
+                            <option value="{{ provider_dict.name }}" {% if provider_dict.name == appointment.provider %}selected{% endif %}>
+                                {{ provider_dict.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="slot_date" class="form-label">Date</label>
+                        <input type="date" class="form-control" id="slot_date" name="slot_date"
+                               value="{{ appointment.slot_date.strftime('%Y-%m-%d') if appointment.slot_date else '' }}" required>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="slot_time" class="form-label">Time*</label>
+                        <input type="time" class="form-control" id="slot_time" name="slot_time"
+                               value="{{ appointment.slot_time or '' }}" required>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="slot_period" class="form-label">Period</label>
+                        <select class="form-select" id="slot_period" name="slot_period" required>
+                            <option value="" disabled>Select AM/PM</option>
+                            <option value="AM" {% if appointment.slot_period == 'AM' %}selected{% endif %}>AM</option>
+                            <option value="PM" {% if appointment.slot_period == 'PM' %}selected{% endif %}>PM</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="duration" class="form-label">Duration</label>
+                    <select class="form-select" id="duration" name="duration" required>
+                        <option value="" disabled>Select Duration</option>
+                        {% set durations = [('30', '30 minutes'), ('60', '1 hour'), ('70', '70 minutes'), ('90', '1.5 hours'), ('120', '2 hours')] %}
+                        {% for value, text in durations %}
+                            <option value="{{ value }}" {% if value == appointment.duration %}selected{% endif %}>{{ text }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="notes" class="form-label">Notes (Optional)</label>
+                    <textarea class="form-control" id="notes" name="notes" rows="2">{{ appointment.notes or '' }}</textarea>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                     <button type="submit" class="btn btn-primary">
+                         <i class="bi bi-save"></i> Save Changes
+                     </button>
+                     <a href="{{ url_for('list_cancelled_appointments') }}" class="btn btn-secondary">
+                         <i class="bi bi-x-circle"></i> Cancel
+                     </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Optional: Script to ensure date input has min set
+    document.addEventListener('DOMContentLoaded', function() {
+        const dateInput = document.getElementById('slot_date');
+        const today = new Date().toISOString().split('T')[0];
+         if (dateInput && !dateInput.value) { // Set min only if no value exists
+             // Don't set a default value in edit form, just the min
+         }
+         if (dateInput) {
+            dateInput.min = today; // Prevent selecting past dates
+         }
+
+        // Optional: Add validation/link between time and AM/PM if desired
+    });
+</script>
+
+{% endblock %} 
