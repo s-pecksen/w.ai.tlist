@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response
 from datetime import datetime, timedelta, date
 from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, Column, String, DateTime
@@ -134,14 +134,12 @@ def wait_time_to_minutes(wait_time_str):
 def index():
     logging.debug("Entering index route")
     try:
-        # --- Fetch data for both waitlist and open slots ---
         waitlist_manager.update_wait_times()
         all_providers = provider_manager.get_provider_list()
         has_providers = len(all_providers) > 0
         waitlist = waitlist_manager.get_all_patients()
         logging.debug(f"Index route: Fetched {len(waitlist)} patients")
 
-        # --- Sort Waitlist (unchanged) ---
         def sort_key_safe(x):
             try:
                 wait_minutes = -wait_time_to_minutes(x.get('wait_time', '0 minutes'))
@@ -154,28 +152,48 @@ def index():
 
         sorted_waitlist = sorted(waitlist, key=sort_key_safe)
 
-        # --- Fetch and Sort Open Slots ---
-        current_slots = slot_manager.get_all_slots()
-        current_slots.sort(key=lambda s: (s.get('slot_date') or date.min, s.get('slot_time') or ''), reverse=True) # Sort by date then time
-        logging.debug(f"Index route: Fetched {len(current_slots)} open slots")
-        # --- End Fetch Open Slots ---
-
         if not has_providers:
             flash('Please upload a list of Provider names to proceed', 'warning')
 
-        logging.debug("Index route: Rendering index.html with waitlist and open slots")
-        # Pass both waitlist and slots to the template
+        logging.debug("Index route: Rendering index.html with waitlist only")
         return render_template('index.html',
                               waitlist=sorted_waitlist,
                               providers=all_providers,
-                              has_providers=has_providers,
-                              cancelled_appointments=current_slots, # Pass slots
-                              eligible_patients=None, # Default to None
-                              current_appointment=None) # Default to None
+                              has_providers=has_providers)
     except Exception as e:
         logging.error(f"Exception in index route: {e}", exc_info=True)
         flash('An error occurred while loading the main page.', 'danger')
         return "<h1>An error occurred</h1><p>Please check the server logs.</p>", 500
+
+@app.route('/slots', methods=['GET'])
+def slots():
+    logging.debug("Entering /slots route")
+    try:
+        all_providers = provider_manager.get_provider_list()
+        has_providers = len(all_providers) > 0
+
+        # Fetch and Sort Open Slots
+        current_slots = slot_manager.get_all_slots()
+        # Sort by date then time (most recent first)
+        current_slots.sort(key=lambda s: (s.get('slot_date') or date.min, s.get('slot_time') or ''), reverse=True)
+        logging.debug(f"/slots route: Fetched {len(current_slots)} open slots")
+
+        # Retrieve eligible patients and current appointment from flash/session if redirected
+        # For a clean GET request, these will be None initially
+        eligible_patients = None # No matches shown on initial load
+        current_appointment = None # No specific slot context on initial load
+
+        return render_template('slots.html',
+                               providers=all_providers,
+                               has_providers=has_providers,
+                               cancelled_appointments=current_slots,
+                               eligible_patients=eligible_patients,
+                               current_appointment=current_appointment)
+    except Exception as e:
+        logging.error(f"Exception in /slots route: {e}", exc_info=True)
+        flash('An error occurred while loading the open slots page.', 'danger')
+        # Redirect to index on error, or show an error page? Redirecting for now.
+        return redirect(url_for('index'))
 
 @app.route('/add_patient', methods=['POST'])
 def add_patient():
@@ -622,24 +640,24 @@ def add_cancelled_appointment():
 
     if not provider or not duration or not slot_date_str or not slot_period or not slot_time:
         flash('Provider, Duration, Date, Time, and Period (AM/PM) are required', 'danger')
-        return redirect(url_for('index', _anchor='add-slot-form-index')) # Redirect to index form
+        return redirect(url_for('slots', _anchor='add-slot-form')) # Redirect to slots form
 
     slot_date_obj = None
     try:
         slot_date_obj = date.fromisoformat(slot_date_str)
     except ValueError:
         flash('Invalid date format provided. Please use YYYY-MM-DD.', 'danger')
-        return redirect(url_for('index', _anchor='add-slot-form-index')) # Redirect to index form
+        return redirect(url_for('slots', _anchor='add-slot-form')) # Redirect to slots form
 
     appointment = slot_manager.add_slot(provider, duration, slot_date_obj, slot_period, slot_time, notes)
 
     if not appointment:
         flash('Failed to create appointment slot (invalid input or other error).', 'danger')
-        return redirect(url_for('index', _anchor='add-slot-form-index')) # Redirect to index form
+        return redirect(url_for('slots', _anchor='add-slot-form')) # Redirect to slots form
 
     flash('Open slot added successfully.', 'success')
-    # Redirect to index, focusing on the newly added slot
-    return redirect(url_for('index', _anchor=f'slot-{appointment.get("id")}'))
+    # Redirect to slots page, focusing on the newly added slot
+    return redirect(url_for('slots', _anchor=f'slot-{appointment.get("id")}'))
 
 @app.route('/update_cancelled_slot/<appointment_id>', methods=['POST'])
 def update_cancelled_slot(appointment_id):
@@ -648,11 +666,11 @@ def update_cancelled_slot(appointment_id):
 
     if not appointment_to_update:
         flash('Cancelled appointment slot not found.', 'danger')
-        return redirect(url_for('index', _anchor='cancelled-slots-list'))
+        return redirect(url_for('slots', _anchor='cancelled-slots-list')) # Redirect to slots list
 
     if appointment_to_update.get('matched_patient'):
          flash('Cannot edit a slot that is already matched.', 'warning')
-         return redirect(url_for('index', _anchor=f'slot-{appointment_id}'))
+         return redirect(url_for('slots', _anchor=f'slot-{appointment_id}')) # Redirect to specific slot on slots page
 
     provider = request.form.get('provider')
     duration = request.form.get('duration')
@@ -663,16 +681,14 @@ def update_cancelled_slot(appointment_id):
 
     if not provider or not duration or not slot_date_str or not slot_period or not slot_time:
         flash('Provider, Duration, Date, Time, and Period (AM/PM) are required.', 'danger')
-        # Redirect back to index, maybe focusing on the slot that failed validation
-        # We can't easily re-render the modal with errors this way, JS validation in modal is better.
-        return redirect(url_for('index', _anchor=f'slot-{appointment_id}'))
+        return redirect(url_for('slots', _anchor=f'slot-{appointment_id}')) # Redirect to specific slot
 
     slot_date_obj = None
     try:
         slot_date_obj = date.fromisoformat(slot_date_str)
     except ValueError:
         flash('Invalid date format provided. Please use YYYY-MM-DD.', 'danger')
-        return redirect(url_for('index', _anchor=f'slot-{appointment_id}'))
+        return redirect(url_for('slots', _anchor=f'slot-{appointment_id}')) # Redirect to specific slot
 
     updated = slot_manager.update_slot(
         appointment_id, provider, duration, slot_date_obj,
@@ -685,8 +701,8 @@ def update_cancelled_slot(appointment_id):
     else:
         flash('Failed to update cancelled appointment slot (invalid input, removed, or matched).', 'danger')
 
-    # Redirect back to index, focusing on the updated (or failed) slot
-    return redirect(url_for('index', _anchor=f'slot-{appointment_id}'))
+    # Redirect back to slots page, focusing on the updated (or failed) slot
+    return redirect(url_for('slots', _anchor=f'slot-{appointment_id}'))
 
 @app.route('/remove_cancelled_slot/<appointment_id>', methods=['POST'])
 def remove_cancelled_slot(appointment_id):
@@ -696,12 +712,12 @@ def remove_cancelled_slot(appointment_id):
         logging.debug(f"Removed cancelled slot ID: {appointment_id} via manager")
     else:
         flash('Cancelled appointment slot not found or already removed.', 'warning')
-    # Redirect back to the list on index page
-    return redirect(url_for('index', _anchor='cancelled-slots-list'))
+    # Redirect back to the slots list on slots page
+    return redirect(url_for('slots', _anchor='cancelled-slots-list'))
 
 @app.route('/edit_patient/<patient_id>', methods=['GET'])
 def edit_patient(patient_id):
-    """Displays the form to edit an existing patient."""
+    """Displays the form to edit an existing patient (modal on index)."""
     logging.debug(f"Entering edit_patient GET route for ID: {patient_id}")
     patient = waitlist_manager.get_patient_by_id(patient_id)
 
@@ -710,21 +726,22 @@ def edit_patient(patient_id):
         logging.warning(f"Edit patient: Patient ID {patient_id} not found.")
         return redirect(url_for('index') + '#waitlist-table')
 
-    # Ensure availability is a dictionary, even if loaded weirdly (shouldn't happen with current load logic)
     if not isinstance(patient.get('availability'), dict):
         patient['availability'] = {}
 
     all_providers = provider_manager.get_provider_list()
-    has_providers = len(all_providers) > 0 # Check if providers exist
+    has_providers = len(all_providers) > 0
 
+    # Note: This template will be loaded into the modal via JS fetch
+    # It might be better to just fetch JSON and populate the modal directly in JS
     return render_template('edit_patient.html',
                            patient=patient,
-                        providers=all_providers,
+                           providers=all_providers,
                            has_providers=has_providers)
 
 @app.route('/update_patient/<patient_id>', methods=['POST'])
 def update_patient(patient_id):
-    """Handles the submission of the edited patient form."""
+    """Handles the submission of the edited patient form (from modal on index)."""
     logging.debug(f"Entering update_patient POST route for ID: {patient_id}")
     try:
         # --- Get Basic Info ---
@@ -746,12 +763,9 @@ def update_patient(patient_id):
             am_checked = request.form.get(f'avail_{day_lower}_am')
             pm_checked = request.form.get(f'avail_{day_lower}_pm')
             periods = []
-            if am_checked:
-                periods.append('AM')
-            if pm_checked:
-                periods.append('PM')
-            if periods:
-                availability_prefs[day] = periods
+            if am_checked: periods.append('AM')
+            if pm_checked: periods.append('PM')
+            if periods: availability_prefs[day] = periods
 
         logging.debug(f"Received updated availability days/times: {availability_prefs}")
         logging.debug(f"Received updated availability mode: {availability_mode}")
@@ -759,182 +773,197 @@ def update_patient(patient_id):
         # --- Basic Validation ---
         if not name or not phone:
             flash('Name and Phone are required fields.', 'warning')
-            # Redirect back to the edit form if validation fails
-            # Need patient data again for the template
-            patient = waitlist_manager.get_patient_by_id(patient_id)
-            all_providers = provider_manager.get_provider_list()
-            has_providers = len(all_providers) > 0
-            # Re-render edit form with error
-            return render_template('edit_patient.html',
-                                   patient=patient,
-                                   providers=all_providers,
-                                   has_providers=has_providers,
-                                   error_flash=True), 400 # Indicate bad request
+            # Cannot easily re-render modal with error state on POST failure
+            # Rely on JS validation or just redirect with general error
+            return redirect(url_for('index') + '#waitlist-table') # Redirect back to waitlist
 
         # --- Prepare Updated Data Dict ---
         updated_data = {
-            'name': name,
-            'phone': phone,
-            'email': email,
-            'reason': reason,
-            'urgency': urgency,
-            'appointment_type': appointment_type,
-            'duration': duration,
-            'provider': provider,
-            'availability': availability_prefs,
-            'availability_mode': availability_mode
+            'name': name, 'phone': phone, 'email': email, 'reason': reason,
+            'urgency': urgency, 'appointment_type': appointment_type, 'duration': duration,
+            'provider': provider, 'availability': availability_prefs, 'availability_mode': availability_mode
         }
 
         # --- Update Patient via Manager ---
         success = waitlist_manager.update_patient(patient_id, updated_data)
 
         if success:
-            waitlist_manager.save_backup() # Save after successful update
+            waitlist_manager.save_backup()
             flash('Patient details updated successfully.', 'success')
             logging.info(f"Patient {patient_id} updated successfully.")
         else:
-            # This case means the patient ID wasn't found during the update attempt
             flash('Failed to update patient details (Patient not found).', 'danger')
-            logging.warning(f"Update patient failed: Patient ID {patient_id} not found during update call.")
+            logging.warning(f"Update patient failed: Patient ID {patient_id} not found.")
 
     except Exception as e:
         logging.error(f"Error in update_patient route for ID {patient_id}: {e}", exc_info=True)
         flash('An unexpected error occurred while updating the patient.', 'danger')
 
-    # Redirect back to the main waitlist after update attempt
-    return redirect(url_for('index') + '#waitlist-table')
+    return redirect(url_for('index') + '#waitlist-table') # Redirect to index
 
 @app.route('/api/patient/<patient_id>', methods=['GET'])
 def api_get_patient(patient_id):
-    """API endpoint to get patient details for the edit modal"""
-    # Ensure patient_manager is accessible here
+    """API endpoint to get patient details for the edit modal (on index.html)"""
     patient = waitlist_manager.get_patient_by_id(patient_id)
     if patient:
-        # Convert patient data (which might be a custom object or dict) to a JSON response
-        return jsonify(patient) 
+        return jsonify(patient)
     else:
         return jsonify({"error": "Patient not found"}), 404
 
 @app.route('/api/matching_slots/<patient_id>', methods=['GET'])
 def api_get_matching_slots(patient_id):
-    """API endpoint to find matching slots for a patient"""
-    # Ensure patient_manager and appointment_manager are accessible here
+    """API endpoint to find matching slots for a patient (for Assign modal on index.html)"""
     patient = waitlist_manager.get_patient_by_id(patient_id)
     if not patient:
         return jsonify({"error": "Patient not found"}), 404
-    
-    # Make sure this method exists and works in your AppointmentManager
-    matching_slots = find_eligible_patients(patient)
-    
-    # Convert the list of slots (which might be objects or dicts) to JSON
-    # Ensure dates/times are handled correctly if they aren't JSON serializable by default
+
+    # Use the helper function to find slots matching the PATIENT's criteria
+    matching_slots = find_matching_slots_for_patient(patient) # Need a dedicated helper for this direction
+
     slots_serializable = []
     for slot in matching_slots:
-         # If slots are dicts, they might be fine. If objects, convert needed fields.
-         # Example simple conversion assuming slots are dicts or have a to_dict() method:
-         if hasattr(slot, 'to_dict'):
-             slots_serializable.append(slot.to_dict())
-         elif isinstance(slot, dict):
-             # Make sure date/time objects are converted to strings if necessary
-             if 'slot_date' in slot and hasattr(slot['slot_date'], 'isoformat'):
-                 slot['slot_date'] = slot['slot_date'].isoformat()
-             slots_serializable.append(slot)
-         else:
-              # Handle other cases or raise an error if slot format is unexpected
-              print(f"Warning: Cannot serialize slot: {slot}")
+         slot_copy = slot.copy() # Work with a copy
+         # Convert date objects to ISO strings for JSON
+         if 'slot_date' in slot_copy and isinstance(slot_copy['slot_date'], date):
+             slot_copy['slot_date'] = slot_copy['slot_date'].isoformat()
+         slots_serializable.append(slot_copy)
 
+    # Return patient data along with the matching slots
     return jsonify({
-        "patient": patient, # Assuming patient is already a dict or jsonify handles it
-        "matching_slots": slots_serializable 
+        "patient": patient, # Assuming patient is already JSON serializable
+        "matching_slots": slots_serializable
     })
+
+# NEW HELPER FUNCTION for the API route above
+def find_matching_slots_for_patient(patient: dict) -> list:
+    """Finds available slots that match a given patient's requirements."""
+    patient_provider_pref_raw = patient.get('provider', 'no preference')
+    patient_provider_pref = patient_provider_pref_raw.strip().lower() if patient_provider_pref_raw else 'no preference'
+    patient_duration = str(patient.get('duration', ''))
+    patient_availability_prefs = patient.get('availability', {})
+    patient_mode = patient.get('availability_mode', 'available')
+
+    if not patient_duration:
+        logging.warning(f"Cannot find matching slots for patient {patient.get('id')}: Missing duration.")
+        return []
+
+    logging.debug(f"Finding matching slots for Patient: ID={patient.get('id')}, Pref={patient_provider_pref}, Duration={patient_duration}, Mode={patient_mode}")
+
+    # Get all available (unmatched) slots from the slot manager
+    available_slots = [s for s in slot_manager.get_all_slots() if not s.get('matched_patient') and not s.get('proposed_patient_id')]
+
+    matching_slots = []
+    for slot in available_slots:
+        slot_id = slot.get('id', 'Unknown')
+        slot_provider_name = slot.get('provider')
+        slot_provider_lower = slot_provider_name.strip().lower() if slot_provider_name else ''
+        slot_duration = str(slot.get('duration', ''))
+        slot_day_of_week = slot.get('slot_day_of_week') # e.g., 'Wednesday'
+        slot_period = slot.get('slot_period') # e.g., 'AM'
+
+        # 1. Check Duration
+        if patient_duration != slot_duration:
+            continue
+
+        # 2. Check Provider Preference
+        provider_ok = (patient_provider_pref == 'no preference' or patient_provider_pref == slot_provider_lower)
+        if not provider_ok:
+            continue
+
+        # 3. Check Patient Availability for the Slot Day/Period
+        if not slot_day_of_week or not slot_period: # Skip slots with missing date info
+            continue
+
+        slot_day_lower = slot_day_of_week.lower()
+        slot_period_upper = slot_period.strip().upper()
+
+        # Check patient's availability using their mode
+        is_patient_available = True # Assume available unless restricted
+        has_patient_preferences = bool(patient_availability_prefs)
+        patient_pref_for_slot_day = None
+
+        # Find if patient specified prefs for the slot's day
+        for day_key, periods in patient_availability_prefs.items():
+            if day_key.lower() == slot_day_lower:
+                patient_pref_for_slot_day = [str(p).strip().upper() for p in periods]
+                break
+
+        # Apply mode logic
+        if patient_mode == 'available':
+            # If AVAILABLE mode, patient MUST specify this day/period if they have *any* prefs
+            if has_patient_preferences:
+                if patient_pref_for_slot_day is None or slot_period_upper not in patient_pref_for_slot_day:
+                    is_patient_available = False
+        elif patient_mode == 'unavailable':
+            # If UNAVAILABLE mode, patient must NOT specify this day/period
+            if patient_pref_for_slot_day is not None and slot_period_upper in patient_pref_for_slot_day:
+                is_patient_available = False
+
+        if is_patient_available:
+            matching_slots.append(slot)
+
+    # Sort matching slots (e.g., chronologically)
+    matching_slots.sort(key=lambda s: (s.get('slot_date') or date.min, s.get('slot_time') or ''))
+
+    logging.debug(f"Found {len(matching_slots)} matching slots for patient {patient.get('id')}")
+    return matching_slots
 
 @app.route('/assign_appointment/<patient_id>/<appointment_id>', methods=['POST'], strict_slashes=False)
 def assign_appointment(patient_id, appointment_id):
     """Assign a patient to a cancelled appointment slot and remove the slot."""
     logging.debug(f"Entering assign_appointment for patient_id={patient_id}, appointment_id={appointment_id}")
-    # Update wait times first (may not be strictly needed here but harmless)
-    waitlist_manager.update_wait_times()
 
-    # Find the patient
-    patient = waitlist_manager.get_patient_by_id(patient_id) # Assuming manager has/will have this method
-
-    if not patient: # Check if patient exists
+    patient = waitlist_manager.get_patient_by_id(patient_id)
+    if not patient:
         flash('Patient not found on waitlist.', 'danger')
         logging.warning(f"Assign appointment: Patient ID {patient_id} not found.")
-        # Redirect back to the main waitlist page if patient not found
         return redirect(url_for('index') + '#waitlist-table')
 
-    # Find the appointment using the manager
     appointment = slot_manager.get_slot_by_id(appointment_id)
-
     if not appointment:
         flash('Appointment slot not found.', 'danger')
         logging.warning(f"Assign appointment: Slot ID {appointment_id} not found.")
-        # Redirect back to the main waitlist page if slot not found
         return redirect(url_for('index') + '#waitlist-table')
 
-    # Check if slot already matched (Although we're removing, this check prevents issues if clicked twice)
     if appointment.get('matched_patient'):
-        flash(f'Slot already assigned to {appointment["matched_patient"].get("name", "another patient")}. Refreshing list.', 'warning')
-        logging.debug(f"Assign appointment: Slot {appointment_id} was already matched. Preventing removal.")
-        # Redirect back to the main waitlist page if already matched
+        flash(f'Slot already assigned. Refreshing list.', 'warning')
+        logging.debug(f"Assign appointment: Slot {appointment_id} was already matched.")
         return redirect(url_for('index') + '#waitlist-table')
 
-    # --- Eligibility Check using Helper ---
-    # Re-check eligibility based on potentially updated patient/slot data
-    # We will reuse the filtering logic from propose_slots implicitly by checking if the assignment works
-    # Note: Direct eligibility check like in propose_slots could be added here for extra safety,
-    # but the core logic relies on finding the patient/slot and removing them.
-
-    # Attempt to remove patient from waitlist FIRST
     try:
         logging.debug(f"Attempting to remove patient ID: {patient_id} from waitlist.")
         patient_removed = waitlist_manager.remove_patient(patient_id)
         logging.debug(f"Patient removal result: {patient_removed}")
 
         if patient_removed:
-            # If patient removal was successful, THEN REMOVE the cancelled slot
-            logging.debug(f"Patient {patient_id} removed from waitlist. Attempting to remove cancelled slot ID: {appointment_id}")
-            slot_removed = slot_manager.remove_slot(appointment_id) # Use remove_slot instead of assign
+            logging.debug(f"Patient {patient_id} removed. Attempting to remove cancelled slot ID: {appointment_id}")
+            slot_removed = slot_manager.remove_slot(appointment_id) # Use remove_slot
 
             if slot_removed:
-                flash(f'Successfully assigned {patient.get("name", "Unknown Patient")} to the appointment time. Patient removed from waitlist and slot removed from cancelled list.', 'success')
-                # --- MODIFIED REDIRECT ---
-                target_url = url_for('index') + '#waitlist-table' # Go to waitlist top after success
-                # --- END MODIFIED REDIRECT ---
-                logging.debug(f"Patient {patient_id} removed from waitlist and slot {appointment_id} removed successfully. Redirecting to: {target_url}")
-                # --- Save Backup After Successful Assignment/Removal ---
-                waitlist_manager.save_backup()
-                # slot_manager.remove_slot() handles its own save
-                # --- End Save Backup ---
+                flash(f'Successfully assigned {patient.get("name", "Patient")} to the appointment time. Patient removed from waitlist and slot removed.', 'success')
+                waitlist_manager.save_backup() # Backup saved by remove_patient/remove_slot internally
+                target_url = url_for('index') + '#waitlist-table' # Go back to waitlist
+                logging.debug(f"Assignment successful. Redirecting to: {target_url}")
                 return redirect(target_url)
             else:
-                # This case means patient was removed but slot removal failed (e.g., slot disappeared between checks)
-                # CRITICAL: Need to add patient back or handle this state
-                flash('Patient removed from waitlist, but failed to REMOVE slot (it may have been removed by another process). Please manually verify patient status and slot list.', 'danger')
-                logging.error(f"Removed patient {patient_id} but failed to REMOVE slot {appointment_id}. Patient needs manual re-addition or verification.")
-                # Consider adding the patient back here if possible, or provide clearer instructions
-                # Redirect back to waitlist
+                # Patient removed but slot removal failed
+                flash('Patient removed from waitlist, but failed to REMOVE the slot. Please manually verify.', 'danger')
+                logging.error(f"Removed patient {patient_id} but failed to REMOVE slot {appointment_id}.")
                 return redirect(url_for('index') + '#waitlist-table')
-
         else:
-            # Patient removal failed (e.g., patient wasn't actually on waitlist anymore)
-            flash('Failed to remove patient from waitlist (they may have already been scheduled or removed). Slot removal cancelled.', 'danger')
-            logging.debug(f"Patient removal failed for ID {patient_id}, slot removal cancelled, redirecting")
-            # Redirect back to waitlist
+            # Patient removal failed
+            flash('Failed to remove patient from waitlist (already removed?). Slot removal cancelled.', 'danger')
+            logging.debug(f"Patient removal failed for ID {patient_id}.")
             return redirect(url_for('index') + '#waitlist-table')
     except Exception as e:
-        logging.error(f"Exception during patient removal or slot removal: {e}", exc_info=True)
-        flash('An unexpected error occurred while assigning the patient and removing the slot.', 'danger')
-        # Redirect back to waitlist
+        logging.error(f"Exception during assignment: {e}", exc_info=True)
+        flash('An unexpected error occurred during assignment.', 'danger')
         return redirect(url_for('index') + '#waitlist-table')
 
 def find_eligible_patients(cancelled_appointment: dict) -> list:
     """
-    Finds eligible patients for a cancelled slot by fetching waiting patients
-    and applying filtering logic directly within this function.
-    Handles provider, duration, day, and availability mode correctly.
-    Sorts eligible patients by emergency status, urgency, and wait time.
+    Finds eligible patients for a cancelled slot.
+    (Keep existing logic, but ensure it uses waitlist_manager correctly)
     """
     slot_provider_name = cancelled_appointment.get('provider')
     slot_duration = str(cancelled_appointment.get('duration')) # Ensure string comparison
@@ -949,17 +978,11 @@ def find_eligible_patients(cancelled_appointment: dict) -> list:
     logging.debug(f"Finding eligible patients for Slot: Provider={slot_provider_name}, Duration={slot_duration}, Day={slot_day_of_week}, Period={slot_period}")
 
     # Get all waiting patients from the manager
-    all_waiting_patients = []
-    try:
-        all_waiting_patients = waitlist_manager.get_all_patients(status_filter='waiting')
-        if not isinstance(all_waiting_patients, list):
-             raise AttributeError
-        logging.debug("Fetched waiting patients using manager's status_filter.")
-    except (AttributeError, TypeError):
-         logging.debug("Manager does not support status_filter or returned unexpected type. Filtering manually.")
+    all_waiting_patients = waitlist_manager.get_all_patients(status_filter='waiting')
+    if not isinstance(all_waiting_patients, list): # Fallback if filter isn't supported or fails
+         logging.warning("get_all_patients did not return a list with status_filter, filtering manually.")
          all_patients = waitlist_manager.get_all_patients()
          all_waiting_patients = [p for p in all_patients if p.get('status') == 'waiting']
-
 
     eligible_patients = []
     for patient in all_waiting_patients:
@@ -973,120 +996,93 @@ def find_eligible_patients(cancelled_appointment: dict) -> list:
 
         # 1. Check Duration
         if patient_duration != slot_duration:
-            # logging.debug(f"Patient {patient_id} ({patient_name}) skipped: Duration mismatch") # Reduced verbosity
             continue
 
         # 2. Check Provider
         slot_provider_lower = slot_provider_name.strip().lower()
         provider_ok = (patient_provider_pref == 'no preference' or patient_provider_pref == slot_provider_lower)
         if not provider_ok:
-            # logging.debug(f"Patient {patient_id} ({patient_name}) skipped: Provider mismatch") # Reduced verbosity
             continue
 
         # 3. Check Day/Time Availability (incorporating mode)
-        is_available_for_slot = True
+        is_available_for_slot = True # Assume available unless restricted
         has_patient_preferences = bool(patient_availability_prefs)
-        slot_matches_a_preference = False
         slot_day_lower = slot_day_of_week.lower()
-        matching_day_key = None
-        for day_key in patient_availability_prefs.keys():
+        slot_period_upper = slot_period.strip().upper()
+        patient_pref_for_slot_day = None
+
+        # Find if patient specified prefs for the slot's day
+        for day_key, periods in patient_availability_prefs.items():
             if day_key.lower() == slot_day_lower:
-                matching_day_key = day_key
+                patient_pref_for_slot_day = [str(p).strip().upper() for p in periods]
                 break
 
-        if matching_day_key:
-            day_prefs = patient_availability_prefs.get(matching_day_key, [])
-            day_prefs_upper = [str(p).strip().upper() for p in day_prefs]
-            slot_period_upper = slot_period.strip().upper()
-            if slot_period_upper in day_prefs_upper:
-                slot_matches_a_preference = True
-
+        # Apply mode logic
         if patient_mode == 'available':
-            if has_patient_preferences and not slot_matches_a_preference:
+            # Must have specified this day/time if *any* preferences exist
+            if has_patient_preferences and (patient_pref_for_slot_day is None or slot_period_upper not in patient_pref_for_slot_day):
                 is_available_for_slot = False
         elif patient_mode == 'unavailable':
-            if has_patient_preferences and slot_matches_a_preference:
+            # Must NOT have specified this day/time
+            if patient_pref_for_slot_day is not None and slot_period_upper in patient_pref_for_slot_day:
                 is_available_for_slot = False
 
         if is_available_for_slot:
-            # logging.debug(f"Patient {patient_id} ({patient_name}) added as eligible.") # Reduced verbosity
             eligible_patients.append(patient)
 
-
-    # --- CORRECTED SORTING LOGIC ---
+    # Sort eligible patients
     def sort_eligible_key(patient):
         try:
             is_emergency = patient.get('appointment_type', '').lower() == 'emergency_exam'
             urgency = patient.get('urgency', 'low').lower()
             wait_minutes = -wait_time_to_minutes(patient.get('wait_time', '0 minutes')) # Negative for descending
-
-            # Map urgency to sortable numbers (lower number = higher priority)
             urgency_map = {'high': 0, 'medium': 1, 'low': 2}
-            urgency_level = urgency_map.get(urgency, 2) # Default to low if invalid
-
-            # Sort order: Emergency first, then Urgency, then Wait Time
-            # Emergency (False comes first), Urgency (0 comes first), Wait Time (higher negative comes first)
+            urgency_level = urgency_map.get(urgency, 2)
             return (not is_emergency, urgency_level, wait_minutes)
         except Exception as e:
             logging.error(f"Error calculating sort key for eligible patient {patient.get('id')}: {e}", exc_info=True)
-            return (True, 2, 0) # Default to lowest priority on error
+            return (True, 2, 0)
 
     eligible_patients.sort(key=sort_eligible_key)
-    # --- END CORRECTED SORTING LOGIC ---
-
     logging.debug(f"Found and sorted {len(eligible_patients)} eligible patients for slot {cancelled_appointment.get('id')}")
     return eligible_patients
 
-# This route finds matches using the helper, which now uses the manager's updated logic
 @app.route('/find_matches_for_appointment/<appointment_id>', methods=['POST'])
 def find_matches_for_appointment(appointment_id):
-    """Finds eligible patients for an EXISTING slot and re-renders the index page."""
+    """Finds eligible patients for an EXISTING slot and re-renders the slots page."""
     appointment = slot_manager.get_slot_by_id(appointment_id)
 
     if not appointment:
         flash('Appointment slot not found', 'danger')
-        return redirect(url_for('index', _anchor='cancelled-slots-list'))
+        return redirect(url_for('slots', _anchor='cancelled-slots-list'))
 
     if appointment.get('matched_patient'):
         flash('This appointment slot is already matched.', 'info')
-        return redirect(url_for('index', _anchor=f'slot-{appointment_id}'))
+        return redirect(url_for('slots', _anchor=f'slot-{appointment_id}'))
 
     eligible_patients = find_eligible_patients(appointment)
 
     # --- Logging ---
-    logging.debug(f"Rendering index template from find_matches_for_appointment.")
+    logging.debug(f"Rendering slots template from find_matches_for_appointment.")
     logging.debug(f"Current appointment ID: {appointment.get('id')}, Date: {appointment.get('slot_date')}, Period: {appointment.get('slot_period')}, Time: {appointment.get('slot_time')}")
     logging.debug(f"Found {len(eligible_patients)} eligible patients.")
     # --- End Logging ---
 
-    # --- Fetch ALL data needed for index.html ---
-    waitlist_manager.update_wait_times() # Update wait times
+    # --- Fetch ALL data needed for slots.html ---
     all_providers = provider_manager.get_provider_list()
     has_providers = len(all_providers) > 0
-    waitlist = waitlist_manager.get_all_patients()
-    # Sort Waitlist (copy from index route)
-    def sort_key_safe(x):
-        try:
-            wait_minutes = -wait_time_to_minutes(x.get('wait_time', '0 minutes'))
-            is_scheduled = x.get('status') == 'scheduled'
-            is_emergency = x.get('appointment_type', '').lower() == 'emergency_exam'
-            return (is_scheduled, not is_emergency, wait_minutes)
-        except Exception as e: return (True, True, 0)
-    sorted_waitlist = sorted(waitlist, key=sort_key_safe)
-    # Fetch and Sort ALL Open Slots (copy from index route)
+    # Fetch and Sort ALL Open Slots (needed to display the list again)
     current_slots = slot_manager.get_all_slots()
     current_slots.sort(key=lambda s: (s.get('slot_date') or date.min, s.get('slot_time') or ''), reverse=True)
     # --- End Fetch ALL data ---
 
-    # Re-render the index template, passing the specific match data AND all standard data
-    return render_template('index.html',
-                           waitlist=sorted_waitlist,
+    # Re-render the slots template, passing the specific match data AND all standard data
+    return render_template('slots.html',
                            providers=all_providers,
                            has_providers=has_providers,
                            cancelled_appointments=current_slots, # Pass all slots
                            eligible_patients=eligible_patients,    # Pass the found patients
-                           current_appointment=appointment,        # Pass the specific slot checked
-                           focus_element_id='eligible-patients-list' if eligible_patients else f'slot-{appointment_id}') # Scroll focus
+                           current_appointment=appointment)        # Pass the specific slot checked
 
 if __name__ == '__main__':
     # Ensure provider.csv exists (even if empty) - Handled by ProviderManager init now

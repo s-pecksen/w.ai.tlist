@@ -1,0 +1,474 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Open Slots{% endblock %}
+
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+<style>
+    /* Styles needed for this page (from index/cancelled_appointments) */
+    .eligibility-match { background-color: #d1e7dd; /* Greenish */ }
+    .patient-match-indicator { width: 12px; height: 12px; display: inline-block; border-radius: 50%; margin-right: 5px; background-color: #198754; }
+    .patient-details { font-size: 0.9rem; color: #6c757d; }
+    .slot-details { font-size: 0.9rem; color: #6c757d; }
+    .action-buttons form, .action-buttons a, .action-buttons button { display: block; width: 100%; margin-bottom: 5px; } /* Make buttons block & add spacing */
+    .propose-slot-btn {} /* Placeholder */
+    .waitlist-availability { font-size: 0.85em; color: #6c757d; }
+    /* Urgency badge styles (needed for eligible patient list) */
+    .badge.urgency-high { background-color: #dc3545; color: white; }
+    .badge.urgency-medium { background-color: #ffc107; color: black; }
+    .badge.urgency-low { background-color: #0dcaf0; color: black; }
+</style>
+{% endblock %}
+
+{% block content %}
+{# Macro needed for formatting appointment types in eligible patient list #}
+{% macro format_appointment_type(patient) %}
+    {% set appt_type = patient.appointment_type.strip()|lower %}
+    {% if appt_type == 'custom' %}
+        Custom: {{ patient.reason|default('N/A', true) }}
+    {% elif appt_type == 'rct' %}
+        RCT
+    {% elif appt_type == 'x-ray' or appt_type == 'xray' %}
+        X-Ray
+    {% elif appt_type == 'np_spec' or appt_type == 'np spec' %}
+        NP Spec
+    {% elif '_' in patient.appointment_type or ' ' in patient.appointment_type %}
+        {{ patient.appointment_type.strip()|replace('_', ' ')|title }}
+    {% else %}
+        {{ patient.appointment_type.strip()|capitalize }}
+    {% endif %}
+{% endmacro %}
+
+<div class="container">
+    <h1 class="display-5 text-center mb-4">Manage Open Slots</h1>
+
+    <div class="row mb-4">
+        {# --- Add Open Slot Form --- #}
+        <div class="col-md-6">
+            <div class="card" id="add-slot-form">
+                <div class="card-body">
+                    <h5 class="card-title">Add Open Slot</h5>
+                    {% if not has_providers %}
+                    <div class="alert alert-warning" role="alert">
+                        Please add providers first via the <a href="{{ url_for('list_providers') }}">Manage Providers</a> page.
+                    </div>
+                    {% else %}
+                    <form action="{{ url_for('add_cancelled_appointment') }}" method="post">
+                        <div class="mb-3">
+                            <label for="slot_provider" class="form-label">Provider</label>
+                            <select class="form-select" id="slot_provider" name="provider" required>
+                                <option value="" selected disabled>Select Provider</option>
+                                {% for provider_dict in providers %}
+                                    <option value="{{ provider_dict.name }}">{{ provider_dict.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                         <div class="row">
+                             <div class="col-md-4 mb-3">
+                                <label for="slot_date" class="form-label">Date</label>
+                                <input type="date" class="form-control" id="slot_date" name="slot_date" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="slot_time" class="form-label">Time*</label>
+                                <input type="time" class="form-control" id="slot_time" name="slot_time" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="slot_period" class="form-label">Period</label>
+                                <select class="form-select" id="slot_period" name="slot_period" required>
+                                    <option value="" selected disabled>Select AM/PM</option>
+                                    <option value="AM">AM</option>
+                                    <option value="PM">PM</option>
+                                </select>
+                            </div>
+                         </div>
+                        <div class="mb-3">
+                            <label for="slot_duration" class="form-label">Duration</label>
+                            <select class="form-select" id="slot_duration" name="duration" required>
+                                <option value="" disabled selected>Select Duration</option>
+                                <option value="30">30 minutes</option>
+                                <option value="60">1 hour</option>
+                                <option value="70">70 minutes</option>
+                                <option value="90">1.5 hours</option>
+                                <option value="120">2 hours</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="slot_notes" class="form-label">Notes (Optional)</label>
+                            <textarea class="form-control" id="slot_notes" name="notes" rows="2"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add Slot</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# --- Current Open Slots List --- #}
+        <div class="col-md-6">
+            <div class="card" id="cancelled-slots-list">
+                <div class="card-header">
+                    <h5 class="mb-0">Current Open Slots</h5>
+                </div>
+                 <div class="list-group list-group-flush" style="max-height: 400px; overflow-y: auto;"> {# Added scroll for long lists #}
+                    {% if cancelled_appointments %}
+                        {% for appointment in cancelled_appointments %}
+                            <div class="list-group-item" id="slot-{{ appointment.id }}">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong>{{ appointment.provider }}</strong><br>
+                                        <div class="slot-details">
+                                            {% if appointment.slot_date %}
+                                                {{ appointment.slot_date.strftime('%a, %b %d, %Y') }}
+                                                {% if appointment.slot_time %} at {{ appointment.slot_time }}
+                                                {% elif appointment.slot_period %} ({{ appointment.slot_period }}) {% endif %}
+                                            {% else %} Date/Time Unknown {% endif %}
+                                            <br> Duration: {{ appointment.duration }} minutes
+                                            {% if appointment.notes %} <br>Notes: {{ appointment.notes }} {% endif %}
+                                        </div>
+                                    </div>
+                                    <div class="text-end action-buttons">
+                                        {% if appointment.matched_patient %}
+                                            <span class="badge bg-success">Matched: {{ appointment.matched_patient.name }}</span>
+                                        {% else %}
+                                            {# Find Matches Form #}
+                                            <form action="{{ url_for('find_matches_for_appointment', appointment_id=appointment.id) }}" method="post">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Find Matches">
+                                                    <i class="bi bi-search"></i> Find Matches
+                                                </button>
+                                            </form>
+                                            {# Edit Button - Triggers Edit Slot Modal #}
+                                            <button type="button" class="btn btn-sm btn-outline-secondary edit-slot-button"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#editSlotModal"
+                                                    data-slot-id="{{ appointment.id }}"
+                                                    data-provider="{{ appointment.provider }}"
+                                                    data-duration="{{ appointment.duration }}"
+                                                    data-slot-date="{{ appointment.slot_date.isoformat() if appointment.slot_date else '' }}"
+                                                    data-slot-time="{{ appointment.slot_time or ''}}"
+                                                    data-slot-period="{{ appointment.slot_period or ''}}"
+                                                    data-notes="{{ appointment.notes or '' }}"
+                                                    title="Edit Slot">
+                                                 <i class="bi bi-pencil"></i> Edit
+                                            </button>
+                                            {# Remove Form #}
+                                            <form action="{{ url_for('remove_cancelled_slot', appointment_id=appointment.id) }}" method="post" onsubmit="return confirm('Remove this open slot?');">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Slot">
+                                                    <i class="bi bi-trash"></i> Remove
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="list-group-item text-center">No open slots available.</div>
+                    {% endif %}
+                 </div> {# End scrollable list group #}
+            </div>
+        </div>
+    </div>
+
+    {# --- Eligible Patients Section (shown conditionally after Find Matches) --- #}
+    <div id="eligible-patients-section" class="row mb-4" style="display: {% if eligible_patients is not none and current_appointment %}block{% else %}none{% endif %};">
+      <div class="col-md-12">
+        <div class="card border-primary">
+          <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Eligible Patients Found for Slot</h5>
+            <p class="mb-0" id="eligible-patients-slot-info">
+              {% if current_appointment and current_appointment.slot_date %}
+                {{ current_appointment.slot_date.strftime('%A, %B %d, %Y') }}
+                {% if current_appointment.slot_time %} at {{ current_appointment.slot_time }}
+                {% elif current_appointment.slot_period %} ({{ current_appointment.slot_period }}) {% endif %}
+                | Provider: {{ current_appointment.provider }} | Duration: {{ current_appointment.duration }} minutes
+              {% else %}
+                Slot Information Unavailable
+              {% endif %}
+            </p>
+          </div>
+          <div class="card-body p-0">
+            {% if eligible_patients is not none and eligible_patients|length > 0 %}
+              <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                  <thead>
+                    <tr>
+                      <th>Match</th>
+                      <th>Patient</th>
+                      <th>Contact</th>
+                      <th>Availability</th>
+                      <th>Wait Time</th>
+                      <th>Appointment Details</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for patient in eligible_patients %}
+                    <tr class="eligibility-match">
+                      <td>
+                        <span class="patient-match-indicator"></span>
+                        <span class="fw-bold">Perfect</span>
+                      </td>
+                      <td>{{ patient.name }}</td>
+                      <td>
+                        {{ patient.phone }}<br>
+                        <small>{{ patient.email or "No email" }}</small>
+                      </td>
+                      <td> {# Availability Display #}
+                        {% set availability = patient.get('availability', {}) %}
+                        {% set mode = patient.get('availability_mode', 'available') %}
+                        {% if not availability %}
+                          <span class="text-muted">Any Day/Time</span>
+                        {% else %}
+                          <span class="waitlist-availability">
+                          {% if mode == 'available' %}<strong class="text-success">Available:</strong>
+                          {% else %}<strong class="text-danger">NOT Avail:</strong>{% endif %}
+                          {% for day, periods in availability.items()|sort %}
+                            {{ day[:3] }}({{ periods|join('/') }}){% if not loop.last %}; {% endif %}
+                          {% endfor %}
+                          </span>
+                        {% endif %}
+                      </td>
+                      <td>{{ patient.wait_time }}</td>
+                      <td> {# Appointment Details #}
+                        <div class="patient-details">
+                          <div><strong>Type:</strong> {{ format_appointment_type(patient) }}</div>
+                          <div><strong>Duration:</strong> {{ patient.duration }} min</div>
+                          <div><strong>Provider Pref:</strong>
+                            {% set patient_provider_lower = patient.provider|lower %}
+                            {% set slot_provider_lower = current_appointment.provider|lower %}
+                            {% if patient_provider_lower == slot_provider_lower %}
+                              <span class="text-success">{{ patient.provider }}</span>
+                            {% elif patient_provider_lower == 'no preference' or not patient.provider %}
+                              <span class="text-muted">No Preference</span>
+                            {% else %}
+                              <span class="text-danger">{{ patient.provider }}</span> {# Should not happen here #}
+                            {% endif %}
+                          </div>
+                          {% if patient.reason and patient.appointment_type.lower() != 'custom' %}
+                            <div><strong>Notes:</strong> {{ patient.reason }}</div>
+                          {% endif %}
+                        </div>
+                      </td>
+                      <td> {# Action Button #}
+                        {% if patient.id and current_appointment.id and current_appointment.slot_date and current_appointment.slot_time %}
+                           {# Propose Slot Button #}
+                          <button type="button" class="btn btn-sm btn-info propose-slot-btn"
+                                  data-bs-toggle="modal" data-bs-target="#proposeSlotModal"
+                                  data-patient-id="{{ patient.id }}"
+                                  data-patient-name="{{ patient.name }}"
+                                  data-patient-first-name="{{ patient.name.split()[0] }}"
+                                  data-appointment-id="{{ current_appointment.id }}"
+                                  data-slot-weekday="{{ current_appointment.slot_date.strftime('%A') }}"
+                                  data-slot-date-str="{{ current_appointment.slot_date.strftime('%B %d, %Y') }}"
+                                  data-slot-time="{{ current_appointment.slot_time }}"
+                                  data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}"
+                                  data-provider-name="{{ current_appointment.provider }}"
+                                  data-patient-email="{{ patient.email or '' }}">
+                            <i class="bi bi-send"></i> Propose
+                          </button>
+                           {# Consider adding an "Assign" button here too? Needs careful thought on workflow.
+                              For now, propose leads to manual assignment later or direct assignment from index. #}
+                        {% else %}
+                          <button class="btn btn-sm btn-secondary" disabled title="Missing patient/slot data">Error</button>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="alert alert-info mb-0">
+                No eligible patients found matching the provider, duration, and day/time for this slot.
+              </div>
+            {% endif %}
+          </div> {# End card-body #}
+        </div> {# End card #}
+      </div> {# End col #}
+    </div> {# End eligible patients row #}
+
+</div>{# End container #}
+
+<!-- Edit Slot Modal -->
+<div class="modal fade" id="editSlotModal" tabindex="-1" aria-labelledby="editSlotModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editSlotModalLabel">Edit Open Slot</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        {# The action URL needs the placeholder replaced by JS #}
+        <form id="edit-slot-form" action="{{ url_for('update_cancelled_slot', appointment_id='SLOT_ID_PLACEHOLDER') }}" method="post">
+          <div class="mb-3">
+            <label for="edit_slot_provider" class="form-label">Provider</label>
+            <select class="form-select" id="edit_slot_provider" name="provider" required>
+              <option value="" disabled>Select Provider</option>
+              {% for provider_dict in providers %}
+                <option value="{{ provider_dict.name }}">{{ provider_dict.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row">
+            <div class="col-md-4 mb-3">
+              <label for="edit_slot_date" class="form-label">Date</label>
+              <input type="date" class="form-control" id="edit_slot_date" name="slot_date" required>
+            </div>
+            <div class="col-md-4 mb-3">
+              <label for="edit_slot_time" class="form-label">Time*</label>
+              <input type="time" class="form-control" id="edit_slot_time" name="slot_time" required>
+            </div>
+            <div class="col-md-4 mb-3">
+              <label for="edit_slot_period" class="form-label">Period</label>
+              <select class="form-select" id="edit_slot_period" name="slot_period" required>
+                <option value="" disabled>Select AM/PM</option>
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label for="edit_slot_duration" class="form-label">Duration</label>
+            <select class="form-select" id="edit_slot_duration" name="duration" required>
+              <option value="" disabled>Select Duration</option>
+              <option value="30">30 minutes</option>
+              <option value="60">1 hour</option>
+              <option value="70">70 minutes</option>
+              <option value="90">1.5 hours</option>
+              <option value="120">2 hours</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="edit_slot_notes" class="form-label">Notes (Optional)</label>
+            <textarea class="form-control" id="edit_slot_notes" name="notes" rows="2"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        {# This button submits the form outside of it using the 'form' attribute #}
+        <button type="submit" form="edit-slot-form" class="btn btn-primary">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Propose Slot Modal -->
+<div class="modal fade" id="proposeSlotModal" tabindex="-1" aria-labelledby="proposeSlotModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="proposeSlotModalLabel">Proposal Message</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label for="modalEmailBody" class="form-label">Message Template:</label>
+          <textarea class="form-control" id="modalEmailBody" name="email_body" rows="10" readonly></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="copyTemplateButton">
+          <i class="bi bi-clipboard"></i> Copy Message
+        </button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %} {# End content block #}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // --- Date Input Logic ---
+        const dateInputs = document.querySelectorAll('input[type="date"]');
+        const today = new Date().toISOString().split('T')[0];
+        dateInputs.forEach(input => {
+            input.min = today; // Prevent selecting past dates in both add and edit forms
+        });
+
+        // --- Edit Slot Modal Logic ---
+        const editSlotModal = document.getElementById('editSlotModal');
+        if (editSlotModal) {
+            editSlotModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const slotId = button.getAttribute('data-slot-id');
+                const form = document.getElementById('edit-slot-form');
+
+                // Update the form action URL
+                const actionUrl = "{{ url_for('update_cancelled_slot', appointment_id='SLOT_ID_PLACEHOLDER') }}";
+                form.action = actionUrl.replace('SLOT_ID_PLACEHOLDER', slotId);
+
+                // Populate form fields from data attributes
+                document.getElementById('edit_slot_provider').value = button.getAttribute('data-provider');
+                document.getElementById('edit_slot_date').value = button.getAttribute('data-slot-date');
+                document.getElementById('edit_slot_time').value = button.getAttribute('data-slot-time');
+                document.getElementById('edit_slot_period').value = button.getAttribute('data-slot-period');
+                document.getElementById('edit_slot_duration').value = button.getAttribute('data-duration');
+                document.getElementById('edit_slot_notes').value = button.getAttribute('data-notes');
+            });
+        }
+
+        // --- Propose Slot Modal Logic ---
+        const proposeModalElement = document.getElementById('proposeSlotModal');
+        const copyButton = document.getElementById('copyTemplateButton');
+
+        if (proposeModalElement && copyButton) {
+            proposeModalElement.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const patientName = button.getAttribute('data-patient-name');
+                const patientFirstName = button.getAttribute('data-patient-first-name');
+                const slotWeekday = button.getAttribute('data-slot-weekday');
+                const slotDateStr = button.getAttribute('data-slot-date-str');
+                const slotTime = button.getAttribute('data-slot-time');
+                const appointmentType = button.getAttribute('data-appointment-type');
+                const providerName = button.getAttribute('data-provider-name');
+
+                const modalTitle = proposeModalElement.querySelector('.modal-title');
+                const modalBodyTextarea = proposeModalElement.querySelector('#modalEmailBody');
+
+                modalTitle.textContent = `Proposal Message for ${patientName}`;
+
+                let timeString = slotTime ? ` at ${slotTime}` : '';
+                let dateTimeString = `${slotWeekday}, ${slotDateStr}${timeString}`;
+
+                const emailBody = `Hi ${patientFirstName || patientName},\n\nThis is [Your Name] from [Your Clinic Name]. We have an opening on ${dateTimeString} with ${providerName}, and would love to know if you could make it in for your ${appointmentType}?\n\nIf you could confirm with us as soon as you get this, we'll get you booked in and see you then!\n\nThanks so much!`;
+
+                modalBodyTextarea.value = emailBody;
+                copyButton.textContent = 'Copy Message';
+                copyButton.disabled = false;
+            });
+
+            copyButton.addEventListener('click', function() {
+                const messageText = proposeModalElement.querySelector('#modalEmailBody').value;
+                navigator.clipboard.writeText(messageText).then(() => {
+                    copyButton.textContent = 'Copied!';
+                    copyButton.disabled = true;
+                    setTimeout(() => {
+                        copyButton.textContent = 'Copy Message';
+                        copyButton.disabled = false;
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                    copyButton.textContent = 'Copy Failed!';
+                    setTimeout(() => { copyButton.textContent = 'Copy Message'; }, 2000);
+                });
+            });
+        } else {
+            if (!proposeModalElement) console.error("Propose modal not found");
+            if (!copyButton) console.error("Copy button not found");
+        }
+
+        // Helper function to escape HTML (needed if dynamically adding HTML, less critical now)
+        function escapeHTML(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+    }); // End DOMContentLoaded
+</script>
+{% endblock %} {# End scripts block #} 
