@@ -1,9 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response
 from datetime import datetime, timedelta, date
 from cryptography.fernet import Fernet
-from sqlalchemy import create_engine, Column, String, DateTime
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 import keyring
 import os
 import pandas as pd
@@ -17,9 +17,14 @@ import glob
 import logging
 from cancelled_slot_manager import CancelledSlotManager
 import json # Needed for handling availability JSON in CSV upload
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///clinic_data.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -130,38 +135,231 @@ def wait_time_to_minutes(wait_time_str):
         
     return total_minutes
 
+# --- Flask App Initialization ---
+app = Flask(__name__)
+app.secret_key = os.urandom(24) # Keep existing secret key
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///clinic_data.db' # Configure SQLAlchemy URI
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# app.config['SESSION_TYPE'] = 'filesystem' # You might already have this
+
+# --- Database Setup ---
+# Replace the old SecureDatabase class and Base definition with SQLAlchemy integration
+# Base = declarative_base() # Remove this if using Flask-SQLAlchemy db.Model
+db = SQLAlchemy(app)
+
+# --- Login Manager Setup ---
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login' # Redirect user to /login if they access a protected page
+
+# --- User Model ---
+# Use UserMixin for Flask-Login integration
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128)) # Store hash, not plain password
+    clinic_name = db.Column(db.String(120))
+    user_name_for_message = db.Column(db.String(120)) # For auto-generated messages
+
+    # Relationships (will be needed later)
+    # providers = db.relationship('Provider', backref='user', lazy=True)
+    # appointment_types = db.relationship('AppointmentTypeConfig', backref='user', lazy=True)
+    # patients = db.relationship('Patient', backref='user', lazy=True) # Need Patient model defined with db.Model
+    # slots = db.relationship('CancelledSlot', backref='user', lazy=True) # Need CancelledSlot model defined with db.Model
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+# Flask-Login user loader callback
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# --- Placeholder Models (Need to be fully defined later) ---
+# Replace existing Patient class definition with SQLAlchemy model
+class Patient(db.Model):
+    __tablename__ = 'patients' # Keep table name if migrating existing data
+    id = db.Column(db.String, primary_key=True) # Assuming UUID strings
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # Link to User
+    # encrypted_data = db.Column(db.String) # Need to decide how to handle encryption/data storage
+    # Instead of encrypted blob, store fields directly?
+    name = db.Column(db.String)
+    phone = db.Column(db.String)
+    email = db.Column(db.String)
+    reason = db.Column(db.String)
+    urgency = db.Column(db.String)
+    appointment_type = db.Column(db.String)
+    duration = db.Column(db.String)
+    provider_pref = db.Column(db.String) # Store name, link to Provider model later if needed
+    availability_json = db.Column(db.String) # Store availability as JSON string
+    availability_mode = db.Column(db.String)
+    status = db.Column(db.String, default='waiting')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow) # Use default
+
+    user = db.relationship('User', backref=db.backref('patients', lazy=True))
+
+    # Need methods to get/set availability from JSON, calculate wait time etc.
+
+# Placeholder for Provider - current manager uses CSV
+# class Provider(db.Model):
+#     id = db.Column(db.Integer, primary_key=True)
+#     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+#     name = db.Column(db.String, nullable=False)
+    # Add other provider details if necessary
+
+# Placeholder for AppointmentTypeConfig
+# class AppointmentTypeConfig(db.Model):
+#     id = db.Column(db.Integer, primary_key=True)
+#     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+#     type_name = db.Column(db.String, nullable=False)
+#     default_duration = db.Column(db.Integer, nullable=False) # Store duration as integer
+
+# Placeholder for CancelledSlot - current manager uses CSV/backups
+# class CancelledSlot(db.Model):
+#     id = db.Column(db.String, primary_key=True) # Assuming UUID strings
+#     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+#     # Add other fields: provider_name, duration, slot_date, slot_period, slot_time, notes, etc.
+
+
+# --- Data Managers (Need Significant Refactoring) ---
+# Initialize managers - HOW they get data needs to change based on user context
+# These will likely not be global singletons anymore.
+provider_manager = ProviderManager() # TODO: Refactor for user-specific data
+waitlist_manager = PatientWaitlistManager("ClinicWaitlistApp", backup_dir=backup_dir) # TODO: Refactor for user-specific data
+slot_manager = CancelledSlotManager(backup_dir=cancelled_slots_backup_dir) # TODO: Refactor for user-specific data
+
+# --- Routes ---
+
+# Add Registration Route
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        clinic_name = request.form.get('clinic_name')
+        user_name = request.form.get('user_name')
+        # TODO: Add inputs for initial providers, appt types/durations
+
+        if not username or not password:
+            flash('Username and password are required.', 'warning')
+            return redirect(url_for('register'))
+
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            flash('Username already exists. Please choose a different one.', 'warning')
+            return redirect(url_for('register'))
+
+        new_user = User(username=username, clinic_name=clinic_name, user_name_for_message=user_name)
+        new_user.set_password(password)
+        db.session.add(new_user)
+        try:
+            db.session.commit()
+            # TODO: Save initial providers/appt types for this user
+            flash('Registration successful! Please log in.', 'success')
+            return redirect(url_for('login'))
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error during registration: {e}", exc_info=True)
+            flash('An error occurred during registration. Please try again.', 'danger')
+            return redirect(url_for('register'))
+
+    return render_template('register.html') # Need to create this template
+
+# Add Login Route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.check_password(password):
+            login_user(user, remember=request.form.get('remember')) # Add 'remember me' functionality
+            flash('Logged in successfully.', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
+        else:
+            flash('Invalid username or password.', 'danger')
+
+    return render_template('login.html') # Need to create this template
+
+# Add Logout Route
+@app.route('/logout')
+@login_required # User must be logged in to log out
+def logout():
+    logout_user()
+    flash('You have been logged out.', 'success')
+    return redirect(url_for('login'))
+
+# Modify Index Route (Example of protecting and using current_user)
 @app.route('/', methods=['GET'])
+@login_required # Protect the main page
 def index():
-    logging.debug("Entering index route")
+    logging.debug(f"Entering index route for user: {current_user.id}")
     try:
-        waitlist_manager.update_wait_times()
+        # TODO: Refactor managers to accept user_id or work within user context
+        # Example placeholders assuming refactored managers or direct DB queries
+        # waitlist_manager.update_wait_times(user_id=current_user.id)
+        # all_providers = provider_manager.get_provider_list(user_id=current_user.id)
+        # waitlist = waitlist_manager.get_all_patients(user_id=current_user.id)
+
+        # --- TEMPORARY: Use placeholder data until managers are refactored ---
+        # Query providers directly if Provider model is defined and linked
+        # all_providers = Provider.query.filter_by(user_id=current_user.id).all()
+        # For now, assume global providers until refactored
         all_providers = provider_manager.get_provider_list()
         has_providers = len(all_providers) > 0
-        waitlist = waitlist_manager.get_all_patients()
-        logging.debug(f"Index route: Fetched {len(waitlist)} patients")
 
-        def sort_key_safe(x):
-            try:
-                wait_minutes = -wait_time_to_minutes(x.get('wait_time', '0 minutes'))
-                is_scheduled = x.get('status') == 'scheduled'
-                is_emergency = x.get('appointment_type', '').lower() == 'emergency_exam'
-                return (is_scheduled, not is_emergency, wait_minutes)
-            except Exception as e:
-                logging.error(f"Error calculating sort key for patient {x.get('id')}: {e}", exc_info=True)
-                return (True, True, 0)
+        # Query patients directly
+        user_patients = Patient.query.filter_by(user_id=current_user.id).order_by(Patient.created_at.desc()).all()
+        # Convert Patient objects to dictionaries compatible with the template (or update template)
+        waitlist = []
+        for p in user_patients:
+             # Need to reconstruct the dictionary structure expected by the template
+             # This includes calculating wait_time, formatting availability etc.
+             # This logic should eventually live in the refactored PatientWaitlistManager
+             p_dict = {
+                'id': p.id,
+                'name': p.name,
+                'phone': p.phone,
+                'email': p.email,
+                'reason': p.reason,
+                'urgency': p.urgency,
+                'appointment_type': p.appointment_type,
+                'duration': p.duration,
+                'provider': p.provider_pref, # Renamed from provider_pref
+                'status': p.status,
+                'created_at': p.created_at,
+                'availability': json.loads(p.availability_json or '{}'),
+                'availability_mode': p.availability_mode,
+                'wait_time': "Needs calculation" # TODO: Calculate wait time based on p.created_at
+             }
+             waitlist.append(p_dict)
+        # --- End TEMPORARY ---
 
-        sorted_waitlist = sorted(waitlist, key=sort_key_safe)
+        logging.debug(f"Index route: Fetched {len(waitlist)} patients for user {current_user.id}")
 
-        if not has_providers:
-            flash('Please upload a list of Provider names to proceed', 'warning')
+        # Sorting logic needs refactoring based on the new data structure/wait time calculation
+        # sorted_waitlist = sorted(waitlist, key=sort_key_safe)
+        sorted_waitlist = waitlist # Placeholder
 
-        logging.debug("Index route: Rendering index.html with waitlist only")
+        if not has_providers: # This check should also be user-specific
+            flash('Please add your Provider names via settings to proceed', 'warning') # TODO: Add settings page
+
+        logging.debug("Index route: Rendering index.html with user-specific waitlist")
         return render_template('index.html',
                               waitlist=sorted_waitlist,
-                              providers=all_providers,
-                              has_providers=has_providers)
+                              providers=all_providers, # TODO: Make this user-specific
+                              has_providers=has_providers) # TODO: Make this user-specific
     except Exception as e:
-        logging.error(f"Exception in index route: {e}", exc_info=True)
+        logging.error(f"Exception in index route for user {current_user.id}: {e}", exc_info=True)
         flash('An error occurred while loading the main page.', 'danger')
         return "<h1>An error occurred</h1><p>Please check the server logs.</p>", 500
 
@@ -196,8 +394,9 @@ def slots():
         return redirect(url_for('index'))
 
 @app.route('/add_patient', methods=['POST'])
+@login_required
 def add_patient():
-    try:
+    try:  # Main try block for the whole route
         # --- Get Basic Info ---
         name = request.form.get('name')
         phone = request.form.get('phone')
@@ -207,10 +406,9 @@ def add_patient():
         appointment_type = request.form.get('appointment_type')
         duration = request.form.get('duration')
         provider = request.form.get('provider')
-        availability_mode = request.form.get('availability_mode', 'available') # Get the mode ('available' or 'unavailable')
+        availability_mode = request.form.get('availability_mode', 'available')
 
         # --- Process Availability ---
-        # Structure: {'Monday': ['AM', 'PM'], 'Tuesday': ['AM'], ...}
         availability_prefs = {}
         days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         for day in days:
@@ -230,12 +428,14 @@ def add_patient():
 
         # --- Basic Validation ---
         if not name or not phone:
-            flash('Name and Phone are required to add a patient.', 'warning')
+            flash('Name and Phone are required.', 'warning')
             return redirect(url_for('index') + '#add-patient-form')
 
-        # --- Add Patient via Manager ---
-        # Use the waitlist manager to add the patient, including structured availability and mode
-        new_patient = waitlist_manager.add_patient(
+        # --- Add Patient via Manager (Refactored) OR Direct DB Interaction ---
+        # Direct DB example:
+        new_patient_db = Patient(
+            id=str(uuid.uuid4()), # Generate ID
+            user_id=current_user.id, # Associate with logged-in user
             name=name,
             phone=phone,
             email=email,
@@ -243,21 +443,23 @@ def add_patient():
             urgency=urgency,
             appointment_type=appointment_type,
             duration=duration,
-            provider=provider,
-            availability=availability_prefs, # Pass the dictionary
-            availability_mode=availability_mode # Pass the mode
+            provider_pref=provider,
+            availability_json=json.dumps(availability_prefs),
+            availability_mode=availability_mode,
+            status='waiting', # Default status
+            created_at=datetime.utcnow() # Record creation time
         )
+        db.session.add(new_patient_db)
+        db.session.commit()
+        flash('Patient added successfully.', 'success')
+        # TODO: Refactor waitlist_manager.add_patient to use DB and user_id if using manager
 
-        if new_patient:
-            flash('Patient added successfully.', 'success')
-        else:
-            # Manager logs the specific error
-            flash('Failed to add patient. Please check logs.', 'danger')
-
-    except Exception as e:
-        logging.error(f"Error in add_patient route: {e}", exc_info=True)
+    except Exception as e: # This except matches the initial try
+        db.session.rollback()
+        logging.error(f"Error in add_patient route for user {current_user.id}: {e}", exc_info=True)
         flash('An unexpected error occurred while adding the patient.', 'danger')
 
+    # This return is outside the try/except block
     return redirect(url_for('index') + '#add-patient-form')
 
 # Update the schedule_patient route
