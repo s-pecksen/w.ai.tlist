@@ -5,20 +5,15 @@ from flask import (
     redirect,
     url_for,
     flash,
+    session,
+    jsonify,
 )
-from datetime import datetime, timedelta, date
-from cryptography.fernet import Fernet
+from datetime import datetime, date
 import os
-import pandas as pd
 import csv
 from io import StringIO
-from src.provider_manager import ProviderManager
-import uuid
-from src.patient_waitlist_manager import PatientWaitlistManager
-import shutil
-import glob
+from src.managers import ProviderManager, PatientWaitlistManager, CancelledSlotManager
 import logging
-from src.cancelled_slot_manager import CancelledSlotManager
 import json  # Needed for handling availability JSON in CSV upload
 from flask_login import (
     LoginManager,
@@ -29,7 +24,6 @@ from flask_login import (
     current_user,
 )
 
-# from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
 
 app = Flask(__name__)
@@ -40,8 +34,6 @@ app.secret_key = os.urandom(24)
 app.config["SESSION_TYPE"] = "filesystem"
 
 # Define paths
-backup_dir = "waitlist_backups"
-cancelled_slots_backup_dir = "cancelled_slots_backups"
 users_dir = os.path.join("data", "users")  # New directory for user JSON files
 
 # Create users directory if it doesn't exist
@@ -128,12 +120,16 @@ class User(UserMixin):
         password_hash,
         clinic_name=None,
         user_name_for_message=None,
+        appointment_types=None,
+        appointment_types_data=None,
     ):
         self.id = user_id
         self.username = username
         self.password_hash = password_hash
-        self.clinic_name = clinic_name
-        self.user_name_for_message = user_name_for_message
+        self.clinic_name = clinic_name or ""
+        self.user_name_for_message = user_name_for_message or ""
+        self.appointment_types = appointment_types or []
+        self.appointment_types_data = appointment_types_data or []
 
     def check_password(self, password):
         return hashlib.md5(password.encode()).hexdigest() == self.password_hash
@@ -146,6 +142,8 @@ class User(UserMixin):
             "password_hash": self.password_hash,
             "clinic_name": self.clinic_name,
             "user_name_for_message": self.user_name_for_message,
+            "appointment_types": self.appointment_types,
+            "appointment_types_data": self.appointment_types_data,
         }
 
     @classmethod
@@ -157,6 +155,8 @@ class User(UserMixin):
             password_hash=data.get("password_hash"),
             clinic_name=data.get("clinic_name"),
             user_name_for_message=data.get("user_name_for_message"),
+            appointment_types=data.get("appointment_types"),
+            appointment_types_data=data.get("appointment_types_data"),
         )
 
 
@@ -186,7 +186,7 @@ def get_user_by_username(username):
 
 def get_user_by_id(user_id):
     """Get user by ID from JSON files"""
-    # Since we don't have an index, we need to scan all files
+    # Since we don't have an index, we need to scan all user directories
     if not os.path.exists(users_dir):
         return None
 
@@ -214,7 +214,36 @@ def username_exists(username):
 # Flask-Login user loader callback
 @login_manager.user_loader
 def load_user(user_id):
-    return get_user_by_id(user_id)
+    """Load user by ID"""
+    # Since we don't have an index, we need to scan all user directories
+    if not os.path.exists(users_dir):
+        return None
+
+    for username in os.listdir(users_dir):
+        user_dir = os.path.join(users_dir, username)
+        if os.path.isdir(user_dir):  # Make sure it's a directory
+            profile_path = os.path.join(user_dir, "profile.json")
+            if os.path.exists(profile_path):
+                try:
+                    with open(profile_path, "r") as f:
+                        user_data = json.load(f)
+                    if str(user_data.get("id")) == str(user_id):
+                        return User(
+                            user_id=user_data.get("id"),
+                            username=user_data.get("username"),
+                            password_hash=user_data.get("password_hash"),
+                            clinic_name=user_data.get("clinic_name"),
+                            user_name_for_message=user_data.get(
+                                "user_name_for_message"
+                            ),
+                            appointment_types=user_data.get("appointment_types"),
+                            appointment_types_data=user_data.get(
+                                "appointment_types_data"
+                            ),
+                        )
+                except Exception as e:
+                    logging.error(f"Error reading user file {profile_path}: {e}")
+    return None
 
 
 # Add Registration Route
@@ -227,7 +256,18 @@ def register():
         password = request.form.get("password")
         clinic_name = request.form.get("clinic_name")
         user_name = request.form.get("user_name")
-        # TODO: Add inputs for initial providers, appt types/durations
+        appointment_types_json = request.form.get("appointment_types_json", "[]")
+
+        # Process appointment types
+        appointment_types_data = []
+        try:
+            appointment_types_data = json.loads(appointment_types_json)
+            # Extract just the type names for backward compatibility
+            appt_types_list = [
+                item["appointment_type"] for item in appointment_types_data
+            ]
+        except (json.JSONDecodeError, KeyError):
+            appt_types_list = []
 
         if not username or not password:
             flash("Username and password are required.", "warning")
@@ -247,11 +287,24 @@ def register():
             password_hash=password_hash,
             clinic_name=clinic_name,
             user_name_for_message=user_name,
+            appointment_types=appt_types_list,  # Simple list for backward compatibility
+            appointment_types_data=appointment_types_data,  # Full data with durations
         )
 
         try:
+            # Create user directory
+            user_dir = os.path.join(users_dir, username)
+            os.makedirs(user_dir, exist_ok=True)
+
+            # Save user profile
             save_user(new_user)
-            # TODO: Save initial providers/appt types for this user
+
+            # Create empty provider.csv file with header
+            provider_file = os.path.join(user_dir, "provider.csv")
+            with open(provider_file, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["name"])  # Write header
+
             flash("Registration successful! Please log in.", "success")
             return redirect(url_for("login"))
         except Exception as e:
@@ -259,7 +312,7 @@ def register():
             flash("An error occurred during registration. Please try again.", "danger")
             return redirect(url_for("register"))
 
-    return render_template("register.html")  # Need to create this template
+    return render_template("register.html")
 
 
 # Add Login Route
@@ -303,33 +356,31 @@ def get_user_data_path(username, filename):
     return os.path.join(user_dir, filename)
 
 
-# Global managers for routes that don't have current_user context yet
-provider_manager = ProviderManager()
-waitlist_manager = PatientWaitlistManager()
-slot_manager = CancelledSlotManager()
-
-
 # Function to get user-specific managers
 def get_user_managers(username):
     """Get managers initialized with user-specific data paths"""
     user_dir = os.path.join(users_dir, username)
     os.makedirs(user_dir, exist_ok=True)
 
+    # Initialize managers with user-specific file paths
     user_provider_manager = ProviderManager(
         provider_file=get_user_data_path(username, "provider.csv")
     )
     user_waitlist_manager = PatientWaitlistManager(
-        app_name=username,
-        backup_dir=os.path.join(users_dir, username, backup_dir),
-        waitlist_file=get_user_data_path(
-            username, "waitlist.csv"
-        ),  # Add waitlist file path
+        waitlist_file=get_user_data_path(username, "waitlist.csv")
     )
     user_slot_manager = CancelledSlotManager(
-        slots_file=get_user_data_path(username, "cancelled_slots.csv"),
-        backup_dir=os.path.join(users_dir, username, cancelled_slots_backup_dir),
+        slots_file=get_user_data_path(username, "cancelled.csv")
     )
+
     return user_provider_manager, user_waitlist_manager, user_slot_manager
+
+
+# Global managers for routes that don't have current_user context yet
+# These will be replaced with user-specific managers in protected routes
+provider_manager = ProviderManager()
+waitlist_manager = PatientWaitlistManager()
+slot_manager = CancelledSlotManager()
 
 
 # Modify Index Route (Example of protecting and using current_user)
@@ -343,15 +394,23 @@ def index():
             get_user_managers(current_user.username)
         )
 
-        # Get user-specific providers
-        all_providers = user_provider_manager.get_provider_list()
-        has_providers = len(all_providers) > 0
+        # Update wait times
+        user_waitlist_manager.update_wait_times()
 
-        # Get all patients for this user
-        all_patients = user_waitlist_manager.get_all_patients()
-        waitlist = all_patients
+        # Get providers, waitlist, and slots
+        providers = user_provider_manager.get_provider_list()
+        waitlist = user_waitlist_manager.get_all_patients()
 
-        # --- End TEMPORARY ---
+        # Get appointment types from user profile
+        appointment_types = current_user.appointment_types or []
+        appointment_types_data = current_user.appointment_types_data or []
+
+        # Create a mapping of appointment types to their durations
+        duration_map = {}
+        for item in appointment_types_data:
+            if "appointment_type" in item and "durations" in item:
+                type_key = item["appointment_type"].lower().replace(" ", "_")
+                duration_map[type_key] = item["durations"]
 
         logging.debug(
             f"Index route: Fetched {len(waitlist)} patients for user {current_user.id}"
@@ -361,7 +420,7 @@ def index():
         # sorted_waitlist = sorted(waitlist, key=sort_key_safe)
         sorted_waitlist = waitlist  # Placeholder
 
-        if not has_providers:  # This check should also be user-specific
+        if not len(providers) > 0:  # This check should also be user-specific
             flash(
                 "Please add your Provider names via settings to proceed", "warning"
             )  # TODO: Add settings page
@@ -369,9 +428,12 @@ def index():
         logging.debug("Index route: Rendering index.html with user-specific waitlist")
         return render_template(
             "index.html",
+            providers=providers,
             waitlist=sorted_waitlist,
-            providers=all_providers,  # Now user-specific
-            has_providers=has_providers,  # Now user-specific
+            has_providers=len(providers) > 0,
+            appointment_types=appointment_types,
+            appointment_types_data=appointment_types_data,
+            duration_map=duration_map,
         )
     except Exception as e:
         logging.error(
@@ -456,40 +518,67 @@ def add_patient():
     return redirect(url_for("index") + "#add-patient-form")
 
 
-@app.route("/slots", methods=["GET"])
+@app.route("/slots")
+@login_required
 def slots():
-    logging.debug("Entering /slots route")
-    try:
-        all_providers = provider_manager.get_provider_list()
-        has_providers = len(all_providers) > 0
+    # Get user-specific managers
+    user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(
+        current_user.username
+    )
 
-        # Fetch and Sort Open Slots
-        current_slots = slot_manager.get_all_slots()
-        # Sort by date then time (most recent first)
-        current_slots.sort(
-            key=lambda s: (s.get("slot_date") or date.min, s.get("slot_time") or ""),
-            reverse=True,
-        )
-        logging.debug(f"/slots route: Fetched {len(current_slots)} open slots")
+    # Get data from managers
+    providers = user_provider_manager.get_provider_list()
+    has_providers = len(providers) > 0
 
-        # Retrieve eligible patients and current appointment from flash/session if redirected
-        # For a clean GET request, these will be None initially
-        eligible_patients = None  # No matches shown on initial load
-        current_appointment = None  # No specific slot context on initial load
+    # Get cancelled appointments (open slots)
+    cancelled_appointments = user_slot_manager.get_all_slots()
 
-        return render_template(
-            "slots.html",
-            providers=all_providers,
-            has_providers=has_providers,
-            cancelled_appointments=current_slots,
-            eligible_patients=eligible_patients,
-            current_appointment=current_appointment,
-        )
-    except Exception as e:
-        logging.error(f"Exception in /slots route: {e}", exc_info=True)
-        flash("An error occurred while loading the open slots page.", "danger")
-        # Redirect to index on error, or show an error page? Redirecting for now.
-        return redirect(url_for("index"))
+    # Convert string dates to datetime objects for sorting and display
+    for appointment in cancelled_appointments:
+        if appointment.get("slot_date"):
+            try:
+                # Convert string date to datetime object
+                appointment["slot_date"] = datetime.strptime(
+                    appointment["slot_date"], "%Y-%m-%d"
+                )
+            except (ValueError, TypeError):
+                # If conversion fails, keep as is
+                pass
+
+    # Sort by date (most recent first)
+    cancelled_appointments.sort(
+        key=lambda x: x.get("slot_date", datetime.max), reverse=False
+    )
+
+    # Get eligible patients only if there's a current_appointment_id in the session
+    eligible_patients = None
+    current_appointment = None
+
+    if "current_appointment_id" in session:
+        current_appointment_id = session.get("current_appointment_id")
+        # Find the current appointment in the list
+        for appointment in cancelled_appointments:
+            if appointment.get("id") == current_appointment_id:
+                current_appointment = appointment
+                break
+
+        if current_appointment:
+            # Get eligible patients for this appointment
+            eligible_patients = user_waitlist_manager.get_all_patients()
+            # Filter to only waiting patients
+            eligible_patients = [
+                p for p in eligible_patients if p.get("status") == "waiting"
+            ]
+            # Further filtering could be done here based on provider, duration, etc.
+
+    return render_template(
+        "slots.html",
+        providers=providers,
+        has_providers=has_providers,
+        cancelled_appointments=cancelled_appointments,
+        eligible_patients=eligible_patients,
+        current_appointment=current_appointment,
+    )
 
 
 @app.route("/schedule_patient/<patient_id>", methods=["POST"])
@@ -514,25 +603,6 @@ def remove_patient(patient_id):
         flash("Failed to remove patient.", "danger")
     # Redirect back to the index page, focusing on the waitlist table
     return redirect(url_for("index") + "#waitlist-table")  # Added fragment
-
-
-# --- Add New Route for Manual Backup ---
-@app.route("/save_backup", methods=["POST"])
-def save_backup():
-    """Manually saves a timestamped backup of the waitlist."""
-    try:
-        waitlist_manager.save_backup()
-        flash("Waitlist backup saved successfully.", "success")
-    except Exception as e:
-        print(f"Error during manual backup: {str(e)}")
-        flash(f"Error saving backup: {str(e)}", "danger")
-    # Redirect back to index, maybe near the top or an actions area
-    return redirect(
-        url_for("index") + "#page-top"
-    )  # Added fragment (use a relevant ID)
-
-
-# --- End New Route ---
 
 
 # Add these helper functions
@@ -807,19 +877,28 @@ def upload_csv():
 
 
 @app.route("/providers", methods=["GET"])
+@login_required  # Add login requirement
 def list_providers():
-    providers = provider_manager.get_provider_list()
+    # Get user-specific provider manager
+    user_provider_manager, _, _ = get_user_managers(current_user.username)
+
+    # Get providers from user-specific manager
+    providers = user_provider_manager.get_provider_list()
     return render_template("providers.html", providers=providers)
 
 
 @app.route("/providers/add", methods=["POST"])
+@login_required  # Add login requirement
 def add_provider():
+    # Get user-specific provider manager
+    user_provider_manager, _, _ = get_user_managers(current_user.username)
+
     first_name = request.form.get("first_name")
     last_initial = request.form.get("last_initial")
 
     if first_name:
-        # Call add_provider without is_active
-        success = provider_manager.add_provider(first_name, last_initial)
+        # Call add_provider on user-specific manager
+        success = user_provider_manager.add_provider(first_name, last_initial)
         if success:
             flash("Provider added successfully", "success")
         else:
@@ -832,11 +911,15 @@ def add_provider():
 
 
 @app.route("/providers/remove", methods=["POST"])
+@login_required  # Add login requirement
 def remove_provider():
+    # Get user-specific provider manager
+    user_provider_manager, _, _ = get_user_managers(current_user.username)
+
     first_name = request.form.get("first_name")
     last_initial = request.form.get("last_initial")
 
-    if provider_manager.remove_provider(first_name, last_initial):
+    if user_provider_manager.remove_provider(first_name, last_initial):
         flash("Provider removed successfully")
     else:
         flash("Provider not found")
@@ -845,5 +928,313 @@ def remove_provider():
     return redirect(url_for("list_providers") + "#provider-list")  # Added fragment
 
 
+@app.route("/api/matching_slots/<patient_id>")
+@login_required
+def api_matching_slots(patient_id):
+    """API endpoint to get slots matching a patient's requirements"""
+    # Get user-specific managers
+    user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(
+        current_user.username
+    )
+
+    # Get all patients and find the specific one
+    patients = user_waitlist_manager.get_all_patients()
+    patient = next((p for p in patients if p.get("id") == patient_id), None)
+
+    if not patient:
+        return jsonify({"error": "Patient not found"}), 404
+
+    # Get all slots
+    slots = user_slot_manager.get_all_slots()
+
+    # Filter slots based on patient requirements
+    matching_slots = []
+    for slot in slots:
+        # Skip slots that already have a matched patient
+        if slot.get("matched_patient_id"):
+            continue
+
+        # Check if duration matches
+        patient_duration = int(patient.get("duration", 0))
+        slot_duration = int(slot.get("duration", 0))
+        if patient_duration > slot_duration:
+            continue
+
+        # Check if provider matches or patient has no preference
+        patient_provider = patient.get("provider", "").lower()
+        slot_provider = slot.get("provider", "").lower()
+        if patient_provider != "no preference" and patient_provider != slot_provider:
+            continue
+
+        # Check availability if patient has specified availability
+        patient_availability = patient.get("availability", {})
+        if patient_availability and slot.get("slot_date"):
+            slot_date = slot.get("slot_date")
+            if isinstance(slot_date, str):
+                try:
+                    slot_date = datetime.strptime(slot_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+
+            slot_weekday = slot_date.strftime("%A").lower()
+            slot_period = slot.get("slot_period", "").lower()
+
+            # Check if patient is available at this time
+            availability_mode = patient.get("availability_mode", "available")
+            day_periods = patient_availability.get(slot_weekday, [])
+
+            if availability_mode == "available":
+                # Patient specified when they ARE available
+                if not day_periods or slot_period.lower() not in [
+                    p.lower() for p in day_periods
+                ]:
+                    continue
+            else:
+                # Patient specified when they are NOT available
+                if day_periods and slot_period.lower() in [
+                    p.lower() for p in day_periods
+                ]:
+                    continue
+
+        # If we got here, the slot matches
+        matching_slots.append(slot)
+
+    # Sort matching slots by date
+    matching_slots.sort(key=lambda x: x.get("slot_date", ""))
+
+    return jsonify({"patient": patient, "matching_slots": matching_slots})
+
+
+@app.route("/edit_patient/<patient_id>", methods=["GET"])
+@login_required
+def edit_patient(patient_id):
+    # Get user-specific managers
+    user_provider_manager, user_waitlist_manager, _ = get_user_managers(
+        current_user.username
+    )
+
+    # Get the patient
+    patient = user_waitlist_manager.get_patient(patient_id)
+    if not patient:
+        flash("Patient not found.", "danger")
+        return redirect(url_for("index"))
+
+    # Get providers
+    providers = user_provider_manager.get_provider_list()
+
+    # Get appointment types from user profile
+    appointment_types = current_user.appointment_types or []
+    appointment_types_data = current_user.appointment_types_data or []
+
+    return render_template(
+        "edit_patient.html",
+        patient=patient,
+        providers=providers,
+        has_providers=len(providers) > 0,
+        appointment_types=appointment_types,
+        appointment_types_data=appointment_types_data,
+    )
+
+
+@app.route("/api/patient/<patient_id>")
+@login_required
+def api_get_patient(patient_id):
+    """API endpoint to get patient data"""
+    # Get user-specific managers
+    _, user_waitlist_manager, _ = get_user_managers(current_user.username)
+
+    # Get all patients and find the specific one
+    patients = user_waitlist_manager.get_all_patients()
+    patient = next((p for p in patients if p.get("id") == patient_id), None)
+
+    if not patient:
+        return jsonify({"error": "Patient not found"}), 404
+
+    # Convert availability from JSON string to dict if needed
+    if isinstance(patient.get("availability"), str):
+        try:
+            patient["availability"] = json.loads(patient["availability"])
+        except (json.JSONDecodeError, TypeError):
+            patient["availability"] = {}
+
+    # Convert timestamp to string if it's a datetime object
+    if isinstance(patient.get("timestamp"), datetime):
+        patient["timestamp"] = patient["timestamp"].isoformat()
+
+    return jsonify(patient)
+
+
+@app.route("/update_patient/<patient_id>", methods=["POST"])
+@login_required
+def update_patient(patient_id):
+    """Update a patient's information"""
+    # Get user-specific managers
+    _, user_waitlist_manager, _ = get_user_managers(current_user.username)
+
+    # Get form data
+    name = request.form.get("name")
+    phone = request.form.get("phone")
+    email = request.form.get("email", "")
+    provider = request.form.get("provider")
+    appointment_type = request.form.get("appointment_type")
+    duration = request.form.get("duration")
+    urgency = request.form.get("urgency")
+    reason = request.form.get("reason", "")
+    availability_mode = request.form.get("availability_mode", "available")
+
+    # Build availability dictionary from form data
+    availability = {}
+    days = [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ]
+    for day in days:
+        am_key = f"avail_{day}_am"
+        pm_key = f"avail_{day}_pm"
+        periods = []
+        if am_key in request.form:
+            periods.append("AM")
+        if pm_key in request.form:
+            periods.append("PM")
+        if periods:  # Only add days with at least one period selected
+            availability[day.capitalize()] = periods
+
+    # Update the patient
+    success = user_waitlist_manager.update_patient(
+        patient_id=patient_id,
+        name=name,
+        phone=phone,
+        email=email,
+        provider=provider,
+        appointment_type=appointment_type,
+        duration=duration,
+        urgency=urgency,
+        reason=reason,
+        availability=availability,
+        availability_mode=availability_mode,
+    )
+
+    if success:
+        flash("Patient updated successfully", "success")
+    else:
+        flash("Error updating patient", "danger")
+
+    return redirect(url_for("index"))
+
+
+@app.route("/add_cancelled_appointment", methods=["POST"])
+@login_required
+def add_cancelled_appointment():
+    """Add a new cancelled appointment (open slot)"""
+    # Get user-specific managers
+    _, _, user_slot_manager = get_user_managers(current_user.username)
+
+    # Get form data
+    provider = request.form.get("provider")
+    slot_date = request.form.get("slot_date")
+    slot_time = request.form.get("slot_time")
+    slot_period = request.form.get("slot_period")
+    duration = request.form.get("duration")
+    notes = request.form.get("notes", "")
+
+    # Validate required fields
+    if not all([provider, slot_date, slot_time, slot_period, duration]):
+        flash("All required fields must be filled", "danger")
+        return redirect(url_for("slots"))
+
+    # Add the slot
+    success = user_slot_manager.add_slot(
+        provider=provider,
+        slot_date=slot_date,
+        slot_time=slot_time,
+        slot_period=slot_period,
+        duration=duration,
+        notes=notes,
+    )
+
+    if success:
+        flash("Open slot added successfully", "success")
+    else:
+        flash("Error adding open slot", "danger")
+
+    return redirect(url_for("slots"))
+
+
+@app.route("/remove_cancelled_slot/<appointment_id>", methods=["POST"])
+@login_required
+def remove_cancelled_slot(appointment_id):
+    """Remove a cancelled appointment (open slot)"""
+    # Get user-specific managers
+    _, _, user_slot_manager = get_user_managers(current_user.username)
+
+    # Remove the slot
+    success = user_slot_manager.remove_slot(appointment_id)
+
+    if success:
+        flash("Open slot removed successfully", "success")
+    else:
+        flash("Error removing open slot", "danger")
+
+    return redirect(url_for("slots"))
+
+
+@app.route("/update_cancelled_slot/<appointment_id>", methods=["POST"])
+@login_required
+def update_cancelled_slot(appointment_id):
+    """Update a cancelled appointment (open slot)"""
+    # Get user-specific managers
+    _, _, user_slot_manager = get_user_managers(current_user.username)
+
+    # Get form data
+    provider = request.form.get("provider")
+    slot_date = request.form.get("slot_date")
+    slot_time = request.form.get("slot_time")
+    slot_period = request.form.get("slot_period")
+    duration = request.form.get("duration")
+    notes = request.form.get("notes", "")
+
+    # Validate required fields
+    if not all([provider, slot_date, slot_time, slot_period, duration]):
+        flash("All required fields must be filled", "danger")
+        return redirect(url_for("slots"))
+
+    # Update the slot
+    success = user_slot_manager.update_slot(
+        slot_id=appointment_id,
+        provider=provider,
+        slot_date=slot_date,
+        slot_time=slot_time,
+        slot_period=slot_period,
+        duration=duration,
+        notes=notes,
+    )
+
+    if success:
+        flash("Open slot updated successfully", "success")
+    else:
+        flash("Error updating open slot", "danger")
+
+    return redirect(url_for("slots"))
+
+
+@app.route("/find_matches_for_appointment/<appointment_id>", methods=["POST"])
+@login_required
+def find_matches_for_appointment(appointment_id):
+    """Find matching patients for a cancelled appointment"""
+    # Store the appointment ID in the session
+    session["current_appointment_id"] = appointment_id
+
+    # Redirect to the slots page, which will show eligible patients
+    return redirect(url_for("slots") + "#eligible-patients-section")
+
+
 if __name__ == "__main__":
+    # create data/users folder if it doesn't exist
+    if not os.path.exists("data/users"):
+        os.makedirs("data/users")
     app.run(debug=True, host="0.0.0.0", port=7776)
