@@ -101,26 +101,20 @@
                                     <label for="appointment_type" class="form-label">Appointment Type*</label>
                                     <select class="form-select" id="appointment_type" name="appointment_type" required>
                                         <option value="" disabled selected>Select Type</option>
-                                        <option value="hygiene">Hygiene</option>
-                                        <option value="recall">Recall</option>
-                                        <option value="resto">Resto</option>
-                                        <option value="x-ray">X-ray</option>
-                                        <option value="np_spec">NP Spec</option>
-                                        <option value="spec_exam">Spec Exam</option>
-                                        <option value="emergency_exam">Emergency Exam</option>
-                                        <option value="rct">RCT</option>
-                                        <option value="custom">Custom Appointment</option>
+                                        {% if appointment_types %}
+                                            {% for type in appointment_types %}
+                                                <option value="{{ type|lower|replace(' ', '_') }}">{{ type }}</option>
+                                            {% endfor %}
+                                        {% else %}
+                                            <option value="n/a">N/A</option>
+                                        {% endif %}
                                     </select>
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="duration" class="form-label">Duration*</label>
                                     <select class="form-select" id="duration" name="duration" required>
                                         <option value="" disabled selected>Select Duration</option>
-                                        <option value="30">30 minutes</option>
-                                        <option value="60">1 hour</option>
-                                        <option value="70">70 minutes</option>
-                                        <option value="90">1.5 hours</option>
-                                        <option value="120">2 hours</option>
+                                        <!-- Durations will be populated dynamically based on selected appointment type -->
                                     </select>
                                 </div>
                             </div>
@@ -187,13 +181,32 @@
         {# <div class="col-lg-5 col-md-12"> ... </div> #}
     </div>
 
-    <div class="row mb-3">
-        <div class="col-md-12 text-end">
-             <form action="{{ url_for('save_backup') }}" method="post" style="display: inline;">
-                 <button type="submit" class="btn btn-secondary">
-                     <i class="bi bi-cloud-arrow-up-fill"></i> Save Waitlist Backup
-                 </button>
-             </form>
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Current Providers</h5>
+                    <a href="{{ url_for('list_providers') }}" class="btn btn-sm btn-primary">
+                        <i class="bi bi-gear-fill"></i> Manage Providers
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if providers %}
+                        <div class="row">
+                            {% for provider in providers %}
+                                <div class="col-md-3 col-sm-4 col-6 mb-2">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-person-badge me-2 text-primary"></i>
+                                        <span>{{ provider.name }}</span>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted mb-0">No providers added yet. <a href="{{ url_for('list_providers') }}">Add providers</a> to get started.</p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
 
@@ -267,12 +280,10 @@
                                             <i class="bi bi-calendar-check"></i> Assign
                                         </button>
                                         <button type="button" class="btn btn-sm btn-warning edit-patient-button"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#editPatientModal"
-                                                data-patient-id="{{ patient.id }}"
+                                                onclick="window.location.href='{{ url_for('edit_patient', patient_id=patient.id) }}'"
                                                 title="Edit Patient Details">
                                             <i class="bi bi-pencil-square"></i> Edit
-                                            </button>
+                                        </button>
                                         <form action="{{ url_for('remove_patient', patient_id=patient.id) }}" method="post" style="display: inline;" onsubmit="return confirm('Remove {{ patient.name }}?');">
                                             <button type="submit" class="btn btn-sm btn-danger" title="Remove Patient"><i class="bi bi-trash"></i></button>
                                         </form>
@@ -335,19 +346,17 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        {# Placeholder for content loaded via JS #}
         <div id="edit-patient-form-container">
             <div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>
         </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        {# The submit button needs the form ID to link to the dynamically loaded form #}
         <button type="submit" form="edit-patient-form" class="btn btn-primary">Update Patient</button>
       </div>
     </div>
   </div>
-  </div>
+</div>
 
 
 {# REMOVED Edit Slot Modal Definition #}
@@ -497,51 +506,6 @@
         const editPatientModal = document.getElementById('editPatientModal');
         const editPatientFormContainer = document.getElementById('edit-patient-form-container');
 
-        // Helper function for edit patient modal form dynamics
-        function updateEditFormBasedOnAppointmentType() {
-            const editAppointmentTypeSelect = document.getElementById('edit_appointment_type');
-            const editDurationSelect = document.getElementById('edit_duration');
-            const editReasonLabel = document.querySelector('#edit-patient-form label[for="edit_reason"]'); // Scope query to form
-            const editReasonField = document.getElementById('edit_reason');
-
-            if (!editAppointmentTypeSelect || !editDurationSelect) return;
-
-            const selectedType = editAppointmentTypeSelect.value;
-            const editDurationMap = { // Same map as add form
-                'resto': '60', 'np_spec': '30', 'recall': '70', 'hygiene': '70',
-                'spec_exam': '30', 'x-ray': '30', 'rct': '90'
-            };
-
-            // Duration Logic
-            if (editDurationMap.hasOwnProperty(selectedType)) {
-                editDurationSelect.value = editDurationMap[selectedType];
-                editDurationSelect.classList.add('bg-light');
-                editDurationSelect.style.pointerEvents = 'none';
-            } else {
-                editDurationSelect.classList.remove('bg-light');
-                editDurationSelect.style.pointerEvents = 'auto';
-                // Keep existing value if type changes to one needing manual input
-            }
-
-            // Reason Logic
-            if (editReasonLabel && editReasonField) {
-                if (selectedType === 'custom') {
-                    editReasonLabel.innerHTML = 'Custom Appointment Type:*';
-                    editReasonField.required = true;
-                } else {
-                    editReasonLabel.textContent = 'Additional Notes:';
-                    editReasonField.required = false;
-                }
-            }
-
-             // Add event listener *inside* the helper after elements exist
-             if (editAppointmentTypeSelect) {
-                editAppointmentTypeSelect.removeEventListener('change', updateEditFormBasedOnAppointmentType); // Remove old listener if exists
-                editAppointmentTypeSelect.addEventListener('change', updateEditFormBasedOnAppointmentType);
-             }
-        }
-
-
         if (editPatientModal && editPatientFormContainer) {
             editPatientModal.addEventListener('show.bs.modal', function(event) {
                 const button = event.relatedTarget;
@@ -550,78 +514,110 @@
                 // Show loading state
                 editPatientFormContainer.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
                 
-                // Fetch patient data via API
-                fetch(`/api/patient/${patientId}`)
-                    .then(response => {
-                        if (!response.ok) throw new Error('Network response was not ok');
-                        return response.json();
-                    })
-                    .then(patient => {
-                        // Build the form HTML dynamically
-                        // (This is complex, alternatively use a hidden template or load edit_patient.html content)
-                        // Let's try loading the content from the dedicated edit route's HTML (simpler)
-
-                        // Fetch the HTML content of the edit form page
-                        fetch(`/edit_patient/${patientId}`)
-                           .then(response => response.text())
-                           .then(html => {
-                               // Inject the form part into the modal body
-                               const parser = new DOMParser();
-                               const doc = parser.parseFromString(html, 'text/html');
-                               const formContent = doc.querySelector('form'); // Get the form element
-                               const errorContent = doc.querySelector('.alert-warning'); // Check for provider warning
-
-                               if (formContent) {
-                                    // Set the form's action correctly (it might have placeholder)
-                                    // The form action is already correctly set by the edit_patient.html template
-                                    // formContent.action = `/update_patient/${patientId}`; // Re-set just in case
-                                    formContent.id = 'edit-patient-form'; // Ensure form has ID for submit button
-                                    editPatientFormContainer.innerHTML = ''; // Clear spinner
-                                    editPatientFormContainer.appendChild(formContent);
-
-                                    // Update modal title
-                                    editPatientModal.querySelector('.modal-title').textContent = `Edit Patient Details: ${patient.name}`;
-
-                                    // Re-initialize the dynamic behavior for the loaded form
-                                    updateEditFormBasedOnAppointmentType();
-
-                                    // Re-attach event listener for type changes within the loaded form
-                                    const loadedAppointmentTypeSelect = document.getElementById('edit_appointment_type');
-                                    if (loadedAppointmentTypeSelect) {
-                                        loadedAppointmentTypeSelect.addEventListener('change', updateEditFormBasedOnAppointmentType);
-                                    }
-                               } else if (errorContent) {
-                                    editPatientFormContainer.innerHTML = '';
-                                    editPatientFormContainer.appendChild(errorContent);
-                                    editPatientModal.querySelector('.modal-title').textContent = `Edit Patient Details`;
-                               }
-                               else {
-                                   throw new Error('Could not find form content in edit_patient response.');
-                               }
-                           })
-                           .catch(error => {
-                                console.error('Error fetching or parsing edit form HTML:', error);
-                                editPatientFormContainer.innerHTML = `<div class="alert alert-danger">Error loading patient edit form.</div>`;
-                           });
-
+                // Fetch the HTML content of the edit form page
+                fetch(`/edit_patient/${patientId}`)
+                    .then(response => response.text())
+                    .then(html => {
+                        // Inject the form part into the modal body
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const formContent = doc.querySelector('form'); // Get the form element
+                        const errorContent = doc.querySelector('.alert-warning'); // Check for provider warning
+                        
+                        if (formContent) {
+                            // Set the form's ID for the submit button in the modal footer
+                            formContent.id = 'edit-patient-form';
+                            editPatientFormContainer.innerHTML = ''; // Clear spinner
+                            editPatientFormContainer.appendChild(formContent);
+                            
+                            // Update modal title with patient name
+                            const patientName = button.getAttribute('data-patient-name');
+                            editPatientModal.querySelector('.modal-title').textContent = `Edit Patient Details: ${patientName}`;
+                            
+                            // Initialize the dynamic behavior for the loaded form
+                            const appointmentTypeSelect = document.getElementById('appointment_type');
+                            if (appointmentTypeSelect) {
+                                // Trigger the change event to update durations
+                                appointmentTypeSelect.dispatchEvent(new Event('change'));
+                            }
+                        } else if (errorContent) {
+                            editPatientFormContainer.innerHTML = '';
+                            editPatientFormContainer.appendChild(errorContent);
+                        } else {
+                            throw new Error('Could not find form content in edit_patient response.');
+                        }
                     })
                     .catch(error => {
-                        console.error('Error fetching patient data:', error);
-                        editPatientFormContainer.innerHTML = `<div class="alert alert-danger">Error loading patient data. Please try again later.</div>`;
+                        console.error('Error fetching or parsing edit form HTML:', error);
+                        editPatientFormContainer.innerHTML = `<div class="alert alert-danger">Error loading patient edit form.</div>`;
                     });
             });
-
-             // Handle modal close: Reset content to prevent showing old data briefly
-             editPatientModal.addEventListener('hidden.bs.modal', function () {
-                editPatientFormContainer.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>'; // Reset to spinner
-                editPatientModal.querySelector('.modal-title').textContent = 'Edit Patient Details'; // Reset title
-             });
         }
 
-
-        // REMOVED: Edit Slot Modal JS (now in slots.html)
-        // REMOVED: Propose Slot Modal JS (now in slots.html)
-
+        // Get the appointment type and duration selects
+        const appointmentTypeSelect = document.getElementById('appointment_type');
+        const durationSelect = document.getElementById('duration');
+        
+        // Store the appointment types data from the server
+        const appointmentTypesData = JSON.parse('{{ appointment_types_data|tojson }}');
+        
+        // Function to update duration options based on selected appointment type
+        function updateDurationOptions() {
+            // Clear existing options except the first one
+            while (durationSelect.options.length > 1) {
+                durationSelect.remove(1);
+            }
+            
+            // Get the selected appointment type
+            const selectedType = appointmentTypeSelect.value;
+            
+            // Find the matching appointment type data
+            const typeData = appointmentTypesData.find(item => 
+                item.appointment_type.toLowerCase().replace(' ', '_') === selectedType
+            );
+            
+            if (typeData && typeData.durations && typeData.durations.length > 0) {
+                // Add options for each duration
+                typeData.durations.forEach(duration => {
+                    const option = document.createElement('option');
+                    option.value = duration;
+                    
+                    // Format the display text based on duration
+                    if (duration === '30') {
+                        option.text = '30 minutes';
+                    } else if (duration === '60') {
+                        option.text = '1 hour';
+                    } else if (duration === '90') {
+                        option.text = '1.5 hours';
+                    } else if (duration === '120') {
+                        option.text = '2 hours';
+                    } else {
+                        option.text = `${duration} minutes`;
+                    }
+                    
+                    durationSelect.add(option);
+                });
+                
+                // Enable the duration select
+                durationSelect.disabled = false;
+            } else {
+                // If no durations found, add a default option
+                const option = document.createElement('option');
+                option.value = "30";
+                option.text = '30 minutes (default)';
+                durationSelect.add(option);
+            }
+        }
+        
+        // Add event listener to appointment type select
+        if (appointmentTypeSelect) {
+            appointmentTypeSelect.addEventListener('change', updateDurationOptions);
+            
+            // Initialize durations on page load if appointment type is pre-selected
+            if (appointmentTypeSelect.value) {
+                updateDurationOptions();
+            }
+        }
     }); // End DOMContentLoaded
 </script>
 {% endblock %} {# End of scripts block #}

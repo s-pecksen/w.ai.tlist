@@ -38,6 +38,41 @@
                         <input type="text" class="form-control" id="user_name" name="user_name">
                         <small class="form-text text-muted">Used in communications.</small>
                     </div>
+                    <div class="mb-3">
+                        <label for="appointment_types_container" class="form-label">Appointment Types & Durations</label>
+                        <div id="appointment_types_container" class="border p-3 rounded">
+                            <div class="row mb-2">
+                                <div class="col-md-6">
+                                    <strong>Appointment Type</strong>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Possible Durations (minutes)</strong>
+                                </div>
+                            </div>
+                            
+                            <div id="appointment_types_rows">
+                                <!-- Initial row -->
+                                <div class="row mb-2 appointment-type-row">
+                                    <div class="col-md-6">
+                                        <input type="text" class="form-control appointment-type-input" placeholder="e.g., Hygiene">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="text" class="form-control appointment-duration-input" placeholder="e.g., 30,60,90">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="add_appointment_type">
+                                    <i class="bi bi-plus-circle"></i> Add Another Type
+                                </button>
+                                <small class="text-muted ms-2">Enter durations as comma-separated values (e.g., 30,60,90)</small>
+                            </div>
+                            
+                            <!-- Hidden field to store the JSON data -->
+                            <input type="hidden" name="appointment_types_json" id="appointment_types_json">
+                        </div>
+                    </div>
 
                     {# TODO: Add sections here later for initial Provider and Appt Type setup #}
                     <p class="text-muted"><small>You can configure providers and appointment types after registration.</small></p>
@@ -51,4 +86,72 @@
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add appointment type row
+        document.getElementById('add_appointment_type').addEventListener('click', function() {
+            const container = document.getElementById('appointment_types_rows');
+            const newRow = document.createElement('div');
+            newRow.className = 'row mb-2 appointment-type-row';
+            newRow.innerHTML = `
+                <div class="col-md-6">
+                    <input type="text" class="form-control appointment-type-input" placeholder="e.g., Hygiene">
+                </div>
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <input type="text" class="form-control appointment-duration-input" placeholder="e.g., 30,60,90">
+                        <button class="btn btn-outline-danger remove-row" type="button">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(newRow);
+            
+            // Add event listener to the remove button
+            newRow.querySelector('.remove-row').addEventListener('click', function() {
+                container.removeChild(newRow);
+                updateAppointmentTypesJson();
+            });
+        });
+        
+        // Function to update the hidden JSON field
+        function updateAppointmentTypesJson() {
+            const rows = document.querySelectorAll('.appointment-type-row');
+            const appointmentTypesData = [];
+            
+            rows.forEach(row => {
+                const typeInput = row.querySelector('.appointment-type-input');
+                const durationInput = row.querySelector('.appointment-duration-input');
+                
+                if (typeInput.value.trim()) {
+                    const durations = durationInput.value.split(',')
+                        .map(d => d.trim())
+                        .filter(d => d && !isNaN(d));
+                    
+                    appointmentTypesData.push({
+                        appointment_type: typeInput.value.trim(),
+                        durations: durations
+                    });
+                }
+            });
+            
+            document.getElementById('appointment_types_json').value = JSON.stringify(appointmentTypesData);
+        }
+        
+        // Update JSON when form is submitted
+        document.querySelector('form').addEventListener('submit', function() {
+            updateAppointmentTypesJson();
+        });
+        
+        // Also update when inputs change
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('appointment-type-input') || 
+                e.target.classList.contains('appointment-duration-input')) {
+                updateAppointmentTypesJson();
+            }
+        });
+    });
+</script>
 {% endblock %}
