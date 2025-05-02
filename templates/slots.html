@@ -246,7 +246,19 @@
                         <span class="patient-match-indicator"></span>
                         <span class="fw-bold">Match</span>
                       </td>
-                      <td>{{ patient.name }}</td>
+                      <td>
+                        {{ patient.name }}
+                        {# --- ADDED URGENCY BADGE HERE --- #}
+                        {% set urgency_lower = patient.urgency|lower if patient.urgency else 'medium' %} {# Default to medium #}
+                        {% set urgency_class = 'urgency-medium' %} {# Default class #}
+                        {% if urgency_lower == 'high' %}
+                            {% set urgency_class = 'urgency-high' %}
+                        {% elif urgency_lower == 'low' %}
+                            {% set urgency_class = 'urgency-low' %}
+                        {% endif %}
+                        <span class="badge {{ urgency_class }} ms-2">{{ patient.urgency|capitalize }}</span>
+                        {# --- END URGENCY BADGE --- #}
+                      </td>
                       <td>
                         {{ patient.phone }}<br>
                         <small>{{ patient.email or "No email" }}</small>

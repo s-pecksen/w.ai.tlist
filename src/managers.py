@@ -531,20 +531,11 @@ class PatientWaitlistManager:
                      patient["timestamp"] = timestamp
 
                 time_diff = now - timestamp
-
                 days = time_diff.days
-                hours, remainder = divmod(time_diff.seconds, 3600)
-                minutes, _ = divmod(remainder, 60)
 
-                parts = []
-                if days > 0:
-                    parts.append(f"{days} days")
-                if hours > 0:
-                    parts.append(f"{hours} hours")
-                if minutes > 0 or (days == 0 and hours == 0):
-                    parts.append(f"{minutes} minutes")
+                # Calculate wait time string as just days
+                new_wait_time = f"{days} days"
 
-                new_wait_time = ", ".join(parts)
                 if patient.get("wait_time") != new_wait_time:
                     patient["wait_time"] = new_wait_time
                     changed = True

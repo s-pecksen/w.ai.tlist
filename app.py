@@ -47,61 +47,26 @@ os.makedirs(users_dir, exist_ok=True)
 
 # Add this helper function to convert wait time to minutes
 def wait_time_to_minutes(wait_time_str):
-    total_minutes = 0
-    if not isinstance(wait_time_str, str):  # Check for non-string input
-        return 0
-
-    remaining = wait_time_str  # Start with the full string
-
-    if "days" in remaining:
-        try:
-            parts = remaining.split("days")
-            days = int(parts[0].strip())
-            total_minutes += days * 24 * 60  # INSIDE try
-            # Update remaining string ONLY if days parsing succeeds
-            if len(parts) > 1 and "," in parts[1]:
-                remaining = parts[1].split(",")[1].strip()
-            else:  # Handle cases like "X days" with no comma/hours/mins
-                remaining = ""
-        except (ValueError, IndexError):
-            # Handle error: print a warning, keep original 'remaining' for next steps
-            logging.warning(f"Warning: Could not parse days from '{wait_time_str}'.")
-            # Don't reset remaining, let subsequent parsers try
-
-    # Process hours from the potentially updated 'remaining' string
-    if "hours" in remaining:
-        try:
-            parts = remaining.split("hours")
-            hours_str = parts[0].strip()
-            # Handle potential leading comma if days failed but hours exist
-            if hours_str.startswith(","):
-                hours_str = hours_str[1:].strip()
-            hours = int(hours_str)
-            total_minutes += hours * 60  # INSIDE try
-            # Update remaining string ONLY if hours parsing succeeds
-            if len(parts) > 1 and "," in parts[1]:
-                remaining = parts[1].split(",")[1].strip()
-            else:  # Handle "X hours" with no following minutes
-                remaining = ""  # Successfully parsed 'X hours', nothing left for mins
-        except (ValueError, IndexError):
-            # Handle error: print warning, proceed to minutes with current 'remaining'
-            logging.warning(f"Warning: Could not parse hours from '{remaining}'.")
-            # No need to reset 'remaining', just let minute parsing try
-
-    # Process minutes from the potentially updated 'remaining' string
-    if "minutes" in remaining:
-        try:
-            minutes_str = remaining.split("minutes")[0].strip()
-            # Handle potential leading comma
-            if minutes_str.startswith(","):
-                minutes_str = minutes_str[1:].strip()
-            minutes = int(minutes_str)
-            total_minutes += minutes
-        except (ValueError, IndexError):
-            # Handle error: print warning
-            logging.warning(f"Warning: Could not parse minutes from '{remaining}'.")
-
+    """Converts the wait time string (now expected as 'X days') to total minutes for sorting."""
+    days = wait_time_to_days(wait_time_str) # Reuse the days helper
+    # Convert days to minutes
+    total_minutes = days * 24 * 60
     return total_minutes
+
+
+# Add this helper function to convert wait time to days
+def wait_time_to_days(wait_time_str):
+    """Extracts the number of days waited from the wait time string (e.g., 'X days')."""
+    if not isinstance(wait_time_str, str) or not wait_time_str.endswith(" days"):
+        return 0  # Return 0 if format invalid or input not string
+
+    try:
+        days_str = wait_time_str.split(" days")[0]
+        days = int(days_str.strip())
+        return days
+    except (ValueError, IndexError):
+        logging.warning(f"Warning: Could not parse days from wait_time_str '{wait_time_str}'.")
+        return 0 # Return 0 on parsing error
 
 
 # --- Login Manager Setup ---
@@ -617,31 +582,55 @@ def slots():
             if current_appointment.get("slot_date"):
                 slot_date_obj = current_appointment["slot_date"]
                 slot_weekday = slot_date_obj.strftime("%A") # Full weekday name
-                slot_period = current_appointment.get("slot_period", "").upper() # AM/PM
+                # Infer period from time if available, otherwise None
+                slot_period = None
+                slot_time_str = current_appointment.get("slot_time")
+                if slot_time_str:
+                     try:
+                         time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
+                         slot_period = "PM" if time_obj.hour >= 12 else "AM"
+                     except ValueError:
+                         logging.warning(f"Could not parse slot_time '{slot_time_str}' for period inference in slot {current_appointment_id}")
 
-                filtered_by_avail = []
-                for p in eligible_patients:
-                    availability = p.get("availability", {})
-                    mode = p.get("availability_mode", "available")
 
-                    # Skip availability check if patient has no preference
-                    if not availability:
-                        filtered_by_avail.append(p)
-                        continue
+                if slot_period: # Only filter by availability if we have a period
+                    filtered_by_avail = []
+                    for p in eligible_patients:
+                        availability = p.get("availability", {})
+                        mode = p.get("availability_mode", "available")
 
-                    day_periods = availability.get(slot_weekday, []) # Get patient's periods for that day
-                    is_available_on_day_period = slot_period in day_periods
-
-                    if mode == "available":
-                        # Must be explicitly available
-                        if is_available_on_day_period:
+                        # Skip availability check if patient has no preference
+                        if not availability:
                             filtered_by_avail.append(p)
-                    else: # mode == "unavailable"
-                        # Must NOT be explicitly unavailable
-                        if not is_available_on_day_period:
-                            filtered_by_avail.append(p)
-                eligible_patients = filtered_by_avail
+                            continue
+
+                        day_periods = availability.get(slot_weekday, []) # Get patient's periods for that day
+                        is_available_on_day_period = slot_period in day_periods
+
+                        if mode == "available":
+                            # Must be explicitly available
+                            if is_available_on_day_period:
+                                filtered_by_avail.append(p)
+                        else: # mode == "unavailable"
+                            # Must NOT be explicitly unavailable
+                            if not is_available_on_day_period:
+                                filtered_by_avail.append(p)
+                    eligible_patients = filtered_by_avail
+                else:
+                    logging.warning(f"Could not determine AM/PM for slot {current_appointment_id}, skipping availability filtering.")
             # --- End Filtering Logic ---
+
+            # --- Sorting Logic ---
+            urgency_map = {'high': 0, 'medium': 1, 'low': 2}
+            def sort_key_eligible(patient):
+                # Use the new helper to get days waited
+                days_waited = wait_time_to_days(patient.get('wait_time', '0 days'))
+                urgency_level = urgency_map.get(patient.get('urgency', 'medium').lower(), 1) # Default to medium
+                # Sort descending by days waited (-days_waited), then ascending by urgency (urgency_level)
+                return (-days_waited, urgency_level)
+
+            eligible_patients = sorted(eligible_patients, key=sort_key_eligible)
+            # --- End Sorting Logic ---
 
 
     return render_template(
@@ -649,7 +638,7 @@ def slots():
         providers=providers,
         has_providers=has_providers,
         cancelled_appointments=cancelled_appointments,
-        eligible_patients=eligible_patients,
+        eligible_patients=eligible_patients, # Pass the filtered AND sorted list
         current_appointment=current_appointment,
         # Pass user/clinic name for the proposal modal message template
         current_user_name=current_user.user_name_for_message or "the scheduling team",
