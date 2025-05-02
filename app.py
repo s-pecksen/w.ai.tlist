@@ -1231,22 +1231,43 @@ def add_cancelled_appointment():
     # Get form data
     provider = request.form.get("provider")
     slot_date = request.form.get("slot_date")
-    slot_time = request.form.get("slot_time")
-    slot_period = request.form.get("slot_period")
+    slot_time_str = request.form.get("slot_time") # Get time as string
+    # slot_period = request.form.get("slot_period") # REMOVED
     duration = request.form.get("duration")
     notes = request.form.get("notes", "")
 
-    # Validate required fields
-    if not all([provider, slot_date, slot_time, slot_period, duration]):
+    # --- Infer AM/PM from time string ---
+    slot_period = "AM" # Default
+    if slot_time_str:
+        try:
+            time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
+            if time_obj.hour >= 12:
+                slot_period = "PM"
+            # You could optionally format the time back to 12hr if needed by manager
+            # slot_time_for_manager = time_obj.strftime("%I:%M") # e.g., "02:30"
+        except ValueError:
+            flash("Invalid time format entered.", "danger")
+            return redirect(url_for("slots"))
+    else:
+        # Handle case where time is missing, though 'required' should prevent this
+        flash("Time is required.", "danger")
+        return redirect(url_for("slots"))
+    # --- End Infer AM/PM ---
+
+
+    # Validate required fields (excluding period)
+    if not all([provider, slot_date, slot_time_str, duration]): # Check slot_time_str
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots"))
 
-    # Add the slot
+    # Add the slot - Pass inferred period
+    # NOTE: Assuming add_slot still takes slot_period. Adjust if manager changed.
+    # Pass original slot_time_str if manager expects "HH:MM" format
     success = user_slot_manager.add_slot(
         provider=provider,
         slot_date=slot_date,
-        slot_time=slot_time,
-        slot_period=slot_period,
+        slot_time=slot_time_str, # Pass the original HH:MM string
+        slot_period=slot_period, # Pass the inferred period
         duration=duration,
         notes=notes,
     )
@@ -1272,7 +1293,7 @@ def remove_cancelled_slot(appointment_id):
     if success:
         flash("Open slot removed successfully", "success")
     else:
-        flash("Error removing open slot", "danger")
+        flash("Error removing open slot", "danger") # Manager should handle specific errors
 
     return redirect(url_for("slots"))
 
@@ -1287,23 +1308,39 @@ def update_cancelled_slot(appointment_id):
     # Get form data
     provider = request.form.get("provider")
     slot_date = request.form.get("slot_date")
-    slot_time = request.form.get("slot_time")
-    slot_period = request.form.get("slot_period")
+    slot_time_str = request.form.get("slot_time") # Get time as string
+    # slot_period = request.form.get("slot_period") # REMOVED
     duration = request.form.get("duration")
     notes = request.form.get("notes", "")
 
-    # Validate required fields
-    if not all([provider, slot_date, slot_time, slot_period, duration]):
+    # --- Infer AM/PM from time string ---
+    slot_period = "AM" # Default
+    if slot_time_str:
+        try:
+            time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
+            if time_obj.hour >= 12:
+                slot_period = "PM"
+        except ValueError:
+            flash("Invalid time format entered.", "danger")
+            return redirect(url_for("slots"))
+    else:
+        flash("Time is required.", "danger")
+        return redirect(url_for("slots"))
+    # --- End Infer AM/PM ---
+
+    # Validate required fields (excluding period)
+    if not all([provider, slot_date, slot_time_str, duration]): # Check slot_time_str
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots"))
 
-    # Update the slot
+    # Update the slot - Pass inferred period
+    # NOTE: Assuming update_slot still takes slot_period. Adjust if manager changed.
     success = user_slot_manager.update_slot(
         slot_id=appointment_id,
         provider=provider,
         slot_date=slot_date,
-        slot_time=slot_time,
-        slot_period=slot_period,
+        slot_time=slot_time_str, # Pass the original HH:MM string
+        slot_period=slot_period, # Pass the inferred period
         duration=duration,
         notes=notes,
     )
