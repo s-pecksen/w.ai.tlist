@@ -421,8 +421,18 @@
                     data-user-name="{{ current_user_name }}"
                     data-clinic-name="{{ current_clinic_name }}"></textarea>
         </div>
+         {# --- ADDED: Hidden form for marking as proposed from modal --- #}
+        <form id="modal-propose-form" action="" method="post" class="d-none">
+            {# Values will be populated by JS #}
+        </form>
+         {# --- END ADDED --- #}
       </div>
       <div class="modal-footer">
+         {# --- ADDED: Mark as Proposed Button linked to the hidden form --- #}
+        <button type="submit" form="modal-propose-form" class="btn btn-warning" id="modalMarkProposedButton" title="Mark slot and patient as pending">
+            <i class="bi bi-bookmark-check"></i> Mark Proposed
+        </button>
+         {# --- END ADDED --- #}
         <button type="button" class="btn-primary" id="copyTemplateButton">
           <i class="bi bi-clipboard"></i> Copy Message
         </button>
@@ -477,10 +487,15 @@
         // --- Propose Slot Modal Logic ---
         const proposeModalElement = document.getElementById('proposeSlotModal');
         const copyButton = document.getElementById('copyTemplateButton');
+        const modalMarkProposedButton = document.getElementById('modalMarkProposedButton'); // Get the new button
+        const modalProposeForm = document.getElementById('modal-propose-form'); // Get the hidden form
 
-        if (proposeModalElement && copyButton) {
+
+        if (proposeModalElement && copyButton && modalMarkProposedButton && modalProposeForm) { // Added checks for new elements
             proposeModalElement.addEventListener('show.bs.modal', function(event) {
                 const button = event.relatedTarget; // Button that triggered the modal
+                const patientId = button.getAttribute('data-patient-id'); // Get patient ID
+                const appointmentId = button.getAttribute('data-appointment-id'); // Get slot ID
                 const patientName = button.getAttribute('data-patient-name');
                 const patientFirstName = button.getAttribute('data-patient-first-name') || patientName.split(' ')[0]; // Fallback
                 const slotWeekday = button.getAttribute('data-slot-weekday');
@@ -512,6 +527,29 @@
                 modalBodyTextarea.value = emailBody;
                 copyButton.textContent = 'Copy Message';
                 copyButton.disabled = false;
+
+                 {# --- ADDED: Update hidden form action and button --- #}
+                if (patientId && appointmentId) {
+                    // Construct the correct URL for the propose action
+                    let proposeUrl = "{{ url_for('propose_slot', slot_id='SLOT_ID_PLACEHOLDER', patient_id='PATIENT_ID_PLACEHOLDER') }}";
+                    proposeUrl = proposeUrl.replace('SLOT_ID_PLACEHOLDER', appointmentId);
+                    proposeUrl = proposeUrl.replace('PATIENT_ID_PLACEHOLDER', patientId);
+                    modalProposeForm.action = proposeUrl;
+
+                     // Add confirmation prompt to the modal's propose button
+                    modalMarkProposedButton.onclick = function(e) {
+                        if (!confirm(`Mark this slot as proposed to ${patientName}?`)) {
+                             e.preventDefault(); // Prevent form submission if user cancels
+                        }
+                    };
+                    modalMarkProposedButton.disabled = false; // Enable the button
+                } else {
+                    console.error("Missing patientId or appointmentId for modal propose form.");
+                    modalProposeForm.action = ""; // Clear action if data is missing
+                    modalMarkProposedButton.disabled = true; // Disable if data missing
+                    modalMarkProposedButton.onclick = null; // Remove any previous handler
+                }
+                 {# --- END ADDED --- #}
             });
 
             copyButton.addEventListener('click', function() {
@@ -535,9 +573,23 @@
                     setTimeout(() => { copyButton.textContent = 'Copy Message'; }, 2000);
                 });
             });
+
+             // Optional: Add visual feedback when modal propose button is clicked
+             modalMarkProposedButton.addEventListener('click', function() {
+                if (modalProposeForm.action) { // Only if action is set
+                    // Indicate processing (optional)
+                    // this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Marking...';
+                    // this.disabled = true;
+                    // Form submission will happen automatically due to type="submit"
+                }
+            });
+
+
         } else {
             if (!proposeModalElement) console.error("Propose modal not found");
             if (!copyButton) console.error("Copy button not found");
+            if (!modalMarkProposedButton) console.error("Modal Mark Proposed button not found"); // Added check
+            if (!modalProposeForm) console.error("Modal Propose hidden form not found"); // Added check
         }
 
         // --- Scroll to Eligible Patients if Visible ---
