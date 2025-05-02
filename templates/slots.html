@@ -422,12 +422,14 @@
       <div class="modal-body">
         <div class="mb-3">
           <label for="modalEmailBody" class="form-label">Message Template:</label>
-          {# Add datetime variable for use in JS #}
-          <textarea class="form-control" id="modalEmailBody" name="email_body" rows="10" readonly data-datetime="{{ current_user.user_name_for_message|tojson }} from {{ current_user.clinic_name|tojson }}"></textarea>
+          {# Pass user/clinic name info from backend in data attributes for JS - REMOVED |tojson #}
+          <textarea class="form-control" id="modalEmailBody" name="email_body" rows="10" readonly
+                    data-user-name="{{ current_user_name }}"
+                    data-clinic-name="{{ current_clinic_name }}"></textarea>
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-primary" id="copyTemplateButton">
+        <button type="button" class="btn-primary" id="copyTemplateButton">
           <i class="bi bi-clipboard"></i> Copy Message
         </button>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -496,8 +498,11 @@
 
                 const modalTitle = proposeModalElement.querySelector('.modal-title');
                 const modalBodyTextarea = proposeModalElement.querySelector('#modalEmailBody');
-                // Retrieve sender info from the textarea's data attribute set by Jinja
-                const senderInfo = modalBodyTextarea.getAttribute('data-datetime');
+
+                // Retrieve sender info from the textarea's data attributes
+                const userName = modalBodyTextarea.getAttribute('data-user-name');
+                const clinicName = modalBodyTextarea.getAttribute('data-clinic-name');
+                const senderInfo = `${userName} from ${clinicName}`; // Construct sender string
 
 
                 modalTitle.textContent = `Proposal Message for ${patientName}`;

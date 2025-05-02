@@ -38,8 +38,8 @@
     .urgency-low { background-color: #cfe2ff; } /* Light blue */
     .waitlist-availability { font-size: 0.85em; color: #6c757d; }
 
-    /* Styles for pending patient rows */
-    .patient-pending { background-color: #e2e3e5; border-left: 5px solid #ffc107; } /* Greyish highlight for pending patients */
+    /* Styles for pending patient rows - REMOVED as row background is now urgency-based */
+    /* .patient-pending { background-color: #e2e3e5; border-left: 5px solid #ffc107; } */
     .pending-details { font-size: 0.9em; font-style: italic; color: #6c757d;}
 
     /* Styles needed for modals called from this page */
@@ -226,14 +226,11 @@
                     <tbody>
                         {% for patient in waitlist %}
                             {% set row_class = '' %}
-                            {% if patient.status == 'scheduled' %}
-                                {% set row_class = 'table-secondary text-muted' %} {# Muted text for scheduled #}
-                            {% elif patient.status == 'pending' %}
-                                {% set row_class = 'patient-pending' %} {# Specific class for pending #}
-                            {% elif patient.appointment_type.lower() == 'emergency_exam' %}
-                                {% set row_class = 'table-danger' %}
-                            {% elif patient.status == 'waiting' %}
-                                {% if patient.urgency == 'high' %}
+                            {# --- Urgency/Status Row Class Logic --- #}
+                            {# Color row based on urgency ONLY if status is 'waiting' #}
+                            {% if patient.status == 'waiting' %}
+                                {# High urgency or emergency gets red #}
+                                {% if patient.urgency == 'high' or patient.appointment_type.lower() == 'emergency_exam' %}
                                     {% set row_class = 'urgency-high' %}
                                 {% elif patient.urgency == 'medium' %}
                                     {% set row_class = 'urgency-medium' %}
@@ -241,6 +238,16 @@
                                     {% set row_class = 'urgency-low' %}
                                 {% endif %}
                             {% endif %}
+                            {# REMOVED: Status-based row classes for 'scheduled' and 'pending' #}
+                            {# elif patient.status == 'scheduled' %}
+                            {#    {% set row_class = 'table-secondary text-muted' %} #}
+                            {# elif patient.status == 'pending' %}
+                            {#    {% set row_class = 'patient-pending' %} #}
+
+                            {# The emergency exam check below is removed as it's handled within the 'waiting' block now #}
+                            {# elif patient.appointment_type.lower() == 'emergency_exam' %}
+                            {#    {% set row_class = 'table-danger' %} #}
+
                             <tr class="{{ row_class }}" id="patient-{{ patient.id }}">
                                 <td>
                                     {{ patient.name }}<br>
@@ -273,8 +280,9 @@
                                     {% endif %}
                                 </td>
                                 <td>{{ patient.wait_time }}</td>
-                                <td class="action-buttons"> {# Actions Column #}
+                                <td class="action-buttons"> {# Actions Column - Updated Logic #}
                                     {% if patient.status == 'waiting' %}
+                                        {# Standard actions for waiting patients #}
                                         <button type="button" class="btn btn-sm btn-primary find-slots-button"
                                                 data-bs-toggle="modal"
                                                 data-bs-target="#findSlotsModal"
@@ -292,8 +300,10 @@
                                             <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Patient"><i class="bi bi-trash"></i></button>
                                         </form>
                                     {% elif patient.status == 'pending' and patient.proposed_slot_id %}
+                                        {# Actions for pending patients - Mirroring slots.html #}
+                                        <span class="badge bg-warning text-dark d-block mb-1">Pending Proposal</span>
                                         <div class="pending-details mb-1">
-                                             <i class="bi bi-arrow-right-circle text-warning"></i> Proposed: {{ patient.proposed_slot_details|default('Details Unavailable') }}
+                                            <i class="bi bi-arrow-right-circle text-warning"></i> Proposed: {{ patient.proposed_slot_details|default('Details Unavailable') }}
                                         </div>
                                         <div class="btn-group btn-group-sm" role="group">
                                             <form action="{{ url_for('confirm_booking', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
@@ -304,17 +314,18 @@
                                             <form action="{{ url_for('cancel_proposal', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
                                                 <button type="submit" class="btn btn-warning" title="Cancel Proposal">
                                                     <i class="bi bi-x-circle"></i> Cancel
-                                        </button>
-                                        </form>
-                                    </div>
+                                                </button>
+                                            </form>
+                                        </div>
                                     {% elif patient.status == 'scheduled' %}
-                                       <span class="badge bg-secondary">Scheduled</span>
-                                       {# Optional: Add remove button for scheduled? #}
-                                       <form action="{{ url_for('remove_patient', patient_id=patient.id) }}" method="post" class="d-inline" onsubmit="return confirm('Remove {{ patient.name }} (scheduled)?');">
+                                        {# Actions for scheduled patients #}
+                                        <span class="badge bg-success d-block mb-1">Scheduled</span>
+                                        <form action="{{ url_for('remove_patient', patient_id=patient.id) }}" method="post" class="d-inline" onsubmit="return confirm('Remove {{ patient.name }} (scheduled)?');">
                                             <button type="submit" class="btn btn-sm btn-outline-danger ms-1" title="Remove Scheduled Patient"><i class="bi bi-trash"></i></button>
                                         </form>
                                     {% else %}
-                                        <span class="text-muted">N/A</span> {# Fallback for unknown status #}
+                                        {# Fallback for unknown status or missing data #}
+                                        <span class="text-muted">N/A</span>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -372,10 +383,10 @@
         <hr>
         <div class="mb-3">
           <label for="modalEmailBody" class="form-label">Message Template:</label>
-          {# Store user/clinic name info from backend in data attributes for JS #}
+          {# Store user/clinic name info from backend in data attributes for JS - REMOVED |tojson #}
           <textarea class="form-control" id="modalEmailBody" name="email_body" rows="10" readonly
-                    data-user-name="{{ current_user_name|tojson }}"
-                    data-clinic-name="{{ current_clinic_name|tojson }}"></textarea>
+                    data-user-name="{{ current_user_name }}"
+                    data-clinic-name="{{ current_clinic_name }}"></textarea>
         </div>
         {# Hidden form for the "Mark Proposed" action #}
         <form id="markProposedForm" action="" method="post" class="d-none">

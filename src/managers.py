@@ -322,32 +322,34 @@ class PatientWaitlistManager:
         appointment_type,
         duration,
         provider,
+        timestamp=None,
         availability=None,
         availability_mode="available",
+        **p_data
     ):
         """Add a new patient to the waitlist."""
         # Generate a unique ID
         patient_id = str(uuid.uuid4())
 
-        # Create timestamp
-        timestamp = datetime.now()
+        # Create timestamp if not provided
+        timestamp = timestamp or datetime.now()
 
         # Create a new patient record
         patient = {
             "id": patient_id,
             "name": name,
             "phone": phone,
-            "email": email,
-            "reason": reason,
-            "urgency": urgency,
-            "appointment_type": appointment_type,
-            "duration": duration,
-            "provider": provider,
+            "email": email or "",
+            "reason": reason or "",
+            "urgency": urgency or "medium",
+            "appointment_type": appointment_type or "custom",
+            "duration": duration or "30",
+            "provider": provider or "no preference",
             "status": "waiting",
             "timestamp": timestamp,
             "wait_time": "Just added",
             "availability": availability or {},
-            "availability_mode": availability_mode,
+            "availability_mode": availability_mode or "available",
             "proposed_slot_id": "",
         }
 
@@ -358,6 +360,40 @@ class PatientWaitlistManager:
         self.update()
 
         return patient_id
+
+    def remove_patient(self, patient_id):
+        """Remove a patient from the waitlist by ID."""
+        logging.debug(f"Attempting to remove patient with ID: {patient_id}")
+        if not self.patients:
+             logging.warning("Patient list is empty, cannot remove.")
+             return False
+
+        initial_count = len(self.patients)
+        logging.debug(f"Initial patient count: {initial_count}")
+        # Log the IDs currently in the list for comparison
+        current_ids = [p.get("id", "MISSING_ID") for p in self.patients]
+        logging.debug(f"Current patient IDs in list: {current_ids}")
+
+        # Perform the filtering
+        original_patients = self.patients # Keep a reference for logging if needed
+        self.patients = [p for p in self.patients if p.get("id") != patient_id]
+
+        new_count = len(self.patients)
+        logging.debug(f"Patient count after filtering: {new_count}")
+
+        if new_count < initial_count:
+            logging.info(f"Patient {patient_id} found and filtered. Attempting update.")
+            if self.update():
+                 logging.info(f"Successfully removed patient {patient_id} and updated file.")
+                 return True
+            else:
+                 logging.error(f"Removed patient {patient_id} from memory list, but FAILED to update file.")
+                 # Restore the original list in memory since the file update failed
+                 self.patients = original_patients
+                 return False
+        else:
+            logging.warning(f"Could not remove patient {patient_id}. ID not found in the current list.")
+            return False
 
     def update_patient(
         self,
@@ -382,6 +418,7 @@ class PatientWaitlistManager:
                 break
 
         if patient_index is None:
+            logging.warning(f"Could not update patient {patient_id}, ID not found.")
             return False  # Patient not found
 
         # Update the patient's details
@@ -399,51 +436,122 @@ class PatientWaitlistManager:
                 "availability_mode": availability_mode,
             }
         )
-
+        logging.info(f"Updated patient {patient_id} details.")
         # Save to file
         self.update()
 
         return True
 
+    def mark_as_pending(self, patient_id, slot_id):
+        """Mark a patient as pending confirmation for a specific slot."""
+        patient_index = -1
+        for i, patient in enumerate(self.patients):
+            if patient.get("id") == patient_id:
+                patient_index = i
+                break
+
+        if patient_index == -1:
+            logging.warning(f"Cannot mark patient {patient_id} as pending. Patient not found.")
+            return False
+        if self.patients[patient_index].get("status") != "waiting":
+             logging.warning(f"Cannot mark patient {patient_id} as pending. Status is not 'waiting' (current: {self.patients[patient_index].get('status')}).")
+             return False
+
+        self.patients[patient_index]["status"] = "pending"
+        self.patients[patient_index]["proposed_slot_id"] = slot_id
+        self.update()
+        logging.info(f"Marked patient {patient_id} as pending for slot {slot_id}")
+        return True
+
+    def cancel_proposal(self, patient_id):
+        """Reset a pending patient back to waiting."""
+        patient_index = -1
+        for i, patient in enumerate(self.patients):
+            if patient.get("id") == patient_id:
+                patient_index = i
+                break
+
+        if patient_index == -1:
+            logging.warning(f"Cannot cancel proposal for patient {patient_id}. Patient not found.")
+            return False
+        # Only cancel if currently pending for robustness
+        if self.patients[patient_index].get("status") == "pending":
+            self.patients[patient_index]["status"] = "waiting"
+            self.patients[patient_index]["proposed_slot_id"] = ""
+            self.update()
+            logging.info(f"Cancelled proposal for patient {patient_id}. Status reset to waiting.")
+            return True
+        else:
+             logging.warning(f"Cannot cancel proposal for patient {patient_id}. Status is not 'pending' (current: {self.patients[patient_index].get('status')}).")
+             # Return False as no change was made, but it's not necessarily an error if state was already reverted.
+             return False # Or True depending on desired behaviour if already waiting
+
+    def mark_as_scheduled(self, patient_id):
+        """Mark a patient as scheduled (alternative to removal)."""
+        patient_index = -1
+        for i, patient in enumerate(self.patients):
+            if patient.get("id") == patient_id:
+                patient_index = i
+                break
+
+        if patient_index == -1:
+            logging.warning(f"Cannot mark patient {patient_id} as scheduled. Patient not found.")
+            return False
+
+        # Optionally check if status was 'pending' before marking scheduled
+        # if self.patients[patient_index].get("status") != "pending":
+        #    logging.warning(f"Marking patient {patient_id} as scheduled, but status wasn't pending (current: {self.patients[patient_index].get('status')}).")
+
+        self.patients[patient_index]["status"] = "scheduled"
+        # Consider clearing proposed_slot_id here as well?
+        # self.patients[patient_index]["proposed_slot_id"] = ""
+        self.update()
+        logging.info(f"Marked patient {patient_id} as scheduled.")
+        return True
+
     def update_wait_times(self):
         """Update wait times for all patients based on their timestamp."""
         now = datetime.now()
+        changed = False
         for patient in self.patients:
             if patient.get("status") == "waiting":
                 timestamp = patient.get("timestamp")
                 if isinstance(timestamp, str):
                     try:
                         timestamp = datetime.fromisoformat(timestamp)
+                        patient["timestamp"] = timestamp
                     except ValueError:
+                        logging.warning(f"Could not parse timestamp string '{timestamp}' for patient {patient.get('id')}. Using current time.")
                         timestamp = now
+                        patient["timestamp"] = timestamp
 
-                if isinstance(timestamp, datetime):
-                    # Calculate time difference
-                    time_diff = now - timestamp
+                elif not isinstance(timestamp, datetime):
+                     logging.warning(f"Invalid timestamp type '{type(timestamp)}' for patient {patient.get('id')}. Using current time.")
+                     timestamp = now
+                     patient["timestamp"] = timestamp
 
-                    # Format the wait time
-                    days = time_diff.days
-                    hours, remainder = divmod(time_diff.seconds, 3600)
-                    minutes, _ = divmod(remainder, 60)
+                time_diff = now - timestamp
 
-                    wait_time = ""
-                    if days > 0:
-                        wait_time += f"{days} days"
-                        if hours > 0 or minutes > 0:
-                            wait_time += ", "
+                days = time_diff.days
+                hours, remainder = divmod(time_diff.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
 
-                    if hours > 0:
-                        wait_time += f"{hours} hours"
-                        if minutes > 0:
-                            wait_time += ", "
+                parts = []
+                if days > 0:
+                    parts.append(f"{days} days")
+                if hours > 0:
+                    parts.append(f"{hours} hours")
+                if minutes > 0 or (days == 0 and hours == 0):
+                    parts.append(f"{minutes} minutes")
 
-                    if minutes > 0 or (days == 0 and hours == 0):
-                        wait_time += f"{minutes} minutes"
+                new_wait_time = ", ".join(parts)
+                if patient.get("wait_time") != new_wait_time:
+                    patient["wait_time"] = new_wait_time
+                    changed = True
 
-                    patient["wait_time"] = wait_time
-
-        # Save the updated wait times
-        self.update()
+        if changed:
+            self.update()
+            logging.debug("Wait times updated.")
         return True
 
 

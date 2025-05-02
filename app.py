@@ -649,7 +649,10 @@ def slots():
         has_providers=has_providers,
         cancelled_appointments=cancelled_appointments,
         eligible_patients=eligible_patients,
-        current_appointment=current_appointment
+        current_appointment=current_appointment,
+        # Pass user/clinic name for the proposal modal message template
+        current_user_name=current_user.user_name_for_message or "the scheduling team",
+        current_clinic_name=current_user.clinic_name or "our clinic"
     )
 
 
@@ -668,13 +671,19 @@ def schedule_patient(patient_id):
 
 
 @app.route("/remove_patient/<patient_id>", methods=["POST"])
+@login_required # Ensures current_user is available
 def remove_patient(patient_id):
-    if waitlist_manager.remove_patient(patient_id):
+    # Get the correct user-specific managers
+    _, user_waitlist_manager, _ = get_user_managers(current_user.username)
+
+    # Call remove_patient on the USER-SPECIFIC manager instance
+    if user_waitlist_manager.remove_patient(patient_id):
         flash("Patient removed successfully.", "success")
     else:
+        # The improved logging in remove_patient will now indicate *why* it failed if it still does
         flash("Failed to remove patient.", "danger")
     # Redirect back to the index page, focusing on the waitlist table
-    return redirect(url_for("index") + "#waitlist-table")  # Added fragment
+    return redirect(url_for("index") + "#waitlist-table")
 
 
 # Add these helper functions
