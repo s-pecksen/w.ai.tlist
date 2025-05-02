@@ -22,8 +22,7 @@ class CancelledSlotManager:
             "slot_period",
             "slot_time",
             "notes",
-            "matched_patient_id",
-            "matched_patient_name",
+            "status",
             "proposed_patient_id",
             "proposed_patient_name",
         ]
@@ -82,8 +81,7 @@ class CancelledSlotManager:
             "slot_period": slot_period,
             "slot_time": slot_time,
             "notes": notes,
-            "matched_patient_id": "",
-            "matched_patient_name": "",
+            "status": "available",
             "proposed_patient_id": "",
             "proposed_patient_name": "",
         }
@@ -130,12 +128,70 @@ class CancelledSlotManager:
                 "slot_period": slot_period,
                 "slot_time": slot_time,
                 "notes": notes,
+                "status": "available",
+                "proposed_patient_id": "",
+                "proposed_patient_name": "",
             }
         )
 
         # Save to file
         self.update()
 
+        return True
+
+    def mark_as_pending(self, slot_id, patient_id, patient_name="Unknown"):
+        """Mark a slot as pending for a specific patient."""
+        slot_index = -1
+        for i, slot in enumerate(self.slots):
+            if slot.get("id") == slot_id:
+                slot_index = i
+                break
+
+        if slot_index == -1 or self.slots[slot_index].get("status") != "available":
+            logging.warning(f"Cannot mark slot {slot_id} as pending. Not found or not available.")
+            return False
+
+        self.slots[slot_index]["status"] = "pending"
+        self.slots[slot_index]["proposed_patient_id"] = patient_id
+        self.slots[slot_index]["proposed_patient_name"] = patient_name
+        self.update()
+        logging.info(f"Marked slot {slot_id} as pending for patient {patient_id}")
+        return True
+
+    def cancel_proposal(self, slot_id):
+        """Reset a pending slot back to available."""
+        slot_index = -1
+        for i, slot in enumerate(self.slots):
+            if slot.get("id") == slot_id:
+                slot_index = i
+                break
+
+        if slot_index == -1 or self.slots[slot_index].get("status") != "pending":
+            logging.warning(f"Cannot cancel proposal for slot {slot_id}. Not found or not pending.")
+            return False
+
+        self.slots[slot_index]["status"] = "available"
+        self.slots[slot_index]["proposed_patient_id"] = ""
+        self.slots[slot_index]["proposed_patient_name"] = ""
+        self.update()
+        logging.info(f"Cancelled proposal for slot {slot_id}. Status reset to available.")
+        return True
+
+    def mark_as_filled(self, slot_id):
+        """Mark a slot as filled (optional if keeping history)."""
+        slot_index = -1
+        for i, slot in enumerate(self.slots):
+            if slot.get("id") == slot_id:
+                slot_index = i
+                break
+
+        if slot_index == -1 or self.slots[slot_index].get("status") != "pending":
+             logging.warning(f"Cannot mark slot {slot_id} as filled. Not found or not pending.")
+             return False
+
+        self.slots[slot_index]["status"] = "filled"
+        self.update()
+        logging.info(f"Marked slot {slot_id} as filled.")
         return True
 
 

@@ -26,12 +26,17 @@ from flask_login import (
 
 import hashlib
 
-app = Flask(__name__)
-app.secret_key = os.urandom(24)
-
+# --- Flask App Initialization ---
+app = Flask(__name__) # RESTORE this line
+app.secret_key = os.urandom(24)  # Keep existing secret key
 
 # Make sure to add this for flash messages to work
 app.config["SESSION_TYPE"] = "filesystem"
+
+# Add isinstance to Jinja globals
+app.jinja_env.globals.update(isinstance=isinstance)
+# Also add datetime to globals if needed elsewhere, otherwise passing it in context is fine
+app.jinja_env.globals.update(datetime=datetime)
 
 # Define paths
 users_dir = os.path.join("data", "users")  # New directory for user JSON files
@@ -98,10 +103,6 @@ def wait_time_to_minutes(wait_time_str):
 
     return total_minutes
 
-
-# --- Flask App Initialization ---
-app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Keep existing secret key
 
 # --- Login Manager Setup ---
 login_manager = LoginManager()
@@ -387,53 +388,67 @@ slot_manager = CancelledSlotManager()
 @app.route("/", methods=["GET"])
 @login_required  # Protect the main page
 def index():
-    logging.debug(f"Entering index route for user: {current_user.id}")
+    logging.debug(f"Entering index route for user: {current_user.username}")
     try:
-        # Get user-specific managers
-        user_provider_manager, user_waitlist_manager, user_slot_manager = (
-            get_user_managers(current_user.username)
-        )
+        user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
+        user_waitlist_manager.update_wait_times() # Update wait times on load
 
-        # Update wait times
-        user_waitlist_manager.update_wait_times()
-
-        # Get providers, waitlist, and slots
         providers = user_provider_manager.get_provider_list()
         waitlist = user_waitlist_manager.get_all_patients()
-
-        # Get appointment types from user profile
         appointment_types = current_user.appointment_types or []
         appointment_types_data = current_user.appointment_types_data or []
 
-        # Create a mapping of appointment types to their durations
-        duration_map = {}
-        for item in appointment_types_data:
-            if "appointment_type" in item and "durations" in item:
-                type_key = item["appointment_type"].lower().replace(" ", "_")
-                duration_map[type_key] = item["durations"]
+        # Fetch slot data to potentially display proposed slot info
+        all_slots = user_slot_manager.get_all_slots()
+        slot_map = {s['id']: s for s in all_slots}
 
-        logging.debug(
-            f"Index route: Fetched {len(waitlist)} patients for user {current_user.id}"
-        )
+        # Augment patient data with proposed slot details if pending
+        for patient in waitlist:
+             if patient.get("status") == "pending" and patient.get("proposed_slot_id"):
+                 proposed_slot = slot_map.get(patient["proposed_slot_id"])
+                 if proposed_slot:
+                     # Format date if it's an object
+                     slot_date_display = proposed_slot.get("slot_date")
+                     if isinstance(slot_date_display, datetime):
+                         slot_date_display = slot_date_display.strftime('%a, %b %d') # Example format
 
-        # Sorting logic needs refactoring based on the new data structure/wait time calculation
-        # sorted_waitlist = sorted(waitlist, key=sort_key_safe)
-        sorted_waitlist = waitlist  # Placeholder
+                     patient["proposed_slot_details"] = f"Slot on {slot_date_display} ({proposed_slot.get('slot_period', '')}) w/ {proposed_slot.get('provider')}"
+                 else:
+                     patient["proposed_slot_details"] = "Proposed slot details unavailable"
 
-        if not len(providers) > 0:  # This check should also be user-specific
-            flash(
-                "Please add your Provider names via settings to proceed", "warning"
-            )  # TODO: Add settings page
 
-        logging.debug("Index route: Rendering index.html with user-specific waitlist")
+        # Prepare duration map (already exists)
+        duration_map = {
+            item["appointment_type"].lower().replace(" ", "_"): item["durations"]
+            for item in appointment_types_data
+            if "appointment_type" in item and "durations" in item
+        }
+
+        # Sorting (keep existing placeholder or implement actual sort)
+        # Example: Sort by status (pending first), then wait time (descending)
+        def sort_key_waitlist(p):
+            status_order = {'pending': 0, 'waiting': 1}
+            # Use the wait_time_to_minutes helper
+            wait_minutes = wait_time_to_minutes(p.get('wait_time', '0 minutes'))
+            return (status_order.get(p.get('status', 'waiting'), 99), -wait_minutes)
+
+        sorted_waitlist = sorted(waitlist, key=sort_key_waitlist)
+
+
+        if not providers:
+            flash("Please add Provider names via settings to proceed", "warning")
+
         return render_template(
             "index.html",
             providers=providers,
-            waitlist=sorted_waitlist,
+            waitlist=sorted_waitlist, # Use sorted list
             has_providers=len(providers) > 0,
             appointment_types=appointment_types,
             appointment_types_data=appointment_types_data,
             duration_map=duration_map,
+            # Pass current_user details needed for the proposal modal JS
+            current_clinic_name=current_user.clinic_name or "our clinic",
+            current_user_name=current_user.user_name_for_message or "the scheduling team"
         )
     except Exception as e:
         logging.error(
@@ -530,22 +545,36 @@ def slots():
     providers = user_provider_manager.get_provider_list()
     has_providers = len(providers) > 0
 
-    # Get cancelled appointments (open slots)
-    cancelled_appointments = user_slot_manager.get_all_slots()
+    # Get cancelled appointments (open slots), including status
+    # Assumes get_all_slots() now returns status and proposed_patient_id
+    all_cancelled_appointments = user_slot_manager.get_all_slots()
 
-    # Convert string dates to datetime objects for sorting and display
-    for appointment in cancelled_appointments:
+    # Get all waitlist patients, including status
+    # Assumes get_all_patients() now returns status and proposed_slot_id
+    all_patients = user_waitlist_manager.get_all_patients()
+    patient_map = {p["id"]: p for p in all_patients} # For easy lookup
+
+    # Process cancelled appointments
+    cancelled_appointments = []
+    for appointment in all_cancelled_appointments:
+        # Convert string dates to datetime objects
         if appointment.get("slot_date"):
             try:
-                # Convert string date to datetime object
                 appointment["slot_date"] = datetime.strptime(
                     appointment["slot_date"], "%Y-%m-%d"
                 )
             except (ValueError, TypeError):
-                # If conversion fails, keep as is
-                pass
+                pass # Keep as is if conversion fails
 
-    # Sort by date (most recent first)
+        # Add proposed patient details if pending
+        if appointment.get("status") == "pending" and appointment.get("proposed_patient_id"):
+            proposed_patient = patient_map.get(appointment["proposed_patient_id"])
+            appointment["proposed_patient_name"] = proposed_patient["name"] if proposed_patient else "Unknown"
+
+        cancelled_appointments.append(appointment)
+
+
+    # Sort by date (most recent first - changed to ascending)
     cancelled_appointments.sort(
         key=lambda x: x.get("slot_date", datetime.max), reverse=False
     )
@@ -553,23 +582,66 @@ def slots():
     # Get eligible patients only if there's a current_appointment_id in the session
     eligible_patients = None
     current_appointment = None
+    current_appointment_id = session.get("current_appointment_id")
 
-    if "current_appointment_id" in session:
-        current_appointment_id = session.get("current_appointment_id")
-        # Find the current appointment in the list
-        for appointment in cancelled_appointments:
-            if appointment.get("id") == current_appointment_id:
-                current_appointment = appointment
-                break
+    if current_appointment_id:
+        # Find the current appointment in the processed list
+        current_appointment = next((appt for appt in cancelled_appointments if appt.get("id") == current_appointment_id), None)
 
-        if current_appointment:
+        if current_appointment and current_appointment.get("status") != "pending": # Only find matches for available slots
             # Get eligible patients for this appointment
-            eligible_patients = user_waitlist_manager.get_all_patients()
-            # Filter to only waiting patients
+            # Filter to only 'waiting' patients (not pending or scheduled)
             eligible_patients = [
-                p for p in eligible_patients if p.get("status") == "waiting"
+                p for p in all_patients
+                if p.get("status", "waiting") == "waiting" # Assume default status is 'waiting'
             ]
-            # Further filtering could be done here based on provider, duration, etc.
+
+            # --- Further Filtering Logic (Example - adapt as needed) ---
+            # 1. Provider Preference
+            slot_provider_lower = current_appointment.get("provider", "").lower()
+            eligible_patients = [
+                p for p in eligible_patients
+                if p.get("provider", "").lower() == "no preference" or
+                   p.get("provider", "").lower() == slot_provider_lower
+            ]
+
+            # 2. Duration
+            slot_duration = int(current_appointment.get("duration", 0))
+            eligible_patients = [
+                p for p in eligible_patients
+                if int(p.get("duration", 0)) <= slot_duration
+            ]
+
+            # 3. Availability (using existing logic, check if needs update for 'pending')
+            if current_appointment.get("slot_date"):
+                slot_date_obj = current_appointment["slot_date"]
+                slot_weekday = slot_date_obj.strftime("%A") # Full weekday name
+                slot_period = current_appointment.get("slot_period", "").upper() # AM/PM
+
+                filtered_by_avail = []
+                for p in eligible_patients:
+                    availability = p.get("availability", {})
+                    mode = p.get("availability_mode", "available")
+
+                    # Skip availability check if patient has no preference
+                    if not availability:
+                        filtered_by_avail.append(p)
+                        continue
+
+                    day_periods = availability.get(slot_weekday, []) # Get patient's periods for that day
+                    is_available_on_day_period = slot_period in day_periods
+
+                    if mode == "available":
+                        # Must be explicitly available
+                        if is_available_on_day_period:
+                            filtered_by_avail.append(p)
+                    else: # mode == "unavailable"
+                        # Must NOT be explicitly unavailable
+                        if not is_available_on_day_period:
+                            filtered_by_avail.append(p)
+                eligible_patients = filtered_by_avail
+            # --- End Filtering Logic ---
+
 
     return render_template(
         "slots.html",
@@ -577,7 +649,7 @@ def slots():
         has_providers=has_providers,
         cancelled_appointments=cancelled_appointments,
         eligible_patients=eligible_patients,
-        current_appointment=current_appointment,
+        current_appointment=current_appointment
     )
 
 
@@ -937,22 +1009,28 @@ def api_matching_slots(patient_id):
         current_user.username
     )
 
-    # Get all patients and find the specific one
-    patients = user_waitlist_manager.get_all_patients()
-    patient = next((p for p in patients if p.get("id") == patient_id), None)
+    # Get the specific patient
+    patient = user_waitlist_manager.get_patient(patient_id) # Assuming get_patient exists
 
-    if not patient:
-        return jsonify({"error": "Patient not found"}), 404
+    if not patient or patient.get("status", "waiting") != "waiting": # Ensure patient exists and is waiting
+        return jsonify({"error": "Patient not found or not currently waiting"}), 404
 
-    # Get all slots
-    slots = user_slot_manager.get_all_slots()
+    # Get all available slots (status 'available')
+    # Assumes get_all_slots can filter or returns status
+    all_slots = user_slot_manager.get_all_slots()
+    available_slots = [
+        slot for slot in all_slots if slot.get("status", "available") == "available"
+    ]
 
     # Filter slots based on patient requirements
     matching_slots = []
-    for slot in slots:
-        # Skip slots that already have a matched patient
-        if slot.get("matched_patient_id"):
-            continue
+    for slot in available_slots:
+        # Skip slots that already have a matched patient (redundant if filtered above, but safe)
+        # if slot.get("matched_patient_id") or slot.get("status") == 'pending':
+        #    continue
+        if slot.get("status", "available") != "available":
+           continue
+
 
         # Check if duration matches
         patient_duration = int(patient.get("duration", 0))
@@ -963,44 +1041,50 @@ def api_matching_slots(patient_id):
         # Check if provider matches or patient has no preference
         patient_provider = patient.get("provider", "").lower()
         slot_provider = slot.get("provider", "").lower()
-        if patient_provider != "no preference" and patient_provider != slot_provider:
+        if patient_provider != "no preference" and patient_provider and patient_provider != slot_provider: # Added check for non-empty patient_provider
             continue
 
         # Check availability if patient has specified availability
         patient_availability = patient.get("availability", {})
-        if patient_availability and slot.get("slot_date"):
-            slot_date = slot.get("slot_date")
-            if isinstance(slot_date, str):
-                try:
-                    slot_date = datetime.strptime(slot_date, "%Y-%m-%d")
-                except ValueError:
-                    continue
+        slot_date_str = slot.get("slot_date") # Might be string or datetime object
 
-            slot_weekday = slot_date.strftime("%A").lower()
-            slot_period = slot.get("slot_period", "").lower()
+        # Convert slot_date to datetime object if it's a string
+        slot_date = None
+        if isinstance(slot_date_str, str):
+            try:
+                slot_date = datetime.strptime(slot_date_str, "%Y-%m-%d")
+            except ValueError:
+                pass # Keep slot_date as None if parsing fails
+        elif isinstance(slot_date_str, datetime):
+             slot_date = slot_date_str # Use it directly if already datetime
+
+        if patient_availability and slot_date:
+            slot_weekday = slot_date.strftime("%A") # Full day name
+            slot_period = slot.get("slot_period", "").upper() # AM/PM
 
             # Check if patient is available at this time
             availability_mode = patient.get("availability_mode", "available")
+            # Ensure keys in patient_availability match the weekday format
             day_periods = patient_availability.get(slot_weekday, [])
+
+            is_available_on_day_period = slot_period in day_periods
 
             if availability_mode == "available":
                 # Patient specified when they ARE available
-                if not day_periods or slot_period.lower() not in [
-                    p.lower() for p in day_periods
-                ]:
+                if not day_periods or not is_available_on_day_period:
                     continue
-            else:
+            else: # availability_mode == "unavailable"
                 # Patient specified when they are NOT available
-                if day_periods and slot_period.lower() in [
-                    p.lower() for p in day_periods
-                ]:
+                if day_periods and is_available_on_day_period:
                     continue
+            # If we fall through, the patient is available for this slot based on their rules
 
         # If we got here, the slot matches
         matching_slots.append(slot)
 
     # Sort matching slots by date
-    matching_slots.sort(key=lambda x: x.get("slot_date", ""))
+    matching_slots.sort(key=lambda x: (datetime.strptime(x["slot_date"], "%Y-%m-%d") if isinstance(x.get("slot_date"), str) else x.get("slot_date", datetime.max)))
+
 
     return jsonify({"patient": patient, "matching_slots": matching_slots})
 
@@ -1231,6 +1315,267 @@ def find_matches_for_appointment(appointment_id):
 
     # Redirect to the slots page, which will show eligible patients
     return redirect(url_for("slots") + "#eligible-patients-section")
+
+
+@app.route("/propose_slot/<slot_id>/<patient_id>", methods=["POST"])
+@login_required
+def propose_slot(slot_id, patient_id):
+    """Marks a slot and patient as pending confirmation."""
+    user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
+
+    try:
+        # Get patient name for the slot record
+        patient = user_waitlist_manager.get_patient(patient_id)
+        patient_name = patient.get("name", "Unknown") if patient else "Unknown"
+
+        # Use the new manager methods
+        slot_marked = user_slot_manager.mark_as_pending(slot_id, patient_id, patient_name)
+        patient_marked = user_waitlist_manager.mark_as_pending(patient_id, slot_id)
+
+        if slot_marked and patient_marked:
+            flash("Slot proposed and marked as pending confirmation.", "info")
+            session.pop("current_appointment_id", None) # Clear session if coming from slots page
+        elif not slot_marked:
+             flash("Error marking slot as pending. It might be already taken or not found.", "danger")
+             # Attempt to revert patient status if slot marking failed
+             user_waitlist_manager.cancel_proposal(patient_id)
+        elif not patient_marked:
+             flash("Error marking patient as pending. They might not be waiting or not found.", "danger")
+             # Attempt to revert slot status if patient marking failed
+             user_slot_manager.cancel_proposal(slot_id)
+        else:
+             # Should not happen if both failed individually, but good fallback
+            flash("Error marking slot or patient as pending. Please check logs.", "danger")
+
+
+    except Exception as e:
+        logging.error(f"Error proposing slot {slot_id} to patient {patient_id}: {e}", exc_info=True)
+        flash("An unexpected error occurred while proposing the slot.", "danger")
+        # Attempt to revert state on unexpected error
+        try:
+            user_slot_manager.cancel_proposal(slot_id)
+            user_waitlist_manager.cancel_proposal(patient_id)
+        except Exception as revert_e:
+            logging.error(f"Error reverting state during proposal error: {revert_e}")
+
+
+    # Determine redirect based on referrer or a parameter?
+    # For now, redirect to index, assuming proposal might happen there too.
+    # TODO: Make redirect smarter?
+    redirect_url = request.referrer or url_for('index')
+    # Avoid redirecting back to the API endpoint itself
+    if '/api/' in redirect_url:
+        redirect_url = url_for('index')
+
+    return redirect(redirect_url)
+
+
+@app.route("/confirm_booking/<slot_id>/<patient_id>", methods=["POST"])
+@login_required
+def confirm_booking(slot_id, patient_id):
+    """Confirms the booking, removing the patient and the slot."""
+    user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
+
+    try:
+        # Verify both are in pending state and match each other
+        slot = user_slot_manager.get_all_slots() # Re-fetch fresh data
+        slot = next((s for s in slot if s.get('id') == slot_id), None)
+        patient = user_waitlist_manager.get_patient(patient_id)
+
+        if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
+            flash("Error confirming: Slot not found, not pending, or proposed to a different patient.", "danger")
+            return redirect(request.referrer or url_for('index'))
+
+        if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
+             flash("Error confirming: Patient not found, not pending, or proposed for a different slot.", "danger")
+             return redirect(request.referrer or url_for('index'))
+
+
+        # --- Action: Remove patient and slot ---
+        patient_removed = user_waitlist_manager.remove_patient(patient_id)
+        slot_removed = user_slot_manager.remove_slot(slot_id)
+        # --- End Action ---
+
+        # --- Alternative Action: Mark as scheduled/filled (Comment out removal above if using this) ---
+        # patient_confirmed = user_waitlist_manager.mark_as_scheduled(patient_id)
+        # slot_confirmed = user_slot_manager.mark_as_filled(slot_id)
+        # if patient_confirmed and slot_confirmed:
+        #      flash("Booking confirmed. Patient marked as scheduled and slot filled.", "success")
+        # else:
+        #      flash("Error confirming booking status updates. Please check logs.", "danger")
+        # --- End Alternative Action ---
+
+        # Check result of removal action
+        if patient_removed and slot_removed:
+            flash("Booking confirmed. Patient removed from waitlist and slot closed.", "success")
+        else:
+            # This case implies an issue with the removal itself, maybe file access?
+            flash("Error confirming booking during removal. Patient or slot may not have been fully removed.", "danger")
+
+
+    except Exception as e:
+        logging.error(f"Error confirming booking for slot {slot_id} / patient {patient_id}: {e}", exc_info=True)
+        flash("An unexpected error occurred while confirming the booking.", "danger")
+
+    # Redirect to index after confirmation
+    return redirect(url_for("index"))
+
+
+@app.route("/cancel_proposal/<slot_id>/<patient_id>", methods=["POST"])
+@login_required
+def cancel_proposal(slot_id, patient_id):
+    """Cancels a pending proposal, making the slot and patient available again."""
+    user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
+
+    try:
+         # Verify both are in pending state and match each other before cancelling
+        slot = user_slot_manager.get_all_slots() # Re-fetch fresh data
+        slot = next((s for s in slot if s.get('id') == slot_id), None)
+        patient = user_waitlist_manager.get_patient(patient_id)
+
+        if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
+            flash("Error cancelling: Slot not found, not pending, or proposed to a different patient.", "warning")
+            # Still try to reset patient just in case? Or just return?
+            # user_waitlist_manager.cancel_proposal(patient_id) # Maybe?
+            return redirect(request.referrer or url_for('index'))
+
+        if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
+             flash("Error cancelling: Patient not found, not pending, or proposed for a different slot.", "warning")
+             # Still try to reset slot just in case? Or just return?
+             # user_slot_manager.cancel_proposal(slot_id) # Maybe?
+             return redirect(request.referrer or url_for('index'))
+
+
+        # Use the new manager methods
+        slot_reset = user_slot_manager.cancel_proposal(slot_id)
+        patient_reset = user_waitlist_manager.cancel_proposal(patient_id)
+
+        if slot_reset and patient_reset:
+            flash("Proposal cancelled. Slot and patient are available again.", "info")
+        else:
+            # This suggests one of the cancel methods failed internally
+            flash("Error cancelling proposal state. Please check logs.", "danger")
+
+    except Exception as e:
+        logging.error(f"Error cancelling proposal for slot {slot_id} / patient {patient_id}: {e}", exc_info=True)
+        flash("An unexpected error occurred while cancelling the proposal.", "danger")
+
+    # Redirect back to where the user was (likely slots page or index page)
+    redirect_url = request.referrer or url_for('index')
+    if '/api/' in redirect_url: # Avoid redirecting back to api
+        redirect_url = url_for('index')
+    return redirect(redirect_url)
+
+
+@app.route("/api/find_matches_for_patient/<patient_id>")
+@login_required
+def api_find_matches_for_patient(patient_id):
+    """API endpoint to get slots matching a specific patient's requirements."""
+    user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(
+        current_user.username
+    )
+
+    patient = user_waitlist_manager.get_patient(patient_id)
+
+    if not patient:
+        return jsonify({"error": "Patient not found"}), 404
+    if patient.get("status", "waiting") != "waiting":
+        return jsonify({"error": "Patient is not currently waiting", "status": patient.get("status")}), 400 # Use 400 Bad Request
+
+    # Get all available slots (status 'available')
+    all_slots = user_slot_manager.get_all_slots()
+    available_slots = [
+        slot for slot in all_slots if slot.get("status", "available") == "available"
+    ]
+    logging.debug(f"Found {len(available_slots)} available slots for patient {patient_id}")
+
+
+    # Filter slots based on patient requirements (Logic copied from api_matching_slots)
+    matching_slots = []
+    patient_duration = int(patient.get("duration", 0))
+    patient_provider_pref = patient.get("provider", "no preference").lower()
+    patient_availability = patient.get("availability", {})
+    patient_availability_mode = patient.get("availability_mode", "available")
+
+
+    for slot in available_slots:
+        # Check duration
+        slot_duration = int(slot.get("duration", 0))
+        if patient_duration > slot_duration:
+            logging.debug(f"Slot {slot.get('id')} rejected: Duration mismatch ({slot_duration} < {patient_duration})")
+            continue
+
+        # Check provider
+        slot_provider = slot.get("provider", "").lower()
+        if patient_provider_pref != "no preference" and patient_provider_pref != slot_provider:
+            logging.debug(f"Slot {slot.get('id')} rejected: Provider mismatch ('{slot_provider}' != '{patient_provider_pref}')")
+            continue
+
+        # Check availability
+        slot_date_str = slot.get("slot_date")
+        slot_period = slot.get("slot_period", "").upper() # AM/PM
+
+        slot_date = None
+        if isinstance(slot_date_str, str):
+            try:
+                slot_date = datetime.strptime(slot_date_str, "%Y-%m-%d")
+            except ValueError:
+                 logging.warning(f"Could not parse slot date '{slot_date_str}' for slot {slot.get('id')}")
+                 continue # Skip if date is invalid
+        elif isinstance(slot_date_str, datetime):
+             slot_date = slot_date_str
+        else:
+             logging.warning(f"Invalid slot date type '{type(slot_date_str)}' for slot {slot.get('id')}")
+             continue # Skip if date is invalid type
+
+
+        if patient_availability: # Only check if patient specified preferences
+            slot_weekday = slot_date.strftime("%A") # Full day name e.g. Monday
+            day_periods = patient_availability.get(slot_weekday, []) # Patient's pref for this day
+
+            is_available_on_day_period = slot_period in day_periods
+
+            if patient_availability_mode == "available":
+                # Patient must be explicitly available
+                if not day_periods or not is_available_on_day_period:
+                    logging.debug(f"Slot {slot.get('id')} rejected: Availability mismatch (mode: available, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
+                    continue
+            else: # patient_availability_mode == "unavailable"
+                # Patient must NOT be explicitly unavailable
+                if day_periods and is_available_on_day_period:
+                    logging.debug(f"Slot {slot.get('id')} rejected: Availability mismatch (mode: unavailable, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
+                    continue
+
+        # If all checks pass, add the slot
+        logging.debug(f"Slot {slot.get('id')} matched for patient {patient_id}")
+        matching_slots.append(slot)
+
+    # Sort matching slots by date
+    def sort_key(slot):
+        date_str = slot.get("slot_date")
+        if isinstance(date_str, str):
+            try:
+                return datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                return datetime.max # Put unparseable dates last
+        elif isinstance(date_str, datetime):
+            return date_str
+        return datetime.max # Put slots with missing/invalid dates last
+
+    matching_slots.sort(key=sort_key)
+
+    logging.info(f"Returning {len(matching_slots)} matching slots for patient {patient_id}")
+    # Return only necessary slot info for the modal
+    # Convert date obj back to string for JSON if needed
+    result_slots = []
+    for slot in matching_slots:
+        slot_data = slot.copy()
+        if isinstance(slot_data.get("slot_date"), datetime):
+            slot_data["slot_date"] = slot_data["slot_date"].strftime('%Y-%m-%d')
+        result_slots.append(slot_data)
+
+
+    return jsonify({"patient": patient, "matching_slots": result_slots})
 
 
 if __name__ == "__main__":
