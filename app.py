@@ -106,10 +106,11 @@ def wait_time_to_minutes(wait_time_str):
 
 # --- Login Manager Setup ---
 login_manager = LoginManager()
-login_manager.init_app(app)
 login_manager.login_view = (
     "login"  # Redirect user to /login if they access a protected page
 )
+login_manager.login_message = None # Disable default "Please log in" message BEFORE init_app
+login_manager.init_app(app) # Initialize the login manager AFTER setting config
 
 
 # --- User Class ---
