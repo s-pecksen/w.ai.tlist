@@ -521,8 +521,8 @@
                                      ? `${slotWeekday}, ${slotDateStr}${timeString}`
                                      : 'an upcoming opening';
 
-
-                const emailBody = `Hi ${patientFirstName},\n\nThis is ${senderInfo}. We have an opening on ${dateTimeString} with ${providerName}, and would love to know if you could make it in for your ${appointmentType}?\n\nIf you could confirm with us as soon as you get this, we'll get you booked in and see you then!\n\nThanks so much!`;
+                // ADDED ' appointment' before the question mark
+                const emailBody = `Hi ${patientFirstName},\n\nThis is ${senderInfo}. We have an opening on ${dateTimeString} with ${providerName}, and would love to know if you could make it in for your ${appointmentType} appointment?\n\nIf you could confirm with us as soon as you get this, we'll get you booked in and see you then!\n\nThanks so much!`;
 
                 modalBodyTextarea.value = emailBody;
                 copyButton.textContent = 'Copy Message';
