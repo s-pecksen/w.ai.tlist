@@ -3,9 +3,12 @@
 {% block title %}Login - Waitlist Manager{% endblock %}
 
 {% block content %}
+<div class="text-center mb-3"> {# Reduced margin below logo #}
+    <img src="{{ url_for('static', filename='waitlist-logo.png') }}" alt="Waitlist Logo" style="max-width: 250px; height: auto;"> {# Increased max-width #}
+</div>
 <div class="row justify-content-center">
     <div class="col-md-6">
-        <div class="card mt-5">
+        <div class="card mt-4"> {# Reduced margin above card #}
             <div class="card-body">
                 <h3 class="card-title text-center">Login</h3>
                 {% with messages = get_flashed_messages(with_categories=true) %}
