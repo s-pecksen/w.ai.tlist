@@ -224,17 +224,42 @@ def register():
         clinic_name = request.form.get("clinic_name")
         user_name = request.form.get("user_name")
         appointment_types_json = request.form.get("appointment_types_json", "[]")
+        providers_json = request.form.get("providers_json", "[]")
 
         # Process appointment types
         appointment_types_data = []
+        appt_types_list = []
         try:
-            appointment_types_data = json.loads(appointment_types_json)
-            # Extract just the type names for backward compatibility
-            appt_types_list = [
-                item["appointment_type"] for item in appointment_types_data
-            ]
-        except (json.JSONDecodeError, KeyError):
-            appt_types_list = []
+            parsed_appt_types = json.loads(appointment_types_json)
+            # Validate structure slightly (expecting list of dicts)
+            if isinstance(parsed_appt_types, list):
+                 appointment_types_data = [
+                     item for item in parsed_appt_types
+                     if isinstance(item, dict) and item.get('appointment_type')
+                 ]
+                 appt_types_list = [item['appointment_type'] for item in appointment_types_data]
+            else:
+                logging.warning(f"Parsed appointment_types_json was not a list for user {username}.")
+        except json.JSONDecodeError:
+            logging.warning(f"Failed to decode appointment_types_json for user {username}.")
+            appt_types_list = [] # Ensure it's empty on error
+            appointment_types_data = []
+
+        # Process providers
+        providers_data = []
+        try:
+            parsed_providers = json.loads(providers_json)
+             # Validate structure (list of dicts with 'first_name')
+            if isinstance(parsed_providers, list):
+                providers_data = [
+                    p for p in parsed_providers
+                    if isinstance(p, dict) and p.get('first_name') # Ensure first_name exists
+                ]
+            else:
+                 logging.warning(f"Parsed providers_json was not a list for user {username}.")
+        except json.JSONDecodeError:
+            logging.warning(f"Failed to decode providers_json for user {username}.")
+            providers_data = [] # Ensure empty on error
 
         if not username or not password:
             flash("Username and password are required.", "warning")
@@ -244,7 +269,7 @@ def register():
             flash("Username already exists. Please choose a different one.", "warning")
             return redirect(url_for("register"))
 
-        # Create new user with a unique ID
+        # Create new user
         user_id_raw = username + password
         user_id = hashlib.md5(user_id_raw.encode()).hexdigest()
         password_hash = hashlib.md5(password.encode()).hexdigest()
@@ -254,8 +279,8 @@ def register():
             password_hash=password_hash,
             clinic_name=clinic_name,
             user_name_for_message=user_name,
-            appointment_types=appt_types_list,  # Simple list for backward compatibility
-            appointment_types_data=appointment_types_data,  # Full data with durations
+            appointment_types=appt_types_list,
+            appointment_types_data=appointment_types_data,
         )
 
         try:
@@ -266,16 +291,56 @@ def register():
             # Save user profile
             save_user(new_user)
 
-            # Create empty provider.csv file with header
-            provider_file = os.path.join(user_dir, "provider.csv")
-            with open(provider_file, "w", newline="") as f:
+            # Initialize user-specific provider manager
+            user_provider_file = get_user_data_path(username, "provider.csv")
+            # Ensure provider file starts empty with header before adding
+            with open(user_provider_file, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["name"])  # Write header
+                writer.writerow(["name"]) # Write header only
+
+            # Instantiate manager AFTER creating the empty file
+            user_provider_manager = ProviderManager(provider_file=user_provider_file)
+
+            # Add providers from registration form
+            providers_added_count = 0
+            if providers_data:
+                logging.info(f"Adding {len(providers_data)} providers for new user {username} from registration form.")
+                for provider_info in providers_data:
+                    first_name = provider_info.get('first_name')
+                    last_initial = provider_info.get('last_initial', '') # Default to empty string if missing
+                    if first_name: # Double check name exists
+                        added = user_provider_manager.add_provider(first_name, last_initial)
+                        if added:
+                            providers_added_count += 1
+                        else:
+                            # This might happen if duplicates were entered in the form itself
+                             logging.warning(f"Could not add provider '{first_name} {last_initial}' for user {username} during registration (duplicate or error).")
+                logging.info(f"Successfully added {providers_added_count} initial providers for user {username}.")
+            else:
+                logging.info(f"No initial providers submitted during registration for user {username}.")
+
+            # Create empty waitlist.csv and cancelled.csv
+            waitlist_file = get_user_data_path(username, "waitlist.csv")
+            if not os.path.exists(waitlist_file):
+                 # Use PatientWaitlistManager's fieldnames
+                 wl_mgr_temp = PatientWaitlistManager(waitlist_file=waitlist_file)
+                 with open(waitlist_file, 'w', newline='', encoding='utf-8') as f:
+                     writer = csv.DictWriter(f, fieldnames=wl_mgr_temp.fieldnames)
+                     writer.writeheader()
+
+            slots_file = get_user_data_path(username, "cancelled.csv")
+            if not os.path.exists(slots_file):
+                 # Use CancelledSlotManager's headers
+                 slot_mgr_temp = CancelledSlotManager(slots_file=slots_file)
+                 with open(slots_file, 'w', newline='', encoding='utf-8') as f:
+                     writer = csv.DictWriter(f, fieldnames=slot_mgr_temp.headers)
+                     writer.writeheader()
 
             flash("Registration successful! Please log in.", "success")
             return redirect(url_for("login"))
         except Exception as e:
-            logging.error(f"Error during registration: {e}", exc_info=True)
+            logging.error(f"Error during registration for user {username}: {e}", exc_info=True)
+            # Consider attempting to clean up created user directory/files on error
             flash("An error occurred during registration. Please try again.", "danger")
             return redirect(url_for("register"))
 
