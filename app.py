@@ -688,11 +688,13 @@ def slots():
             # --- Sorting Logic ---
             urgency_map = {'high': 0, 'medium': 1, 'low': 2}
             def sort_key_eligible(patient):
+                # Prioritize Emergency appointments first, checking case-insensitively and stripping whitespace
+                is_emergency = 0 if patient.get('appointment_type', '').strip().lower() == 'emerg' else 1
                 # Use the new helper to get days waited
                 days_waited = wait_time_to_days(patient.get('wait_time', '0 days'))
                 urgency_level = urgency_map.get(patient.get('urgency', 'medium').lower(), 1) # Default to medium
-                # Sort descending by days waited (-days_waited), then ascending by urgency (urgency_level)
-                return (-days_waited, urgency_level)
+                # Sort by emergency status, then descending by days waited, then ascending by urgency level
+                return (is_emergency, -days_waited, urgency_level)
 
             eligible_patients = sorted(eligible_patients, key=sort_key_eligible)
             # --- End Sorting Logic ---
