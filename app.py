@@ -1685,4 +1685,4 @@ if __name__ == "__main__":
     # create data/users folder if it doesn't exist
     if not os.path.exists("data/users"):
         os.makedirs("data/users")
-    app.run(debug=True, host="0.0.0.0", port=7776)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 7860)))
