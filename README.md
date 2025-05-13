@@ -16,38 +16,65 @@ Ensure you have the following installed:
 - pip (Python package manager)
 
 ### Installation
+# SETUP INSTRUCTIONS
+# Run all commands below in your terminal/command prompt.
 
-1. **Clone this repository**:
-    ```bash
-    git clone https://github.com/yourusername/projectname.git
-    ```
+# 1. Download the application
+git clone https://github.com/yourusername/your-project.git
+cd your-project
+# You are now in the project directory
 
-2. **Create a virtual environment**:
-    ```bash
-    python -m venv venv
-    ```
+# 2. Create a virtual environment
+python -m venv venv
+# This creates an isolated Python environment for this project
 
-3. **Activate the virtual environment**:
-    - Windows:
-      ```bash
-      venv\Scripts\activate
-      ```
-    - Mac/Linux:
-      ```bash
-      source venv/bin/activate
-      ```
+# 3. Activate the virtual environment
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+# Your prompt should change to show (venv) at the beginning
 
-4. **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+# 4. Install dependencies
+pip install -r requirements.txt
+# This installs all required packages for the application
 
-5. **Start the development server**:
-    ```bash
-    python app.py
-    ```
+# 5. Generate your encryption key
+python -m pip install cryptography
+python -c "from cryptography.fernet import Fernet; key = Fernet.generate_key(); print(f'Your encryption key: {key.decode()}')"
+# IMPORTANT: Save this key somewhere secure - you'll need it for the next step
 
-6. Open your browser and go to `http://127.0.0.1:5000` to view the app.
+# 6. Set up the encryption key permanently
+
+# For Windows:
+# Option 1: Through System Properties GUI
+# a. Search for "Edit the system environment variables" in Windows search
+# b. Click "Environment Variables"
+# c. Under "User variables", click "New"
+# d. Variable name: FLASK_APP_ENCRYPTION_KEY
+# e. Variable value: [paste your generated key]
+# f. Click OK on all windows
+
+# Option 2: Using PowerShell (requires admin)
+# [System.Environment]::SetEnvironmentVariable('FLASK_APP_ENCRYPTION_KEY', 'your_generated_key_here', 'User')
+
+# For macOS/Linux:
+# Add this line to your shell profile file (~/.bash_profile, ~/.zshrc, or ~/.profile)
+# export FLASK_APP_ENCRYPTION_KEY="your_generated_key_here"
+# Then run:
+# source ~/.bash_profile  # or ~/.zshrc or ~/.profile depending on your shell
+
+# For current session only (if you just want to test quickly)
+# On Windows (Command Prompt):
+set FLASK_APP_ENCRYPTION_KEY=your_generated_key_here
+# On Windows (PowerShell):
+$env:FLASK_APP_ENCRYPTION_KEY="your_generated_key_here"
+# On macOS/Linux:
+export FLASK_APP_ENCRYPTION_KEY="your_generated_key_here"
+
+# 7. Run the application
+flask run
+# The application should now be running at http://127.0.0.1:5000/
 
 ---
 
