@@ -13,8 +13,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Make port 7860 available
 EXPOSE 7860
 
-# Environment variable to use port 7860
-ENV PORT=7860
-
-# Start the application
-CMD ["flask", "run", "--host=0.0.0.0", "--port=${PORT:-7860}"]
+# Command to run your app
+CMD ["python", "app.py"]
