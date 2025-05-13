@@ -1,12 +1,13 @@
-# Use Python 3.9 as base image
+# Use Python 3.9 as base image 
 FROM python:3.9-slim
 
 # Set working directory
 WORKDIR /app
 
-COPY . /app
+# Copy all files into the container
+COPY . .
 
-# Install dependencies
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Make port 7860 available
