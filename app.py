@@ -26,6 +26,7 @@ from flask_login import (
 from cryptography.fernet import Fernet
 import io # For StringIO
 import hashlib
+from src.diffstore import save_to_diff_store, load_from_diff_store
 
 # --- Encryption Setup ---
 ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
@@ -139,7 +140,9 @@ app.jinja_env.globals.update(datetime=datetime)
 app.jinja_env.globals.update(hasattr=hasattr)
 
 # Define paths
-PERSISTENT_STORAGE_PATH = "/data_persistent" 
+PERSISTENT_STORAGE_PATH = "/data"
+DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
+os.makedirs(DIFF_STORE_PATH, exist_ok=True)
 users_dir = os.path.join(PERSISTENT_STORAGE_PATH, "app_data", "users") 
 # You might also want to store global CSVs there if you have them
 # global_provider_file = os.path.join(PERSISTENT_STORAGE_PATH, "app_data", "provider.csv")
@@ -1298,9 +1301,19 @@ def edit_patient(patient_id):
                            appointment_types_data=appointment_types_data)
 
 
+@app.route("/save_user_data/<user_id>", methods=["POST"])
+def save_user_data(user_id):
+    data = request.json
+    save_to_diff_store(user_id, data)
+    return jsonify({"status": "success"})
+
+@app.route("/load_user_data/<user_id>", methods=["GET"])
+def load_user_data(user_id):
+    data = load_from_diff_store(user_id)
+    if data is not None:
+        return jsonify(data)
+    else:
+        return jsonify({"error": "No data found"}), 404
+
 if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 7860)) # Use PORT from env, default to 7860
-    # Create data/users folder if it doesn't exist (adjust path if using persistent storage)
-    if not os.path.exists("data/users"): # This path needs to align with users_dir
-        os.makedirs("data/users")
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=7860)
