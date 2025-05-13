@@ -1,4 +1,15 @@
-# W.AI.TLIST
+---
+title: W.AI.TLIST
+emoji: 📃
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+sdk_version: "28.1.1"
+app_file: app.py
+pinned: false
+---
+
+#W.AI.TLIST
 
 ## Description
 This project aims to streamline clinic operations by automating client/patient scheduling. It offers an easy-to-use solution that reduces the burden on receptionists and enhances patient experience, while keeping data secure and private by avoiding cloud-based storage. This project is in active development, and your feedback and collaboration are welcome.
@@ -6,7 +17,7 @@ This project aims to streamline clinic operations by automating client/patient s
 ## Features
 - Patient scheduling automation
 - Secure local data handling (no cloud-based storage)
-- Integration with existing clinic systems
+- Customizable features like Cancelled Appointment details, waitlisted patient specifics, staff changes, appointment durations
 
 ## Getting Started
 
