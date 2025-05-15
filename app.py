@@ -456,9 +456,9 @@ def register():
             flash("Registration successful! Please log in.", "success")
             return redirect(url_for("login"))
         except Exception as e:
-            logging.error(f"Error during registration for user {username}: {e}", exc_info=True)
-            # Consider attempting to clean up created user directory/files on error
-            flash("An error occurred during registration. Please try again.", "danger")
+            error_msg = f"Error during registration for user {username}: {e}"
+            logger.error(error_msg, exc_info=True)
+            flash(error_msg, "danger")  # Show the actual error!
             return redirect(url_for("register"))
 
     return render_template("register.html")
@@ -1374,6 +1374,16 @@ def debug_session():
         "session_files": os.listdir(app.config["SESSION_FILE_DIR"]) if os.path.exists(app.config["SESSION_FILE_DIR"]) else []
     }
     return jsonify(session_info)
+
+@app.route("/debug/write_test")
+def debug_write_test():
+    test_path = os.path.join(users_dir, "test_write.txt")
+    try:
+        with open(test_path, "w") as f:
+            f.write("test")
+        return f"Successfully wrote to {test_path}"
+    except Exception as e:
+        return f"Failed to write to {test_path}: {e}", 500
 
 if __name__ == "__main__":
     # Create session directory if it doesn't exist
