@@ -398,12 +398,18 @@ def register():
 
             # Initialize user-specific provider manager
             user_provider_file = get_user_data_path(username, "provider.csv")
-            # Ensure provider file starts empty with header before adding
-            with open(user_provider_file, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["name"]) # Write header only
+            # --- MODIFICATION START for provider.csv ---
+            # Old code:
+            # with open(user_provider_file, "w", newline="", encoding="utf-8") as f:
+            #     writer = csv.writer(f)
+            #     writer.writerow(["name"]) # Write header only
+            
+            # New code: Create an empty encrypted CSV with header
+            provider_fieldnames = ["name"] # Matches the old logic
+            save_encrypted_csv([], user_provider_file, fieldnames=provider_fieldnames)
+            # --- MODIFICATION END for provider.csv ---
 
-            # Instantiate manager AFTER creating the empty file
+            # Instantiate manager AFTER creating the encrypted file
             user_provider_manager = ProviderManager(provider_file=user_provider_file)
 
             # Add providers from registration form
@@ -412,34 +418,48 @@ def register():
                 logging.info(f"Adding {len(providers_data)} providers for new user {username} from registration form.")
                 for provider_info in providers_data:
                     first_name = provider_info.get('first_name')
-                    last_initial = provider_info.get('last_initial', '') # Default to empty string if missing
-                    if first_name: # Double check name exists
+                    last_initial = provider_info.get('last_initial', '') 
+                    if first_name: 
                         added = user_provider_manager.add_provider(first_name, last_initial)
                         if added:
                             providers_added_count += 1
                         else:
-                            # This might happen if duplicates were entered in the form itself
                              logging.warning(f"Could not add provider '{first_name} {last_initial}' for user {username} during registration (duplicate or error).")
                 logging.info(f"Successfully added {providers_added_count} initial providers for user {username}.")
             else:
                 logging.info(f"No initial providers submitted during registration for user {username}.")
 
-            # Create empty waitlist.csv and cancelled.csv
+            # Create empty encrypted waitlist.csv and cancelled.csv
             waitlist_file = get_user_data_path(username, "waitlist.csv")
-            if not os.path.exists(waitlist_file):
-                 # Use PatientWaitlistManager's fieldnames
-                 wl_mgr_temp = PatientWaitlistManager(waitlist_file=waitlist_file)
-                 with open(waitlist_file, 'w', newline='', encoding='utf-8') as f:
-                     writer = csv.DictWriter(f, fieldnames=wl_mgr_temp.fieldnames)
-                     writer.writeheader()
+            # --- MODIFICATION START for waitlist.csv ---
+            # Old code:
+            # if not os.path.exists(waitlist_file):
+            #      wl_mgr_temp = PatientWaitlistManager(waitlist_file=waitlist_file)
+            #      with open(waitlist_file, 'w', newline='', encoding='utf-8') as f:
+            #          writer = csv.DictWriter(f, fieldnames=wl_mgr_temp.fieldnames)
+            #          writer.writeheader()
+
+            # New code:
+            # Instantiate a temporary manager to get fieldnames (its load method handles non-existent files gracefully)
+            wl_mgr_fieldnames = PatientWaitlistManager(waitlist_file=get_user_data_path(username, "_temp_wl_for_fields.csv")).fieldnames
+            save_encrypted_csv([], waitlist_file, fieldnames=wl_mgr_fieldnames)
+            # --- MODIFICATION END for waitlist.csv ---
+
 
             slots_file = get_user_data_path(username, "cancelled.csv")
-            if not os.path.exists(slots_file):
-                 # Use CancelledSlotManager's headers
-                 slot_mgr_temp = CancelledSlotManager(slots_file=slots_file)
-                 with open(slots_file, 'w', newline='', encoding='utf-8') as f:
-                     writer = csv.DictWriter(f, fieldnames=slot_mgr_temp.headers)
-                     writer.writeheader()
+            # --- MODIFICATION START for cancelled.csv ---
+            # Old code:
+            # if not os.path.exists(slots_file):
+            #      slot_mgr_temp = CancelledSlotManager(slots_file=slots_file)
+            #      with open(slots_file, 'w', newline='', encoding='utf-8') as f:
+            #          writer = csv.DictWriter(f, fieldnames=slot_mgr_temp.headers)
+            #          writer.writeheader()
+
+            # New code:
+            # Instantiate a temporary manager to get headers
+            slot_mgr_headers = CancelledSlotManager(slots_file=get_user_data_path(username, "_temp_cs_for_fields.csv")).headers
+            save_encrypted_csv([], slots_file, fieldnames=slot_mgr_headers)
+            # --- MODIFICATION END for cancelled.csv ---
 
             flash("Registration successful! Please log in.", "success")
             return redirect(url_for("login"))
@@ -548,7 +568,7 @@ def slots():
                             is_patient_available_for_slot_period = True
                     
                     if patient_availability_mode == "available":
-                        if not patient_availability or not is_patient_available_for_slot_period: # Must be explicitly available
+                        if not day_periods or not is_patient_available_for_slot_period: # Must be explicitly available
                             continue
                     elif patient_availability_mode == "unavailable":
                         if patient_availability and is_patient_available_for_slot_period: # Must NOT be explicitly unavailable
@@ -1321,4 +1341,9 @@ def load_user_data(user_id):
         return jsonify({"error": "No data found"}), 404
 
 if __name__ == "__main__":
+    print("Root directory contents:", os.listdir("/"))
+    if os.path.exists("/data"):
+        print("/data exists! Contents:", os.listdir("/data"))
+    else:
+        print("/data does NOT exist.")
     app.run(host='0.0.0.0', port=7860)
