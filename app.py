@@ -128,7 +128,17 @@ def load_decrypted_csv(file_path, fieldnames_for_empty_file_check=None):
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
 
-# Add these session configurations
+# Define paths BEFORE session configuration
+PERSISTENT_STORAGE_PATH = "/data"
+DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
+if not os.path.exists(DIFF_STORE_PATH):
+    try:
+        os.makedirs(DIFF_STORE_PATH, exist_ok=True)
+    except PermissionError:
+        # If /data exists but we can't create the subdir, raise a clear error
+        raise RuntimeError("Cannot create diff_store directory inside /data. Check permissions.")
+
+# Add these session configurations AFTER path definition
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)  # Sessions last 7 days
@@ -147,14 +157,6 @@ app.jinja_env.globals.update(datetime=datetime)
 app.jinja_env.globals.update(hasattr=hasattr)
 
 # Define paths
-PERSISTENT_STORAGE_PATH = "/data"
-DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
-if not os.path.exists(DIFF_STORE_PATH):
-    try:
-        os.makedirs(DIFF_STORE_PATH, exist_ok=True)
-    except PermissionError:
-        # If /data exists but we can't create the subdir, raise a clear error
-        raise RuntimeError("Cannot create diff_store directory inside /data. Check permissions.")
 users_dir = os.path.join(PERSISTENT_STORAGE_PATH, "app_data", "users") 
 # You might also want to store global CSVs there if you have them
 # global_provider_file = os.path.join(PERSISTENT_STORAGE_PATH, "app_data", "provider.csv")
