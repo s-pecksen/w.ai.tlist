@@ -378,12 +378,16 @@ def register():
             # Create user directory
             user_dir = os.path.join(users_dir, username)
             os.makedirs(user_dir, exist_ok=True)
+            logging.info(f"Created user directory at: {user_dir}")
 
             # Save user profile
             save_user(new_user)
+            logging.info(f"Saved user profile for: {username}")
 
             # Initialize user-specific provider manager
             user_provider_file = get_user_data_path(username, "provider.csv")
+            logging.info(f"Provider file path: {user_provider_file}")
+            
             # --- MODIFICATION START for provider.csv ---
             # Old code:
             # with open(user_provider_file, "w", newline="", encoding="utf-8") as f:
@@ -471,6 +475,7 @@ def login():
         logging.info(f"Login attempt for username: {username}")
         
         user = get_user_by_username(username)
+        logging.info(f"User lookup result: {user is not None}")
         
         if not user:
             logging.warning(f"Login failed: User {username} not found")
@@ -1358,6 +1363,10 @@ if __name__ == "__main__":
     print("Root directory contents:", os.listdir("/"))
     if os.path.exists("/data"):
         print("/data exists! Contents:", os.listdir("/data"))
+        if os.path.exists("/data/app_data"):
+            print("/data/app_data exists! Contents:", os.listdir("/data/app_data"))
+        if os.path.exists("/data/app_data/users"):
+            print("/data/app_data/users exists! Contents:", os.listdir("/data/app_data/users"))
     else:
         print("/data does NOT exist.")
         
