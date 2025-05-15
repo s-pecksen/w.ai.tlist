@@ -8,7 +8,7 @@ from flask import (
     session,
     jsonify,
 )
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import os
 import csv
 from io import StringIO
@@ -125,8 +125,15 @@ def load_decrypted_csv(file_path, fieldnames_for_empty_file_check=None):
         return [] # Return empty list on error
 
 # --- Flask App Initialization ---
-app = Flask(__name__) # RESTORE this line
+app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
+
+# Add these session configurations
+app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_PERMANENT"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)  # Sessions last 7 days
+app.config["SESSION_FILE_DIR"] = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
+
 # The os.urandom(24) can be a fallback for local development if the env var isn't set
 
 # Make sure to add this for flash messages to work
@@ -183,11 +190,10 @@ def wait_time_to_days(wait_time_str):
 
 # --- Login Manager Setup ---
 login_manager = LoginManager()
-login_manager.login_view = (
-    "login"  # Redirect user to /login if they access a protected page
-)
-login_manager.login_message = None # Disable default "Please log in" message BEFORE init_app
-login_manager.init_app(app) # Initialize the login manager AFTER setting config
+login_manager.init_app(app)
+login_manager.login_view = "login"
+login_manager.login_message = None
+login_manager.session_protection = "strong"
 
 
 # --- User Class ---
@@ -287,35 +293,13 @@ def username_exists(username):
 @login_manager.user_loader
 def load_user(user_id):
     """Load user by ID"""
-    # Since we don't have an index, we need to scan all user directories
-    if not os.path.exists(users_dir):
-        return None
-
-    for username_folder in os.listdir(users_dir): # Changed variable name for clarity
-        user_folder_path = os.path.join(users_dir, username_folder)
-        if os.path.isdir(user_folder_path):
-            profile_path = os.path.join(user_folder_path, "profile.json")
-            if os.path.exists(profile_path): # Check existence
-                try:
-                    user_data = load_decrypted_json(profile_path) # Decrypt here
-                    if user_data and str(user_data.get("id")) == str(user_id):
-                        # Reconstruct the User object as before
-                        return User( 
-                            user_id=user_data.get("id"),
-                            username=user_data.get("username"),
-                            password_hash=user_data.get("password_hash"),
-                            clinic_name=user_data.get("clinic_name"),
-                            user_name_for_message=user_data.get(
-                                "user_name_for_message"
-                            ),
-                            appointment_types=user_data.get("appointment_types"),
-                            appointment_types_data=user_data.get(
-                                "appointment_types_data"
-                            ),
-                        )
-                except Exception as e:
-                    logging.error(f"Error reading user file {profile_path} for user_loader ID {user_id}: {e}")
-    return None
+    logging.debug(f"Loading user with ID: {user_id}")
+    user = get_user_by_id(user_id)
+    if user:
+        logging.debug(f"Found user: {user.username}")
+    else:
+        logging.debug(f"No user found for ID: {user_id}")
+    return user
 
 
 # Add Registration Route
@@ -477,22 +461,45 @@ def register():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
+    
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
+        
+        logging.info(f"Login attempt for username: {username}")
+        
         user = get_user_by_username(username)
-
-        if user and user.check_password(password):
-            login_user(
-                user, remember=request.form.get("remember")
-            )  # Add 'remember me' functionality
-            flash("Logged in successfully.", "success")
-            next_page = request.args.get("next")
-            return redirect(next_page or url_for("index"))
-        else:
+        
+        if not user:
+            logging.warning(f"Login failed: User {username} not found")
             flash("Invalid username or password.", "danger")
+            return redirect(url_for("login"))
+            
+        if not user.check_password(password):
+            logging.warning(f"Login failed: Invalid password for user {username}")
+            flash("Invalid username or password.", "danger")
+            return redirect(url_for("login"))
+            
+        try:
+            # More explicit login process
+            login_user(user, remember=request.form.get("remember"))
+            session.permanent = True  # Make the session permanent
+            
+            # Debug logging
+            logging.info(f"User {username} logged in successfully")
+            logging.info(f"Session after login: {dict(session)}")
+            logging.info(f"User authenticated: {current_user.is_authenticated}")
+            
+            next_page = request.args.get("next")
+            flash("Logged in successfully.", "success")
+            return redirect(next_page or url_for("index"))
+            
+        except Exception as e:
+            logging.error(f"Error during login for user {username}: {str(e)}", exc_info=True)
+            flash(f"An error occurred during login: {str(e)}", "danger")
+            return redirect(url_for("login"))
 
-    return render_template("login.html")  # Need to create this template
+    return render_template("login.html")
 
 
 # Add Logout Route
@@ -641,7 +648,9 @@ slot_manager = CancelledSlotManager()
 @app.route("/", methods=["GET"])
 @login_required  # Protect the main page
 def index():
-    logging.debug(f"Entering index route for user: {current_user.username}")
+    logging.debug(f"Entering index route for user: {current_user.username if current_user.is_authenticated else 'Not authenticated'}")
+    logging.debug(f"Session contents: {dict(session)}")
+    
     try:
         user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
         user_waitlist_manager.update_wait_times() # Update wait times on load
@@ -704,10 +713,8 @@ def index():
             current_user_name=current_user.user_name_for_message or "the scheduling team"
         )
     except Exception as e:
-        logging.error(
-            f"Exception in index route for user {current_user.id}: {e}", exc_info=True
-        )
-        flash("An error occurred while loading the main page.", "danger")
+        logging.error(f"Exception in index route: {str(e)}", exc_info=True)
+        flash(f"An error occurred while loading the main page: {str(e)}", "danger")
         return "<h1>An error occurred</h1><p>Please check the server logs.</p>", 500
 
 
@@ -1341,9 +1348,21 @@ def load_user_data(user_id):
         return jsonify({"error": "No data found"}), 404
 
 if __name__ == "__main__":
+    # Create session directory if it doesn't exist
+    session_dir = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
+    os.makedirs(session_dir, exist_ok=True)
+    
+    # Debug prints
     print("Root directory contents:", os.listdir("/"))
     if os.path.exists("/data"):
         print("/data exists! Contents:", os.listdir("/data"))
     else:
         print("/data does NOT exist.")
+        
+    print("Session configuration:")
+    print(f"SECRET_KEY is set: {bool(app.secret_key)}")
+    print(f"SESSION_TYPE: {app.config.get('SESSION_TYPE')}")
+    print(f"SESSION_FILE_DIR: {app.config.get('SESSION_FILE_DIR')}")
+    print(f"SESSION_PERMANENT: {app.config.get('SESSION_PERMANENT')}")
+    
     app.run(host='0.0.0.0', port=7860)
