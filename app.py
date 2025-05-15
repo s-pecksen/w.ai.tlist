@@ -28,6 +28,13 @@ import io # For StringIO
 import hashlib
 from src.diffstore import save_to_diff_store, load_from_diff_store
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # --- Encryption Setup ---
 ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
 if not ENCRYPTION_KEY:
@@ -62,7 +69,7 @@ def load_decrypted_json(file_path):
     """Reads encrypted file, decrypts, and loads JSON into dict."""
     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
         logging.warning(f"File not found or empty, cannot decrypt JSON: {file_path}")
-        return None # Or appropriate default, like {}
+        return None # Or appropriate default
     try:
         with open(file_path, "rb") as f: # Read in binary mode
             encrypted_bytes = f.read()
@@ -128,14 +135,25 @@ def load_decrypted_csv(file_path, fieldnames_for_empty_file_check=None):
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
 
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+login_manager.login_message = None
+login_manager.session_protection = "strong"
+
 # Define paths BEFORE session configuration
 PERSISTENT_STORAGE_PATH = "/data"
 DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
+
+# Add debug logging for storage setup
+logger.info(f"Setting up persistent storage at: {PERSISTENT_STORAGE_PATH}")
 if not os.path.exists(DIFF_STORE_PATH):
     try:
         os.makedirs(DIFF_STORE_PATH, exist_ok=True)
+        logger.info(f"Created diff_store directory at: {DIFF_STORE_PATH}")
     except PermissionError:
-        # If /data exists but we can't create the subdir, raise a clear error
+        logger.error(f"Permission error creating diff_store directory: {DIFF_STORE_PATH}")
         raise RuntimeError("Cannot create diff_store directory inside /data. Check permissions.")
 
 # Add these session configurations AFTER path definition
@@ -143,28 +161,20 @@ app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)  # Sessions last 7 days
 app.config["SESSION_FILE_DIR"] = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
-
-# The os.urandom(24) can be a fallback for local development if the env var isn't set
-
-# Make sure to add this for flash messages to work
-app.config["SESSION_TYPE"] = "filesystem"
-
-# Add isinstance to Jinja globals
-app.jinja_env.globals.update(isinstance=isinstance)
-# Also add datetime to globals if needed elsewhere, otherwise passing it in context is fine
-app.jinja_env.globals.update(datetime=datetime)
-# Add hasattr to Jinja globals
-app.jinja_env.globals.update(hasattr=hasattr)
+logger.info(f"Session directory set to: {app.config['SESSION_FILE_DIR']}")
 
 # Define paths
-users_dir = os.path.join(PERSISTENT_STORAGE_PATH, "app_data", "users") 
-# You might also want to store global CSVs there if you have them
-# global_provider_file = os.path.join(PERSISTENT_STORAGE_PATH, "app_data", "provider.csv")
+users_dir = os.path.join(PERSISTENT_STORAGE_PATH, "app_data", "users")
+logger.info(f"Users directory set to: {users_dir}")
 
 # Create users directory if it doesn't exist
-os.makedirs(os.path.dirname(users_dir), exist_ok=True) # for .../app_data
-os.makedirs(users_dir, exist_ok=True) # for .../users
-
+try:
+    os.makedirs(os.path.dirname(users_dir), exist_ok=True)  # for .../app_data
+    os.makedirs(users_dir, exist_ok=True)  # for .../users
+    logger.info("Created users directory structure")
+except Exception as e:
+    logger.error(f"Error creating users directory: {e}")
+    raise
 
 # Add this helper function to convert wait time to minutes
 def wait_time_to_minutes(wait_time_str):
@@ -188,14 +198,6 @@ def wait_time_to_days(wait_time_str):
     except (ValueError, IndexError):
         logging.warning(f"Warning: Could not parse days from wait_time_str '{wait_time_str}'.")
         return 0 # Return 0 on parsing error
-
-
-# --- Login Manager Setup ---
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = "login"
-login_manager.login_message = None
-login_manager.session_protection = "strong"
 
 
 # --- User Class ---
@@ -466,24 +468,25 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
+        logger.info(f"User already authenticated: {current_user.username}")
         return redirect(url_for("index"))
     
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
         
-        logging.info(f"Login attempt for username: {username}")
+        logger.info(f"Login attempt for username: {username}")
         
         user = get_user_by_username(username)
-        logging.info(f"User lookup result: {user is not None}")
+        logger.info(f"User lookup result: {user is not None}")
         
         if not user:
-            logging.warning(f"Login failed: User {username} not found")
+            logger.warning(f"Login failed: User {username} not found")
             flash("Invalid username or password.", "danger")
             return redirect(url_for("login"))
             
         if not user.check_password(password):
-            logging.warning(f"Login failed: Invalid password for user {username}")
+            logger.warning(f"Login failed: Invalid password for user {username}")
             flash("Invalid username or password.", "danger")
             return redirect(url_for("login"))
             
@@ -493,16 +496,17 @@ def login():
             session.permanent = True  # Make the session permanent
             
             # Debug logging
-            logging.info(f"User {username} logged in successfully")
-            logging.info(f"Session after login: {dict(session)}")
-            logging.info(f"User authenticated: {current_user.is_authenticated}")
+            logger.info(f"User {username} logged in successfully")
+            logger.info(f"Session after login: {dict(session)}")
+            logger.info(f"User authenticated: {current_user.is_authenticated}")
+            logger.info(f"Session ID: {session.sid if hasattr(session, 'sid') else 'No session ID'}")
             
             next_page = request.args.get("next")
             flash("Logged in successfully.", "success")
             return redirect(next_page or url_for("index"))
             
         except Exception as e:
-            logging.error(f"Error during login for user {username}: {str(e)}", exc_info=True)
+            logger.error(f"Error during login for user {username}: {str(e)}", exc_info=True)
             flash(f"An error occurred during login: {str(e)}", "danger")
             return redirect(url_for("login"))
 
@@ -1354,26 +1358,48 @@ def load_user_data(user_id):
     else:
         return jsonify({"error": "No data found"}), 404
 
+@app.route("/debug/session")
+def debug_session():
+    if not app.debug:
+        return "Debug route not available in production", 403
+        
+    session_info = {
+        "session_id": session.sid if hasattr(session, 'sid') else 'No session ID',
+        "session_contents": dict(session),
+        "user_authenticated": current_user.is_authenticated,
+        "user_id": current_user.id if current_user.is_authenticated else None,
+        "session_permanent": session.permanent,
+        "session_directory": app.config["SESSION_FILE_DIR"],
+        "session_directory_exists": os.path.exists(app.config["SESSION_FILE_DIR"]),
+        "session_files": os.listdir(app.config["SESSION_FILE_DIR"]) if os.path.exists(app.config["SESSION_FILE_DIR"]) else []
+    }
+    return jsonify(session_info)
+
 if __name__ == "__main__":
     # Create session directory if it doesn't exist
     session_dir = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
-    os.makedirs(session_dir, exist_ok=True)
+    try:
+        os.makedirs(session_dir, exist_ok=True)
+        logger.info(f"Created session directory at: {session_dir}")
+    except Exception as e:
+        logger.error(f"Error creating session directory: {e}")
+        raise
     
     # Debug prints
-    print("Root directory contents:", os.listdir("/"))
+    logger.info("Root directory contents: %s", os.listdir("/"))
     if os.path.exists("/data"):
-        print("/data exists! Contents:", os.listdir("/data"))
+        logger.info("/data exists! Contents: %s", os.listdir("/data"))
         if os.path.exists("/data/app_data"):
-            print("/data/app_data exists! Contents:", os.listdir("/data/app_data"))
+            logger.info("/data/app_data exists! Contents: %s", os.listdir("/data/app_data"))
         if os.path.exists("/data/app_data/users"):
-            print("/data/app_data/users exists! Contents:", os.listdir("/data/app_data/users"))
+            logger.info("/data/app_data/users exists! Contents: %s", os.listdir("/data/app_data/users"))
     else:
-        print("/data does NOT exist.")
+        logger.error("/data does NOT exist!")
         
-    print("Session configuration:")
-    print(f"SECRET_KEY is set: {bool(app.secret_key)}")
-    print(f"SESSION_TYPE: {app.config.get('SESSION_TYPE')}")
-    print(f"SESSION_FILE_DIR: {app.config.get('SESSION_FILE_DIR')}")
-    print(f"SESSION_PERMANENT: {app.config.get('SESSION_PERMANENT')}")
+    logger.info("Session configuration:")
+    logger.info("SECRET_KEY is set: %s", bool(app.secret_key))
+    logger.info("SESSION_TYPE: %s", app.config.get("SESSION_TYPE"))
+    logger.info("SESSION_FILE_DIR: %s", app.config.get("SESSION_FILE_DIR"))
+    logger.info("SESSION_PERMANENT: %s", app.config.get("SESSION_PERMANENT"))
     
-    app.run(host='0.0.0.0', port=7860)
+    app.run(host='0.0.0.0', port=7860, debug=True)  # Enable debug mode temporarily
