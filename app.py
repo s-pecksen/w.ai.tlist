@@ -143,18 +143,19 @@ login_manager.login_message = None
 login_manager.session_protection = "strong"
 
 # Define paths BEFORE session configuration
-PERSISTENT_STORAGE_PATH = "/data"
+PERSISTENT_STORAGE_PATH = os.path.join(os.getcwd(), "data")  # Changed from "/data" to use current working directory
 DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
 
 # Add debug logging for storage setup
 logger.info(f"Setting up persistent storage at: {PERSISTENT_STORAGE_PATH}")
+logger.info(f"Current working directory: {os.getcwd()}")
 if not os.path.exists(DIFF_STORE_PATH):
     try:
         os.makedirs(DIFF_STORE_PATH, exist_ok=True)
         logger.info(f"Created diff_store directory at: {DIFF_STORE_PATH}")
     except PermissionError:
         logger.error(f"Permission error creating diff_store directory: {DIFF_STORE_PATH}")
-        raise RuntimeError("Cannot create diff_store directory inside /data. Check permissions.")
+        raise RuntimeError("Cannot create diff_store directory. Check permissions.")
 
 # Add these session configurations AFTER path definition
 app.config["SESSION_TYPE"] = "filesystem"
@@ -252,18 +253,25 @@ class User(UserMixin):
 # --- User Management Functions ---
 def save_user(user):
     """Save user to JSON file"""
-    os.makedirs(os.path.join(users_dir, user.username), exist_ok=True)
-    user_file = os.path.join(users_dir, user.username, f"profile.json")
+    user_dir = os.path.join(users_dir, user.username)
+    logging.info(f"Attempting to create user directory at: {user_dir}")
+    os.makedirs(user_dir, exist_ok=True)
+    user_file = os.path.join(user_dir, f"profile.json")
+    logging.info(f"Attempting to save user profile to: {user_file}")
     save_encrypted_json(user.to_dict(), user_file)
+    logging.info(f"Successfully saved user profile for: {user.username}")
     return True
 
 
 def get_user_by_username(username):
     """Get user by username from JSON file"""
     user_file = os.path.join(users_dir, username, "profile.json")
+    logging.info(f"Attempting to load user profile from: {user_file}")
     user_data = load_decrypted_json(user_file)
     if not user_data:
+        logging.warning(f"No user data found at: {user_file}")
         return None
+    logging.info(f"Successfully loaded user profile for: {username}")
     return User.from_dict(user_data)
 
 
