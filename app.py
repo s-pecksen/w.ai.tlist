@@ -143,7 +143,7 @@ login_manager.login_message = None
 login_manager.session_protection = "strong"
 
 # Define paths BEFORE session configuration
-PERSISTENT_STORAGE_PATH = "/data"  # This matches the Dockerfile
+PERSISTENT_STORAGE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")  # Points to /data relative to app root
 DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
 
 # Add debug logging for storage setup
@@ -153,7 +153,7 @@ logger.info(f"Current working directory: {os.getcwd()}")
 # Check if /data exists and is writable
 if not os.path.exists(PERSISTENT_STORAGE_PATH):
     logger.error(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist!")
-    raise RuntimeError(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist. Please ensure the Docker container is properly configured.")
+    raise RuntimeError(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist. Please ensure the directory exists.")
 
 # Try to create the diff_store directory
 try:
@@ -173,13 +173,12 @@ app.config["SESSION_FILE_DIR"] = os.path.join(PERSISTENT_STORAGE_PATH, "flask_se
 logger.info(f"Session directory set to: {app.config['SESSION_FILE_DIR']}")
 
 # Define paths
-users_dir = os.path.join(PERSISTENT_STORAGE_PATH, "app_data", "users")
+users_dir = os.path.join(PERSISTENT_STORAGE_PATH, "users")  # Changed from app_data/users to just users
 logger.info(f"Users directory set to: {users_dir}")
 
 # Create users directory if it doesn't exist
 try:
-    os.makedirs(os.path.dirname(users_dir), exist_ok=True)  # for .../app_data
-    os.makedirs(users_dir, exist_ok=True)  # for .../users
+    os.makedirs(users_dir, exist_ok=True)  # Simplified path
     logger.info("Created users directory structure")
 except Exception as e:
     logger.error(f"Error creating users directory: {e}")
@@ -1431,18 +1430,7 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Error creating session directory: {e}")
         raise
-    
-    # Debug prints
-    logger.info("Root directory contents: %s", os.listdir("/"))
-    if os.path.exists("/data"):
-        logger.info("/data exists! Contents: %s", os.listdir("/data"))
-        if os.path.exists("/data/app_data"):
-            logger.info("/data/app_data exists! Contents: %s", os.listdir("/data/app_data"))
-        if os.path.exists("/data/app_data/users"):
-            logger.info("/data/app_data/users exists! Contents: %s", os.listdir("/data/app_data/users"))
-    else:
-        logger.error("/data does NOT exist!")
-        
+          
     logger.info("Session configuration:")
     logger.info("SECRET_KEY is set: %s", bool(app.secret_key))
     logger.info("SESSION_TYPE: %s", app.config.get("SESSION_TYPE"))
