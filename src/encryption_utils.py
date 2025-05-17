@@ -5,13 +5,20 @@ import io
 import logging
 from cryptography.fernet import Fernet
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Get encryption key from environment
 ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
 if not ENCRYPTION_KEY:
-    raise ValueError("CRITICAL: FLASK_APP_ENCRYPTION_KEY environment variable not set!")
+    logger.error("FLASK_APP_ENCRYPTION_KEY environment variable not set!")
+    raise ValueError("FLASK_APP_ENCRYPTION_KEY environment variable not set!")
+
 try:
     cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 except Exception as e:
-    raise ValueError(f"CRITICAL: Invalid FLASK_APP_ENCRYPTION_KEY. Error: {e}")
+    logger.error(f"Invalid FLASK_APP_ENCRYPTION_KEY: {e}")
+    raise ValueError(f"Invalid FLASK_APP_ENCRYPTION_KEY: {e}")
 
 def encrypt_data(data_bytes):
     """Encrypts bytes using the global cipher_suite."""
@@ -23,27 +30,39 @@ def decrypt_data(encrypted_data_bytes):
 
 def save_encrypted_json(data_dict, file_path):
     """Converts dict to JSON string, encrypts, and writes to file."""
-    json_string = json.dumps(data_dict, indent=4) # Keep indent for potential manual debugging if ever needed (on decrypted data)
-    data_bytes = json_string.encode('utf-8')
-    encrypted_bytes = encrypt_data(data_bytes)
-    with open(file_path, "wb") as f: # Write in binary mode
-        f.write(encrypted_bytes)
+    try:
+        json_string = json.dumps(data_dict, indent=4)
+        data_bytes = json_string.encode('utf-8')
+        encrypted_bytes = encrypt_data(data_bytes)
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        
+        with open(file_path, "wb") as f:
+            f.write(encrypted_bytes)
+        logger.info(f"Successfully saved encrypted data to {file_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving encrypted data to {file_path}: {e}")
+        return False
 
 def load_decrypted_json(file_path):
     """Reads encrypted file, decrypts, and loads JSON into dict."""
     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        logging.warning(f"File not found or empty, cannot decrypt JSON: {file_path}")
-        return None # Or appropriate default, like {}
+        logger.warning(f"File not found or empty: {file_path}")
+        return None
+        
     try:
-        with open(file_path, "rb") as f: # Read in binary mode
+        with open(file_path, "rb") as f:
             encrypted_bytes = f.read()
         decrypted_bytes = decrypt_data(encrypted_bytes)
         json_string = decrypted_bytes.decode('utf-8')
-        return json.loads(json_string)
+        data = json.loads(json_string)
+        logger.info(f"Successfully loaded encrypted data from {file_path}")
+        return data
     except Exception as e:
-        logging.error(f"Failed to load or decrypt JSON from {file_path}: {e}", exc_info=True)
-        # Depending on severity, you might want to raise an error or return a default
-        return None # Or appropriate default
+        logger.error(f"Error loading encrypted data from {file_path}: {e}")
+        return None
 
 def save_encrypted_csv(list_of_dicts, file_path, fieldnames):
     """Converts list of dicts to CSV string, encrypts, and writes to file."""

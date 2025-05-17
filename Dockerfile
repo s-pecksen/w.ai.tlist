@@ -16,10 +16,18 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create the persistent storage directory and set permissions
-RUN mkdir -p /data/app_data/users \
+RUN mkdir -p /data/users \
     && mkdir -p /data/flask_sessions \
     && mkdir -p /data/diff_store \
-    && chmod -R 777 /data \
+    # Set base permissions for /data (drwxr-xr-x)
+    && chmod 755 /data \
+    # Set permissions for users directory (drwxrwxr-x)
+    && chmod 775 /data/users \
+    # Set permissions for flask_sessions (drwxrwxr-x)
+    && chmod 775 /data/flask_sessions \
+    # Set permissions for diff_store (drwxrwxr-x)
+    && chmod 775 /data/diff_store \
+    # Set ownership for all data directories
     && chown -R nobody:nogroup /data
 
 # Copy requirements first to leverage Docker cache
@@ -32,7 +40,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Set permissions for the application directory
-RUN chmod -R 755 /app \
+# 755 for directories (drwxr-xr-x)
+RUN find /app -type d -exec chmod 755 {} \; \
+    # 644 for files (rw-r--r--)
+    && find /app -type f -exec chmod 644 {} \; \
+    # Make app.py executable
+    && chmod 755 /app/app.py \
+    # Set ownership
     && chown -R nobody:nogroup /app
 
 # Expose the Flask app port

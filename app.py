@@ -143,8 +143,9 @@ login_manager.login_message = None
 login_manager.session_protection = "strong"
 
 # Define paths BEFORE session configuration
-PERSISTENT_STORAGE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")  # Points to /data relative to app root
+PERSISTENT_STORAGE_PATH = os.path.join(os.path.dirname(__file__), "data")  # Points to /data relative to app root
 DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
+SESSION_DIR = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
 
 # Add debug logging for storage setup
 logger.info(f"Setting up persistent storage at: {PERSISTENT_STORAGE_PATH}")
@@ -155,22 +156,33 @@ if not os.path.exists(PERSISTENT_STORAGE_PATH):
     logger.error(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist!")
     raise RuntimeError(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist. Please ensure the directory exists.")
 
-# Try to create the diff_store directory
+# Create and verify session directory
 try:
-    os.makedirs(DIFF_STORE_PATH, exist_ok=True)
-    logger.info(f"Created diff_store directory at: {DIFF_STORE_PATH}")
-except PermissionError:
-    logger.error(f"Permission error creating diff_store directory: {DIFF_STORE_PATH}")
-    # Instead of raising an error, we'll log it and continue
-    # The directory might already exist with correct permissions
-    logger.info("Continuing without diff_store directory creation")
+    os.makedirs(SESSION_DIR, exist_ok=True)
+    # Test write permissions
+    test_file = os.path.join(SESSION_DIR, "test_write.tmp")
+    with open(test_file, "w") as f:
+        f.write("test")
+    os.remove(test_file)
+    logger.info(f"Session directory verified at: {SESSION_DIR}")
+except Exception as e:
+    logger.error(f"Error setting up session directory: {e}")
+    raise RuntimeError(f"Failed to set up session directory: {e}")
 
 # Add these session configurations AFTER path definition
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)  # Sessions last 7 days
-app.config["SESSION_FILE_DIR"] = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
+app.config["SESSION_FILE_DIR"] = SESSION_DIR
+app.config["SESSION_FILE_THRESHOLD"] = 500  # Maximum number of sessions
+app.config["SESSION_FILE_MODE"] = 0o600  # Secure file permissions
+app.config["SESSION_USE_SIGNER"] = True  # Sign the session cookie
+app.config["SESSION_COOKIE_SECURE"] = False  # Set to True in production with HTTPS
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
 logger.info(f"Session directory set to: {app.config['SESSION_FILE_DIR']}")
+logger.info(f"Session configuration: {app.config.get('SESSION_TYPE')}, {app.config.get('SESSION_PERMANENT')}, {app.config.get('SESSION_FILE_DIR')}")
 
 # Define paths
 users_dir = os.path.join(PERSISTENT_STORAGE_PATH, "users")  # Changed from app_data/users to just users
@@ -512,11 +524,16 @@ def login():
             login_user(user, remember=request.form.get("remember"))
             session.permanent = True  # Make the session permanent
             
+            # Force session save
+            session.modified = True
+            
             # Debug logging
             logger.info(f"User {username} logged in successfully")
             logger.info(f"Session after login: {dict(session)}")
             logger.info(f"User authenticated: {current_user.is_authenticated}")
             logger.info(f"Session ID: {session.sid if hasattr(session, 'sid') else 'No session ID'}")
+            logger.info(f"Session directory exists: {os.path.exists(app.config['SESSION_FILE_DIR'])}")
+            logger.info(f"Session directory contents: {os.listdir(app.config['SESSION_FILE_DIR']) if os.path.exists(app.config['SESSION_FILE_DIR']) else 'Directory not found'}")
             
             next_page = request.args.get("next")
             flash("Logged in successfully.", "success")
