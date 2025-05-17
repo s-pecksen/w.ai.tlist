@@ -1385,6 +1385,25 @@ def debug_write_test():
     except Exception as e:
         return f"Failed to write to {test_path}: {e}", 500
 
+@app.route("/debug/list_user_files/<username>")
+def debug_list_user_files(username):
+    user_dir = os.path.join(users_dir, username)
+    if not os.path.exists(user_dir):
+        return f"User directory {user_dir} does not exist.", 404
+    files = os.listdir(user_dir)
+    return jsonify({"user_dir": user_dir, "files": files})
+
+@app.route("/debug/show_profile/<username>")
+def debug_show_profile(username):
+    user_file = os.path.join(users_dir, username, "profile.json")
+    if not os.path.exists(user_file):
+        return f"Profile file {user_file} does not exist.", 404
+    try:
+        user_data = load_decrypted_json(user_file)
+        return jsonify(user_data)
+    except Exception as e:
+        return f"Error reading profile: {e}", 500
+
 if __name__ == "__main__":
     # Create session directory if it doesn't exist
     session_dir = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
