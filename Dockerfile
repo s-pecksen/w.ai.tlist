@@ -32,7 +32,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Set permissions for the application directory
-RUN chmod -R 755 /app
+RUN chmod -R 755 /app \
+    && chown -R nobody:nogroup /app
 
 # Expose the Flask app port
 EXPOSE 7860

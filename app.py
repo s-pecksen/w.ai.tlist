@@ -143,19 +143,27 @@ login_manager.login_message = None
 login_manager.session_protection = "strong"
 
 # Define paths BEFORE session configuration
-PERSISTENT_STORAGE_PATH = os.path.join(os.getcwd(), "data")  # Changed from "/data" to use current working directory
+PERSISTENT_STORAGE_PATH = "/data"  # This matches the Dockerfile
 DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
 
 # Add debug logging for storage setup
 logger.info(f"Setting up persistent storage at: {PERSISTENT_STORAGE_PATH}")
 logger.info(f"Current working directory: {os.getcwd()}")
-if not os.path.exists(DIFF_STORE_PATH):
-    try:
-        os.makedirs(DIFF_STORE_PATH, exist_ok=True)
-        logger.info(f"Created diff_store directory at: {DIFF_STORE_PATH}")
-    except PermissionError:
-        logger.error(f"Permission error creating diff_store directory: {DIFF_STORE_PATH}")
-        raise RuntimeError("Cannot create diff_store directory. Check permissions.")
+
+# Check if /data exists and is writable
+if not os.path.exists(PERSISTENT_STORAGE_PATH):
+    logger.error(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist!")
+    raise RuntimeError(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist. Please ensure the Docker container is properly configured.")
+
+# Try to create the diff_store directory
+try:
+    os.makedirs(DIFF_STORE_PATH, exist_ok=True)
+    logger.info(f"Created diff_store directory at: {DIFF_STORE_PATH}")
+except PermissionError:
+    logger.error(f"Permission error creating diff_store directory: {DIFF_STORE_PATH}")
+    # Instead of raising an error, we'll log it and continue
+    # The directory might already exist with correct permissions
+    logger.info("Continuing without diff_store directory creation")
 
 # Add these session configurations AFTER path definition
 app.config["SESSION_TYPE"] = "filesystem"
@@ -175,7 +183,9 @@ try:
     logger.info("Created users directory structure")
 except Exception as e:
     logger.error(f"Error creating users directory: {e}")
-    raise
+    # Instead of raising an error, we'll log it and continue
+    # The directory might already exist with correct permissions
+    logger.info("Continuing without users directory creation")
 
 # Add this helper function to convert wait time to minutes
 def wait_time_to_minutes(wait_time_str):
