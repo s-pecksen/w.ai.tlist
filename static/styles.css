@@ -1,0 +1,414 @@
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@500;600;700&display=swap');
+
+:root {
+  /* Color palette inspired by the logo */
+  --primary-blue: #3ea5ab;
+  --light-blue: #8CC7F3;
+  --softer-blue: #E5F2FB;
+  --navy: #1B4965;
+  --white: #FFFFFF;
+  --primary-hover: #2E7C7D;
+  
+  /* Font families */
+  --font-primary: 'Open Sans', sans-serif;
+  --font-headers: 'Montserrat', sans-serif;
+  --border-radius: 8px;
+
+  /* Urgency row styling */
+  --urgency-high-bg: #f8d7da;  /* Subtle red */
+  --urgency-medium-bg: #fff3cd; /* Subtle yellow */
+  --urgency-low-bg: #cfe2ff;   /* Subtle blue */
+  --urgency-high-hover: #f1c2c6;
+  --urgency-medium-hover: #ffeeba;
+  --urgency-low-hover: #bfd7ff;
+  --scheduled-bg: #e2e3e5; /* Bootstrap grey */
+  --scheduled-text: #6c757d; /* Muted text color */
+  --scheduled-hover: #d6d8db;
+  --emergency-bg: #f8d7da; /* Bootstrap red (same as high urgency) */
+  --emergency-hover: #f1c2c6;
+
+  --bg-image-url: url('/static/waitlist-background.png');
+  /* --bg-image-overlay: rgba(255, 255, 255, 0.75); */ /* REMOVED overlay */
+  --bg-main: #F5F5F5; /* Light grey fallback */
+  --primary-color: #587D71; /* Muted green from shadows */
+  --secondary-color: #4F6367; /* Slightly bluer green/grey */
+
+  /* Navigation bar styling */
+  --navbar-bg: #3ea5ab;
+  --navbar-text: var(--text-color-light); /* --text-color-light is #FFFFFF */
+  --accent-color: #A4B0A0; /* Lighter grey-green */
+
+  /* --- ADDED: Specific color for navbar links --- */
+  --navbar-link-color: #f8eddd;
+  /* --- Keep these for reference/other elements if needed --- */
+  --text-color-dark: #333333;
+  --text-color-light: #FFFFFF;
+}
+
+body {
+  font-family: var(--font-primary);
+  color: var(--text-color-dark);
+
+  /* --- Use simplified background - only image and fallback color --- */
+  background:
+    var(--bg-image-url)
+    center center / cover no-repeat fixed
+    var(--bg-main);
+  /* Removed !important as the simple version seemed to work initially */
+  /* --- END Simplified Background --- */
+
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+}
+
+/* --- REMOVE H1 Styling or ensure it doesn't conflict --- */
+/* H1 styling might not be needed anymore if replaced by logo */
+h1, h2 {
+  font-family: 'Montserrat', sans-serif;
+  color: var(--dark-blue); /* Keep for H2 */
+}
+
+/* Remove specific H1 style if logo replaces it */
+/*
+h1 {
+  font-size: 2.2rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+*/
+
+/* --- ADD Logo Styling --- */
+.header-logo {
+  display: block; /* Center using margin auto */
+  /* Reduce top/bottom margin significantly */
+  margin: 0 auto 1.5rem auto; /* Example: 0 top, auto left/right, 1.5rem bottom */
+  max-width: 250px; /* Maybe slightly smaller */
+  height: auto; /* Maintain aspect ratio */
+}
+
+.container {
+  max-width: 1200px;
+  /* Reduce top margin to bring container closer to logo/navbar */
+  margin: 1rem auto 2rem auto; /* Example: 1rem top, auto left/right, 2rem bottom */
+  padding: 2rem;
+  background-color: transparent;
+}
+
+.header {
+  font-family: var(--font-headers);
+  color: var(--navy);
+  font-size: 2.5rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+}
+
+.content {
+  font-family: var(--font-primary);
+  color: var(--navy);
+  line-height: 1.6;
+}
+
+.card {
+  background-color: var(--softer-blue);
+  border-radius: 12px;
+  padding: 2rem;
+  margin: 1rem 0;
+  box-shadow: 0 4px 6px rgba(43, 123, 185, 0.1);
+  transition: transform 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+.button {
+  /* REMOVED: !important from background-color */
+  background-color: var(--primary-blue);
+  color: var(--white);
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  border: none;
+  font-family: var(--font-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.button:hover {
+  /* REMOVED: !important from background-color */
+  background-color: var(--primary-hover);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem;
+  }
+  
+  .header {
+    font-size: 2rem;
+  }
+}
+
+.form-section, .waitlist-section {
+  background-color: var(--white);
+  border-radius: var(--border-radius);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  padding: 25px;
+}
+
+.form-section {
+  flex: 1;
+}
+
+.waitlist-section {
+  flex: 2;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+label {
+  color: var(--dark-blue);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+input, select, textarea {
+  padding: 10px;
+  border: 1px solid #E1E8F0;
+  border-radius: 4px;
+  font-family: 'Open Sans', sans-serif;
+  transition: border-color 0.3s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+}
+
+/* --- ADDED: Style for checked radio buttons --- */
+input[type="radio"]:checked {
+  /* UPDATED: Add !important */
+  accent-color: var(--primary-blue) !important; /* Use the primary color for the check accent */
+}
+
+button {
+  padding: 12px;
+  /* REMOVED: !important (again) */
+  background-color: var(--primary-blue);
+  color: var(--white);
+  border: none;
+  border-radius: 4px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  /* REMOVED: !important (again) */
+  background-color: var(--primary-hover);
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 15px;
+}
+
+th, td {
+  padding: 15px;
+  text-align: left;
+  border-bottom: 1px solid #E1E8F0;
+}
+
+th {
+  background-color: var(--light-gray);
+  color: var(--dark-blue);
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.high {
+  background-color: #FFF5F5;
+}
+
+.medium {
+  background-color: #FFFBEB;
+}
+
+.low {
+  background-color: #F0FDF4;
+}
+
+.scheduled {
+  text-decoration: line-through;
+  color: #888;
+  background-color: #F8FAFC;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.action-buttons button[style*="background-color: #f44336"] {
+  /* UPDATED: Add !important */
+  background-color: #EF4444 !important;
+}
+
+.action-buttons button[style*="background-color: #f44336"]:hover {
+  /* UPDATED: Add !important */
+  background-color: #DC2626 !important;
+}
+
+tr.emergency {
+  background-color: #FEE2E2 !important;
+}
+
+.wait-time {
+  font-size: 0.9em;
+  color: #64748B;
+}
+
+.dental-header {
+  background: var(--white);
+  padding: 2rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.logo-image {
+  width: 60px;
+  height: auto;
+}
+
+.practice-name {
+  font-family: 'Montserrat', sans-serif;
+  color: var(--dark-blue);
+  font-size: 2.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.subtitle {
+  font-family: 'Montserrat', sans-serif;
+  color: var(--primary-blue);
+  font-size: 1.2rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 0.5rem;
+}
+
+/* Main content area styling */
+.main-content {
+  background: var(--light-gray);
+  padding: 2rem;
+}
+
+/* Button styling */
+.cta-button {
+  /* UPDATED: Add !important */
+  background: var(--primary-blue) !important;
+  color: var(--white);
+  padding: 1rem 2rem;
+  border: none;
+  border-radius: 5px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.cta-button:hover {
+  /* UPDATED: Add !important */
+  background: var(--primary-hover) !important;
+}
+
+/* Text content styling */
+.content-text {
+  color: #333333;
+  font-family: 'Open Sans', sans-serif;
+  line-height: 1.6;
+}
+
+/* Urgency Row Styling */
+/* Apply background to the row and its cells for consistency */
+#waitlist-table tbody tr.urgency-high,
+#waitlist-table tbody tr.urgency-high > td {
+    background-color: var(--urgency-high-bg) !important;
+}
+
+#waitlist-table tbody tr.urgency-medium,
+#waitlist-table tbody tr.urgency-medium > td {
+    background-color: var(--urgency-medium-bg) !important;
+}
+
+#waitlist-table tbody tr.urgency-low,
+#waitlist-table tbody tr.urgency-low > td {
+    background-color: var(--urgency-low-bg) !important;
+}
+
+/* Ensure scheduled style overrides urgency */
+#waitlist-table tbody tr.table-secondary,
+#waitlist-table tbody tr.table-secondary > td {
+    background-color: var(--scheduled-bg) !important;
+    color: var(--scheduled-text) !important;
+}
+
+/* Ensure emergency style overrides urgency */
+/* Note: .table-danger already exists in Bootstrap, but we ensure it overrides */
+#waitlist-table tbody tr.table-danger,
+#waitlist-table tbody tr.table-danger > td {
+    background-color: var(--emergency-bg) !important;
+}
+
+/* Hover effects - Target the row */
+.table-hover > tbody > tr.urgency-high:hover,
+.table-hover > tbody > tr.urgency-high:hover > td {
+    background-color: var(--urgency-high-hover) !important;
+}
+.table-hover > tbody > tr.urgency-medium:hover,
+.table-hover > tbody > tr.urgency-medium:hover > td {
+    background-color: var(--urgency-medium-hover) !important;
+}
+.table-hover > tbody > tr.urgency-low:hover,
+.table-hover > tbody > tr.urgency-low:hover > td {
+    background-color: var(--urgency-low-hover) !important;
+}
+.table-hover > tbody > tr.table-secondary:hover,
+.table-hover > tbody > tr.table-secondary:hover > td {
+    background-color: var(--scheduled-hover) !important;
+}
+.table-hover > tbody > tr.table-danger:hover,
+.table-hover > tbody > tr.table-danger:hover > td {
+    background-color: var(--emergency-hover) !important;
+}
+
+/* Navigation bar styling */
+.navbar {
+  /* UPDATED: Add !important to ensure this rule takes precedence */
+  background-color: var(--navbar-bg) !important;
+  box-shadow: var(--box-shadow-light);
+}
+
+.navbar-brand, .nav-link {
+  /* Use the new variable and add !important back */
+  color: var(--navbar-link-color) !important;
+  font-weight: 500;
+}
+
+.nav-link:hover {
+  /* Use white or a slightly lighter color for hover */
+  color: var(--text-color-light) !important; /* Use white for hover */
+}
