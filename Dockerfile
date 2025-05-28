@@ -28,7 +28,8 @@ RUN mkdir -p /data/users \
     # Set permissions for diff_store (drwxrwxr-x)
     && chmod 775 /data/diff_store \
     # Set ownership for all data directories
-    && chown -R nobody:nogroup /data
+    #&& chown -R nobody:nogroup /data
+    && chmod -R 777 /data
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
