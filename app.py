@@ -143,7 +143,7 @@ login_manager.login_message = None
 login_manager.session_protection = "strong"
 
 # Define paths BEFORE session configuration
-PERSISTENT_STORAGE_PATH = os.path.join(os.path.dirname(__file__), "data")  # Points to /data relative to app root
+PERSISTENT_STORAGE_PATH = os.environ.get("PERSISTENT_STORAGE_PATH", os.path.join(os.path.dirname(__file__), "data"))
 DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
 SESSION_DIR = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
 
