@@ -7,7 +7,7 @@ from .encryption_utils import save_encrypted_json, load_decrypted_json
 logger = logging.getLogger(__name__)
 
 # Get the path relative to the application root
-PERSISTENT_STORAGE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+PERSISTENT_STORAGE_PATH = os.environ.get("PERSISTENT_STORAGE_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"))
 DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
 
 def ensure_diff_store_exists():
