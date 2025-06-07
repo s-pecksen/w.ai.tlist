@@ -10,11 +10,13 @@ from flask import (
 )
 from datetime import datetime, date, timedelta
 import os
+from dotenv import load_dotenv
 import csv
 from io import StringIO
-from src.managers import ProviderManager, PatientWaitlistManager, CancelledSlotManager
+from src.db_managers import DBProviderManager, DBPatientWaitlistManager, DBCancelledSlotManager
+from src.database import init_db, db
 import logging
-import json  # Needed for handling availability JSON in CSV upload
+import json
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -24,9 +26,12 @@ from flask_login import (
     current_user,
 )
 from cryptography.fernet import Fernet
-import io # For StringIO
+import io
 import hashlib
 from src.diffstore import save_to_diff_store, load_from_diff_store
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -38,102 +43,22 @@ logger = logging.getLogger(__name__)
 # --- Encryption Setup ---
 ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
 if not ENCRYPTION_KEY:
-    # For development, you might allow a default key or a more graceful startup,
-    # but for production, it's better to fail if the key isn't set.
-    # For this guide, we'll raise an error to ensure it's set.
     raise ValueError("CRITICAL: FLASK_APP_ENCRYPTION_KEY environment variable not set!")
 try:
     cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 except Exception as e:
     raise ValueError(f"CRITICAL: Invalid FLASK_APP_ENCRYPTION_KEY. It must be a 32 url-safe base64-encoded bytes. Error: {e}")
 
-
-# --- Encryption Helper Functions ---
-def encrypt_data(data_bytes):
-    """Encrypts bytes using the global cipher_suite."""
-    return cipher_suite.encrypt(data_bytes)
-
-def decrypt_data(encrypted_data_bytes):
-    """Decrypts bytes using the global cipher_suite. Returns original bytes."""
-    return cipher_suite.decrypt(encrypted_data_bytes)
-
-def save_encrypted_json(data_dict, file_path):
-    """Converts dict to JSON string, encrypts, and writes to file."""
-    json_string = json.dumps(data_dict, indent=4) # Keep indent for potential manual debugging if ever needed (on decrypted data)
-    data_bytes = json_string.encode('utf-8')
-    encrypted_bytes = encrypt_data(data_bytes)
-    with open(file_path, "wb") as f: # Write in binary mode
-        f.write(encrypted_bytes)
-
-def load_decrypted_json(file_path):
-    """Reads encrypted file, decrypts, and loads JSON into dict."""
-    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        logging.warning(f"File not found or empty, cannot decrypt JSON: {file_path}")
-        return None # Or appropriate default
-    try:
-        with open(file_path, "rb") as f: # Read in binary mode
-            encrypted_bytes = f.read()
-        decrypted_bytes = decrypt_data(encrypted_bytes)
-        json_string = decrypted_bytes.decode('utf-8')
-        return json.loads(json_string)
-    except Exception as e:
-        logging.error(f"Failed to load or decrypt JSON from {file_path}: {e}", exc_info=True)
-        # Depending on severity, you might want to raise an error or return a default
-        return None # Or appropriate default
-
-def save_encrypted_csv(list_of_dicts, file_path, fieldnames):
-    """Converts list of dicts to CSV string, encrypts, and writes to file."""
-    string_io = io.StringIO()
-    writer = csv.DictWriter(string_io, fieldnames=fieldnames)
-    writer.writeheader()
-    if list_of_dicts: # Ensure writerows is not called with None or empty if that's an issue for your csv lib version
-        writer.writerows(list_of_dicts)
-    csv_string = string_io.getvalue()
-    
-    data_bytes = csv_string.encode('utf-8')
-    encrypted_bytes = encrypt_data(data_bytes)
-    with open(file_path, "wb") as f: # Write in binary mode
-        f.write(encrypted_bytes)
-
-def load_decrypted_csv(file_path, fieldnames_for_empty_file_check=None):
-    """Reads encrypted file, decrypts, and loads CSV into list of dicts."""
-    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        logging.info(f"CSV file not found or empty: {file_path}. Returning empty list.")
-        # If an empty file should still have headers upon first creation (unencrypted), this part might need adjustment
-        # For now, if file is empty, assume no data.
-        return []
-    try:
-        with open(file_path, "rb") as f: # Read in binary mode
-            encrypted_bytes = f.read()
-        
-        decrypted_bytes = decrypt_data(encrypted_bytes)
-        csv_string = decrypted_bytes.decode('utf-8')
-        
-        # Handle cases where the decrypted string might be empty or just whitespace
-        if not csv_string.strip():
-            logging.info(f"Decrypted CSV content is empty for {file_path}. Returning empty list.")
-            return []
-            
-        string_io = io.StringIO(csv_string)
-        reader = csv.DictReader(string_io)
-        # Ensure fieldnames are present, important for DictReader
-        if not reader.fieldnames and fieldnames_for_empty_file_check:
-             logging.warning(f"Decrypted CSV for {file_path} has no header. Using provided fieldnames. This might indicate an issue if data was expected.")
-             # This is a tricky case. If the file was truly empty and encrypted, it would decrypt to empty.
-             # If it had headers, it should have them. If you expect headers even if empty data,
-             # the save_encrypted_csv should ensure headers are always written.
-             # For now, we will rely on DictReader to infer or fail if no headers and no data.
-             # If DictReader fails on empty string_io with no headers, it will be caught by the general exception.
-        
-        return list(reader)
-    except Exception as e:
-        logging.error(f"Failed to load or decrypt CSV from {file_path}: {e}", exc_info=True)
-        # Depending on severity, you might want to raise an error or return a default
-        return [] # Return empty list on error
-
 # --- Flask App Initialization ---
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
+
+# Configure SQLite database
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'DATABASE_URL',
+    f'sqlite:///{os.path.join(PERSISTENT_STORAGE_PATH, "app.db")}'
+)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize Flask-Login
 login_manager = LoginManager()
@@ -143,9 +68,15 @@ login_manager.login_message = None
 login_manager.session_protection = "strong"
 
 # Define paths BEFORE session configuration
-PERSISTENT_STORAGE_PATH = os.environ.get("PERSISTENT_STORAGE_PATH", os.path.join(os.path.dirname(__file__), "data"))
+# Use AppData on Windows, fallback to user's home directory
+if os.name == 'nt':  # Windows
+    PERSISTENT_STORAGE_PATH = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'WaitlistApp')
+else:  # Unix-like
+    PERSISTENT_STORAGE_PATH = os.path.join(os.path.expanduser('~'), '.waitlistapp')
+
 DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
 SESSION_DIR = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
+USERS_DIR = os.path.join(PERSISTENT_STORAGE_PATH, "users")
 
 # Add debug logging for storage setup
 logger.info(f"Setting up persistent storage at: {PERSISTENT_STORAGE_PATH}")
@@ -153,12 +84,18 @@ logger.info(f"Current working directory: {os.getcwd()}")
 
 # Check if /data exists and is writable
 if not os.path.exists(PERSISTENT_STORAGE_PATH):
-    logger.error(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist!")
-    raise RuntimeError(f"Persistent storage path {PERSISTENT_STORAGE_PATH} does not exist. Please ensure the directory exists.")
+    logger.info(f"Creating persistent storage directory at: {PERSISTENT_STORAGE_PATH}")
+    try:
+        os.makedirs(PERSISTENT_STORAGE_PATH, exist_ok=True)
+        os.makedirs(USERS_DIR, exist_ok=True)
+        os.makedirs(SESSION_DIR, exist_ok=True)
+        os.makedirs(DIFF_STORE_PATH, exist_ok=True)
+    except Exception as e:
+        logger.error(f"Error creating persistent storage directories: {e}")
+        raise RuntimeError(f"Failed to create persistent storage directories: {e}")
 
 # Create and verify session directory
 try:
-    os.makedirs(SESSION_DIR, exist_ok=True)
     # Test write permissions
     test_file = os.path.join(SESSION_DIR, "test_write.tmp")
     with open(test_file, "w") as f:
@@ -180,47 +117,11 @@ app.config["SESSION_USE_SIGNER"] = True  # Sign the session cookie
 app.config["SESSION_COOKIE_SECURE"] = False  # Set to True in production with HTTPS
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERSISTENT_STORAGE_PATH"] = PERSISTENT_STORAGE_PATH
+app.config["USERS_DIR"] = USERS_DIR
 
-logger.info(f"Session directory set to: {app.config['SESSION_FILE_DIR']}")
-logger.info(f"Session configuration: {app.config.get('SESSION_TYPE')}, {app.config.get('SESSION_PERMANENT')}, {app.config.get('SESSION_FILE_DIR')}")
-
-# Define paths
-users_dir = os.path.join(PERSISTENT_STORAGE_PATH, "users")  # Changed from app_data/users to just users
-logger.info(f"Users directory set to: {users_dir}")
-
-# Create users directory if it doesn't exist
-try:
-    os.makedirs(users_dir, exist_ok=True)  # Simplified path
-    logger.info("Created users directory structure")
-except Exception as e:
-    logger.error(f"Error creating users directory: {e}")
-    # Instead of raising an error, we'll log it and continue
-    # The directory might already exist with correct permissions
-    logger.info("Continuing without users directory creation")
-
-# Add this helper function to convert wait time to minutes
-def wait_time_to_minutes(wait_time_str):
-    """Converts the wait time string (now expected as 'X days') to total minutes for sorting."""
-    days = wait_time_to_days(wait_time_str) # Reuse the days helper
-    # Convert days to minutes
-    total_minutes = days * 24 * 60
-    return total_minutes
-
-
-# Add this helper function to convert wait time to days
-def wait_time_to_days(wait_time_str):
-    """Extracts the number of days waited from the wait time string (e.g., 'X days')."""
-    if not isinstance(wait_time_str, str) or not wait_time_str.endswith(" days"):
-        return 0  # Return 0 if format invalid or input not string
-
-    try:
-        days_str = wait_time_str.split(" days")[0]
-        days = int(days_str.strip())
-        return days
-    except (ValueError, IndexError):
-        logging.warning(f"Warning: Could not parse days from wait_time_str '{wait_time_str}'.")
-        return 0 # Return 0 on parsing error
-
+# Initialize the database
+init_db(app)
 
 # --- User Class ---
 class User(UserMixin):
@@ -270,11 +171,10 @@ class User(UserMixin):
             appointment_types_data=data.get("appointment_types_data"),
         )
 
-
 # --- User Management Functions ---
 def save_user(user):
     """Save user to JSON file"""
-    user_dir = os.path.join(users_dir, user.username)
+    user_dir = os.path.join(USERS_DIR, user.username)
     logging.info(f"Attempting to create user directory at: {user_dir}")
     os.makedirs(user_dir, exist_ok=True)
     user_file = os.path.join(user_dir, f"profile.json")
@@ -283,10 +183,9 @@ def save_user(user):
     logging.info(f"Successfully saved user profile for: {user.username}")
     return True
 
-
 def get_user_by_username(username):
     """Get user by username from JSON file"""
-    user_file = os.path.join(users_dir, username, "profile.json")
+    user_file = os.path.join(USERS_DIR, username, "profile.json")
     logging.info(f"Attempting to load user profile from: {user_file}")
     user_data = load_decrypted_json(user_file)
     if not user_data:
@@ -295,32 +194,29 @@ def get_user_by_username(username):
     logging.info(f"Successfully loaded user profile for: {username}")
     return User.from_dict(user_data)
 
-
 def get_user_by_id(user_id):
     """Get user by ID from JSON files"""
     # Since we don't have an index, we need to scan all user directories
-    if not os.path.exists(users_dir):
+    if not os.path.exists(USERS_DIR):
         return None
 
-    for username_folder in os.listdir(users_dir): # Changed variable name for clarity
-        user_folder_path = os.path.join(users_dir, username_folder)
+    for username_folder in os.listdir(USERS_DIR):
+        user_folder_path = os.path.join(USERS_DIR, username_folder)
         if os.path.isdir(user_folder_path):
             profile_path = os.path.join(user_folder_path, "profile.json")
-            if os.path.exists(profile_path): # Check existence before trying to load
+            if os.path.exists(profile_path):
                 try:
-                    user_data = load_decrypted_json(profile_path) # Decrypt here
+                    user_data = load_decrypted_json(profile_path)
                     if user_data and str(user_data.get("id")) == str(user_id):
                         return User.from_dict(user_data)
-                except Exception as e: # Catch errors from decryption or User.from_dict
+                except Exception as e:
                     logging.error(f"Error processing user file {profile_path} for ID {user_id}: {e}")
     return None
 
-
 def username_exists(username):
     """Check if username exists"""
-    user_dir = os.path.join(users_dir, username)
+    user_dir = os.path.join(USERS_DIR, username)
     return os.path.exists(user_dir)
-
 
 # Flask-Login user loader callback
 @login_manager.user_loader
@@ -334,6 +230,14 @@ def load_user(user_id):
         logging.debug(f"No user found for ID: {user_id}")
     return user
 
+# Function to get user-specific managers
+def get_user_managers(username):
+    """Get managers initialized with user-specific data paths"""
+    return (
+        DBProviderManager(username),
+        DBPatientWaitlistManager(username),
+        DBCancelledSlotManager(username)
+    )
 
 # Add Registration Route
 @app.route("/register", methods=["GET", "POST"])
@@ -407,7 +311,7 @@ def register():
 
         try:
             # Create user directory
-            user_dir = os.path.join(users_dir, username)
+            user_dir = os.path.join(USERS_DIR, username)
             os.makedirs(user_dir, exist_ok=True)
             logging.info(f"Created user directory at: {user_dir}")
 
@@ -431,7 +335,7 @@ def register():
             # --- MODIFICATION END for provider.csv ---
 
             # Instantiate manager AFTER creating the encrypted file
-            user_provider_manager = ProviderManager(provider_file=user_provider_file)
+            user_provider_manager = DBProviderManager(username)
 
             # Add providers from registration form
             providers_added_count = 0
@@ -462,7 +366,7 @@ def register():
 
             # New code:
             # Instantiate a temporary manager to get fieldnames (its load method handles non-existent files gracefully)
-            wl_mgr_fieldnames = PatientWaitlistManager(waitlist_file=get_user_data_path(username, "_temp_wl_for_fields.csv")).fieldnames
+            wl_mgr_fieldnames = DBPatientWaitlistManager(username).fieldnames
             save_encrypted_csv([], waitlist_file, fieldnames=wl_mgr_fieldnames)
             # --- MODIFICATION END for waitlist.csv ---
 
@@ -478,7 +382,7 @@ def register():
 
             # New code:
             # Instantiate a temporary manager to get headers
-            slot_mgr_headers = CancelledSlotManager(slots_file=get_user_data_path(username, "_temp_cs_for_fields.csv")).headers
+            slot_mgr_headers = DBCancelledSlotManager(username).headers
             save_encrypted_csv([], slots_file, fieldnames=slot_mgr_headers)
             # --- MODIFICATION END for cancelled.csv ---
 
@@ -657,36 +561,9 @@ def slots():
 # Create user-specific paths for data files
 def get_user_data_path(username, filename):
     """Get path to a user-specific data file"""
-    user_dir = os.path.join(users_dir, username)
+    user_dir = os.path.join(USERS_DIR, username)
     os.makedirs(user_dir, exist_ok=True)
     return os.path.join(user_dir, filename)
-
-
-# Function to get user-specific managers
-def get_user_managers(username):
-    """Get managers initialized with user-specific data paths"""
-    user_dir = os.path.join(users_dir, username)
-    os.makedirs(user_dir, exist_ok=True)
-
-    # Initialize managers with user-specific file paths
-    user_provider_manager = ProviderManager(
-        provider_file=get_user_data_path(username, "provider.csv")
-    )
-    user_waitlist_manager = PatientWaitlistManager(
-        waitlist_file=get_user_data_path(username, "waitlist.csv")
-    )
-    user_slot_manager = CancelledSlotManager(
-        slots_file=get_user_data_path(username, "cancelled.csv")
-    )
-
-    return user_provider_manager, user_waitlist_manager, user_slot_manager
-
-
-# Global managers for routes that don't have current_user context yet
-# These will be replaced with user-specific managers in protected routes
-provider_manager = ProviderManager()
-waitlist_manager = PatientWaitlistManager()
-slot_manager = CancelledSlotManager()
 
 
 # Modify Index Route (Example of protecting and using current_user)
@@ -1411,7 +1288,7 @@ def debug_session():
 
 @app.route("/debug/write_test")
 def debug_write_test():
-    test_path = os.path.join(users_dir, "test_write.txt")
+    test_path = os.path.join(USERS_DIR, "test_write.txt")
     try:
         with open(test_path, "w") as f:
             f.write("test")
@@ -1421,7 +1298,7 @@ def debug_write_test():
 
 @app.route("/debug/list_user_files/<username>")
 def debug_list_user_files(username):
-    user_dir = os.path.join(users_dir, username)
+    user_dir = os.path.join(USERS_DIR, username)
     if not os.path.exists(user_dir):
         return f"User directory {user_dir} does not exist.", 404
     files = os.listdir(user_dir)
@@ -1429,7 +1306,7 @@ def debug_list_user_files(username):
 
 @app.route("/debug/show_profile/<username>")
 def debug_show_profile(username):
-    user_file = os.path.join(users_dir, username, "profile.json")
+    user_file = os.path.join(USERS_DIR, username, "profile.json")
     if not os.path.exists(user_file):
         return f"Profile file {user_file} does not exist.", 404
     try:
