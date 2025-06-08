@@ -1,6 +1,296 @@
 # Deployment Guide - Supabase Integration
 
-This guide covers deploying the Waitlist Management application using Supabase for the database and cloud platforms for hosting.
+This guide covers both local development setup and deploying the Waitlist Management application using Supabase for the database and cloud platforms for hosting.
+
+## Overview
+
+- **Database**: PostgreSQL (local) or Supabase PostgreSQL (cloud)
+- **Backend API**: FastAPI with Python
+- **Frontend**: Next.js/React application
+
+## Local Development Setup
+
+### Prerequisites for Local Development
+
+1. Python 3.8+ installed
+2. Node.js 16+ and npm installed
+3. PostgreSQL installed locally (or use Docker/Supabase for just the database)
+4. Git
+
+### Step 1: Clone and Setup Repository
+
+```bash
+# Clone the repository
+git clone <your-repository-url>
+cd w.ai.tlist
+
+# Create Python virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+# On macOS/Linux:
+source .venv/bin/activate
+# On Windows:
+# .venv\Scripts\activate
+
+# Install Python dependencies
+Make install-dev
+```
+
+### Step 2: Set Up Local Database - Docker
+
+#### Option B: PostgreSQL with Docker (Database Only)
+
+```bash
+# Run PostgreSQL in Docker
+docker-compose build
+docker-compose up
+```
+
+### Step 2: Set Up Remote Database - Supabase
+
+
+
+### Step 3: Configure Environment Variables
+
+1. **Copy environment template**:
+   ```bash
+   cp env.example env
+   ```
+
+2. **Edit `env` file**:
+   ```env
+   # Database
+   DATABASE_URL=postgresql+asyncpg://waitlist_user:your_password@localhost:5432/waitlist_db
+   
+   # JWT Configuration
+   JWT_SECRET_KEY=your-super-secret-jwt-key-for-development
+   JWT_ALGORITHM=HS256
+   JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
+   
+   # Environment
+   ENVIRONMENT=development
+   HOST=0.0.0.0
+   PORT=8000
+   
+   # CORS (for local frontend)
+   CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+   
+   # Optional: Enable SQL logging for debugging
+   SQL_ECHO=false
+   ```
+
+
+```bash
+# Make sure virtual environment is activated
+source .venv/bin/activate  # On macOS/Linux
+# .venv\Scripts\activate    # On Windows
+
+# Run database migrations
+alembic upgrade head
+
+# Verify tables were created
+psql -U waitlist_user -d waitlist_db -c "\dt"
+```
+
+### Step 5: Start Backend Server
+
+```bash
+# Option 1: Direct Python execution
+python main.py
+
+# Option 2: Using uvicorn directly
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Option 3: Using the Makefile (if available)
+make dev
+```
+
+The backend will be available at: `http://localhost:8000`
+- API Documentation: `http://localhost:8000/docs`
+- Health Check: `http://localhost:8000/health`
+
+### Step 6: Set Up and Start Frontend
+
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install Node.js dependencies
+npm install
+
+# Create environment file for frontend
+cat > .env.local << EOF
+NEXT_PUBLIC_API_URL=http://localhost:8000
+EOF
+
+# Start development server
+npm run dev
+```
+
+The frontend will be available at: `http://localhost:3000`
+
+### Step 7: Verify Local Setup
+
+1. **Backend Health Check**:
+   ```bash
+   curl http://localhost:8000/health
+   ```
+   Should return: `{"status":"healthy","database":"connected","timestamp":"..."}`
+
+2. **Frontend Access**:
+   - Open `http://localhost:3000` in your browser
+   - Try registering a new user
+   - Test login functionality
+
+### Development Workflow
+
+#### Starting Services
+
+Create a simple script to start both services:
+
+```bash
+# create start-dev.sh
+#!/bin/bash
+echo "Starting local development environment..."
+
+# Start backend in background
+echo "Starting backend..."
+source .venv/bin/activate
+python main.py &
+BACKEND_PID=$!
+
+# Start frontend in background
+echo "Starting frontend..."
+cd frontend
+npm run dev &
+FRONTEND_PID=$!
+
+echo "Backend running on http://localhost:8000"
+echo "Frontend running on http://localhost:3000"
+echo "Press Ctrl+C to stop both services"
+
+# Wait for Ctrl+C
+trap "kill $BACKEND_PID $FRONTEND_PID; exit" INT
+wait
+```
+
+Make it executable and run:
+```bash
+chmod +x start-dev.sh
+./start-dev.sh
+```
+
+#### Using VS Code Launch Configuration
+
+Create `.vscode/launch.json`:
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Start Backend (FastAPI)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/env",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python"
+        },
+        {
+            "name": "Start Frontend (Next.js)",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["run", "dev"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/frontend"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Start Full Stack",
+            "configurations": ["Start Backend (FastAPI)", "Start Frontend (Next.js)"],
+            "stopAll": true
+        }
+    ]
+}
+```
+
+#### Database Management
+
+```bash
+# Reset database (careful - this deletes all data!)
+alembic downgrade base
+alembic upgrade head
+
+# Create new migration after model changes
+alembic revision --autogenerate -m "Description of changes"
+alembic upgrade head
+
+# View migration history
+alembic history
+
+# Check current migration version
+alembic current
+```
+
+#### Common Development Commands
+
+```bash
+# Backend commands
+source .venv/bin/activate        # Activate virtual environment
+pip install -r requirements.txt  # Install/update dependencies
+python main.py                   # Start backend
+alembic upgrade head             # Apply database migrations
+
+# Frontend commands
+cd frontend
+npm install                      # Install/update dependencies
+npm run dev                      # Start development server
+npm run build                    # Build for production
+npm run start                    # Start production server
+```
+
+### Troubleshooting Local Development
+
+1. **Port Already in Use**:
+   ```bash
+   # Kill process using port 8000
+   lsof -ti:8000 | xargs kill -9
+   
+   # Kill process using port 3000
+   lsof -ti:3000 | xargs kill -9
+   ```
+
+2. **Database Connection Issues**:
+   - Check PostgreSQL is running: `brew services list | grep postgres`
+   - Verify connection: `psql -U waitlist_user -d waitlist_db`
+   - Check DATABASE_URL in env file
+
+3. **Virtual Environment Issues**:
+   ```bash
+   # Recreate virtual environment
+   deactivate
+   rm -rf .venv
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+4. **Frontend Build Issues**:
+   ```bash
+   # Clear npm cache and reinstall
+   cd frontend
+   rm -rf node_modules package-lock.json
+   npm cache clean --force
+   npm install
+   ```
+
+## Cloud Deployment
 
 ## Overview
 

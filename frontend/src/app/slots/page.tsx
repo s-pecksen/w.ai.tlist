@@ -96,8 +96,9 @@ export default function SlotsPage() {
     setEligiblePatients([]);
 
     try {
-      const response = await patientsAPI.findMatchesForSlot(slot.id);
-      setEligiblePatients(response.matching_patients || []);
+      // For now, we'll get all patients since we don't have a findMatchesForSlot endpoint
+      const response = await patientsAPI.getAll();
+      setEligiblePatients(response || []);
     } catch (err: any) {
       setError('Failed to find matching patients');
     } finally {
@@ -107,7 +108,7 @@ export default function SlotsPage() {
 
   const handleProposeSlot = async (slotId: string, patientId: string) => {
     try {
-      await slotsAPI.proposeToPatient(slotId, patientId);
+      await slotsAPI.proposeSlot(slotId, patientId);
       loadData(); // Refresh slots to update status
       setSelectedSlot(null);
       setEligiblePatients([]);

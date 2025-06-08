@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    environment:
+      # Use your Supabase connection string here
+      DATABASE_URL: ""
+      JWT_SECRET_KEY: "secret"
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      ENVIRONMENT: development
+      CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000"]'
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+
+  frontend:
+    build: 
+      context: ./frontend
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+
+# To use this file:
+# 1. Replace [YOUR-PASSWORD] and [YOUR-PROJECT-REF] with your Supabase credentials
+# 2. Run: docker-compose up 

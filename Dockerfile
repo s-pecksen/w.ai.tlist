@@ -1,5 +1,5 @@
-# Use an official Python image as the base
-FROM python:3.13-slim
+# Use Python 3.11 instead of 3.13 for better package compatibility
+FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /app/data \
     && chmod 755 /app/data
 
-# Copy pyproject.toml first to leverage Docker cache
-COPY pyproject.toml .
+# Copy pyproject.toml and README.md first to leverage Docker cache
+COPY pyproject.toml README.md ./
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -e .
@@ -33,7 +33,7 @@ COPY . .
 RUN find /app -type d -exec chmod 755 {} \; \
     # 644 for files (rw-r--r--)
     && find /app -type f -exec chmod 644 {} \; \
-    # Make app.py executable
+    # Make main.py executable
     && chmod 755 /app/main.py \
     # Set ownership
     && chown -R nobody:nogroup /app

@@ -66,6 +66,8 @@ dmypy.json
 # Documentation
 docs/
 *.md
+# But include README.md for Docker build
+!README.md
 
 # Data directories
 data/

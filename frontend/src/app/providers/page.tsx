@@ -64,7 +64,10 @@ export default function ProvidersPage() {
   const handleRemoveProvider = async (provider: Provider) => {
     if (confirm(`Are you sure you want to remove ${provider.name}?`)) {
       try {
-        await providersAPI.remove(provider.first_name, provider.last_initial);
+        await providersAPI.remove({ 
+          first_name: provider.first_name, 
+          last_initial: provider.last_initial 
+        });
         setProviders(providers.filter(p => p.id !== provider.id));
       } catch (err: any) {
         setError('Failed to remove provider');
