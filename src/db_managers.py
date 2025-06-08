@@ -3,104 +3,216 @@ import logging
 import uuid
 import json
 from typing import List, Dict, Any, Optional
-from .database import db, Provider, Patient, CancelledSlot
-from cryptography.fernet import Fernet
-from sqlalchemy.types import TypeDecorator, String
-import os
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, delete
+from sqlalchemy.orm import selectinload
+from src.models import User, Provider, Patient, CancelledSlot
 
-class EncryptedString(TypeDecorator):
-    impl = String
-    
-    def __init__(self, key=None):
-        super().__init__()
-        self.key = key or os.environ.get("FLASK_APP_ENCRYPTION_KEY")
-        self.cipher_suite = Fernet(self.key.encode())
-    
-    def process_bind_param(self, value, dialect):
-        if value is not None:
-            return self.cipher_suite.encrypt(value.encode()).decode()
-        return value
-    
-    def process_result_value(self, value, dialect):
-        if value is not None:
-            return self.cipher_suite.decrypt(value.encode()).decode()
-        return value
+logger = logging.getLogger(__name__)
+
 
 class DBProviderManager:
     """Manages providers using the database."""
 
-    def __init__(self, user_id: str):
-        """Initialize with user ID."""
+    def __init__(self, user_id: str, db_session: AsyncSession):
+        """Initialize with user ID and database session."""
         self.user_id = user_id
+        self.db = db_session
 
-    def get_provider_list(self) -> List[Dict[str, Any]]:
+    async def get_provider_list(self) -> List[Dict[str, Any]]:
         """Get all providers for the current user."""
-        providers = Provider.query.filter_by(user_id=self.user_id).all()
-        return [p.to_dict() for p in providers]
+        try:
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return []
 
-    def add_provider(self, first_name: str, last_initial: Optional[str] = None) -> bool:
+            # Get providers for the user
+            result = await self.db.execute(
+                select(Provider).where(Provider.user_id == user.id)
+            )
+            providers = result.scalars().all()
+            
+            return [
+                {
+                    'id': p.id,
+                    'name': f"{p.first_name} {p.last_initial}" if p.last_initial else p.first_name,
+                    'first_name': p.first_name,
+                    'last_initial': p.last_initial
+                }
+                for p in providers
+            ]
+        except Exception as e:
+            logger.error(f"Error getting provider list: {e}", exc_info=True)
+            return []
+
+    async def add_provider(self, first_name: str, last_initial: Optional[str] = None) -> bool:
         """Add a new provider."""
         try:
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
             # Check if provider already exists
-            existing = Provider.query.filter_by(
-                user_id=self.user_id,
-                first_name=first_name,
-                last_initial=last_initial
-            ).first()
+            result = await self.db.execute(
+                select(Provider).where(
+                    Provider.user_id == user.id,
+                    Provider.first_name == first_name,
+                    Provider.last_initial == (last_initial or "")
+                )
+            )
+            existing = result.scalar_one_or_none()
             
             if existing:
                 return False
+
+            # Create full name
+            full_name = f"{first_name} {last_initial}" if last_initial else first_name
                 
             provider = Provider(
+                user_id=user.id,
                 first_name=first_name,
-                last_initial=last_initial,
-                user_id=self.user_id
+                last_initial=last_initial or "",
+                name=full_name
             )
-            db.session.add(provider)
-            db.session.commit()
+            self.db.add(provider)
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error adding provider: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error adding provider: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def remove_provider(self, first_name: str, last_initial: Optional[str] = None) -> bool:
+    async def remove_provider(self, first_name: str, last_initial: Optional[str] = None) -> bool:
         """Remove a provider."""
         try:
-            provider = Provider.query.filter_by(
-                user_id=self.user_id,
-                first_name=first_name,
-                last_initial=last_initial
-            ).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(Provider).where(
+                    Provider.user_id == user.id,
+                    Provider.first_name == first_name,
+                    Provider.last_initial == (last_initial or "")
+                )
+            )
+            provider = result.scalar_one_or_none()
             
             if provider:
-                db.session.delete(provider)
-                db.session.commit()
+                await self.db.delete(provider)
+                await self.db.commit()
                 return True
             return False
         except Exception as e:
-            logging.error(f"Error removing provider: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error removing provider: {e}", exc_info=True)
+            await self.db.rollback()
             return False
+
 
 class DBPatientWaitlistManager:
     """Manages the patient waitlist using the database."""
 
-    def __init__(self, user_id: str):
-        """Initialize with user ID."""
+    def __init__(self, user_id: str, db_session: AsyncSession):
+        """Initialize with user ID and database session."""
         self.user_id = user_id
+        self.db = db_session
 
-    def get_all_patients(self) -> List[Dict[str, Any]]:
+    async def get_all_patients(self) -> List[Dict[str, Any]]:
         """Get all patients for the current user."""
-        patients = Patient.query.filter_by(user_id=self.user_id).all()
-        return [p.to_dict() for p in patients]
+        try:
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return []
 
-    def get_patient(self, patient_id: str) -> Optional[Dict[str, Any]]:
+            # Get patients for the user
+            result = await self.db.execute(
+                select(Patient).where(Patient.user_id == user.id)
+            )
+            patients = result.scalars().all()
+            
+            return [
+                {
+                    'id': str(p.id),
+                    'name': p.name,
+                    'phone': p.phone,
+                    'email': p.email,
+                    'reason': p.reason,
+                    'urgency': p.urgency,
+                    'appointment_type': p.appointment_type,
+                    'duration': str(p.duration),
+                    'provider': p.provider,
+                    'status': p.status,
+                    'timestamp': p.timestamp.isoformat() if p.timestamp else None,
+                    'wait_time': p.wait_time,
+                    'availability': p.availability or {},
+                    'availability_mode': p.availability_mode,
+                    'proposed_slot_id': p.proposed_slot_id
+                }
+                for p in patients
+            ]
+        except Exception as e:
+            logger.error(f"Error getting patients: {e}", exc_info=True)
+            return []
+
+    async def get_patient(self, patient_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific patient by ID."""
-        patient = Patient.query.filter_by(id=patient_id, user_id=self.user_id).first()
-        return patient.to_dict() if patient else None
+        try:
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return None
 
-    def add_patient(
+            result = await self.db.execute(
+                select(Patient).where(
+                    Patient.id == int(patient_id),
+                    Patient.user_id == user.id
+                )
+            )
+            patient = result.scalar_one_or_none()
+            
+            if patient:
+                return {
+                    'id': str(patient.id),
+                    'name': patient.name,
+                    'phone': patient.phone,
+                    'email': patient.email,
+                    'reason': patient.reason,
+                    'urgency': patient.urgency,
+                    'appointment_type': patient.appointment_type,
+                    'duration': str(patient.duration),
+                    'provider': patient.provider,
+                    'status': patient.status,
+                    'timestamp': patient.timestamp.isoformat() if patient.timestamp else None,
+                    'wait_time': patient.wait_time,
+                    'availability': patient.availability or {},
+                    'availability_mode': patient.availability_mode,
+                    'proposed_slot_id': patient.proposed_slot_id
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Error getting patient: {e}", exc_info=True)
+            return None
+
+    async def add_patient(
         self,
         name: str,
         phone: str,
@@ -113,12 +225,20 @@ class DBPatientWaitlistManager:
         timestamp: Optional[datetime] = None,
         availability: Optional[Dict] = None,
         availability_mode: str = "available",
-        **p_data
+        **kwargs
     ) -> bool:
         """Add a new patient to the waitlist."""
         try:
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
             patient = Patient(
-                id=str(uuid.uuid4()),
+                user_id=user.id,
                 name=name,
                 phone=phone,
                 email=email,
@@ -128,33 +248,48 @@ class DBPatientWaitlistManager:
                 duration=duration,
                 provider=provider,
                 timestamp=timestamp or datetime.utcnow(),
-                availability=json.dumps(availability) if availability else None,
+                availability=availability or {},
                 availability_mode=availability_mode,
-                user_id=self.user_id
+                wait_time="0 minutes"
             )
-            db.session.add(patient)
-            db.session.commit()
+            self.db.add(patient)
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error adding patient: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error adding patient: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def remove_patient(self, patient_id: str) -> bool:
+    async def remove_patient(self, patient_id: str) -> bool:
         """Remove a patient from the waitlist."""
         try:
-            patient = Patient.query.filter_by(id=patient_id, user_id=self.user_id).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(Patient).where(
+                    Patient.id == int(patient_id),
+                    Patient.user_id == user.id
+                )
+            )
+            patient = result.scalar_one_or_none()
+            
             if patient:
-                db.session.delete(patient)
-                db.session.commit()
+                await self.db.delete(patient)
+                await self.db.commit()
                 return True
             return False
         except Exception as e:
-            logging.error(f"Error removing patient: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error removing patient: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def update_patient(
+    async def update_patient(
         self,
         patient_id: str,
         name: str,
@@ -170,7 +305,22 @@ class DBPatientWaitlistManager:
     ) -> bool:
         """Update a patient's information."""
         try:
-            patient = Patient.query.filter_by(id=patient_id, user_id=self.user_id).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(Patient).where(
+                    Patient.id == int(patient_id),
+                    Patient.user_id == user.id
+                )
+            )
+            patient = result.scalar_one_or_none()
+            
             if not patient:
                 return False
                 
@@ -182,78 +332,158 @@ class DBPatientWaitlistManager:
             patient.appointment_type = appointment_type
             patient.duration = duration
             patient.provider = provider
-            patient.availability = json.dumps(availability) if availability else None
+            patient.availability = availability or {}
             patient.availability_mode = availability_mode
             
-            db.session.commit()
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error updating patient: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error updating patient: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def mark_as_pending(self, patient_id: str, slot_id: str) -> bool:
+    async def mark_as_pending(self, patient_id: str, slot_id: str) -> bool:
         """Mark a patient as pending for a specific slot."""
         try:
-            patient = Patient.query.filter_by(id=patient_id, user_id=self.user_id).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(Patient).where(
+                    Patient.id == int(patient_id),
+                    Patient.user_id == user.id
+                )
+            )
+            patient = result.scalar_one_or_none()
+            
             if not patient or patient.status != "waiting":
                 return False
                 
             patient.status = "pending"
             patient.proposed_slot_id = slot_id
-            db.session.commit()
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error marking patient as pending: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error marking patient as pending: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def cancel_proposal(self, patient_id: str) -> bool:
-        """Reset a pending patient back to waiting."""
+    async def cancel_proposal(self, patient_id: str) -> bool:
+        """Cancel a pending proposal and return patient to waiting status."""
         try:
-            patient = Patient.query.filter_by(id=patient_id, user_id=self.user_id).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(Patient).where(
+                    Patient.id == int(patient_id),
+                    Patient.user_id == user.id
+                )
+            )
+            patient = result.scalar_one_or_none()
+            
             if not patient or patient.status != "pending":
                 return False
                 
             patient.status = "waiting"
             patient.proposed_slot_id = None
-            db.session.commit()
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error cancelling patient proposal: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error cancelling proposal: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def update_wait_times(self) -> None:
-        """Update wait times for all waiting patients."""
+    async def update_wait_times(self) -> None:
+        """Update wait times for all patients."""
         try:
-            patients = Patient.query.filter_by(user_id=self.user_id).all()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return
+
+            result = await self.db.execute(
+                select(Patient).where(Patient.user_id == user.id)
+            )
+            patients = result.scalars().all()
+            
             now = datetime.utcnow()
-            
             for patient in patients:
-                if patient.status == "waiting" and patient.timestamp:
-                    wait_delta = now - patient.timestamp
-                    days = wait_delta.days
-                    patient.wait_time = f"{days} days"
+                if patient.timestamp:
+                    wait_duration = now - patient.timestamp
+                    days = wait_duration.days
+                    hours, remainder = divmod(wait_duration.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    
+                    if days > 0:
+                        patient.wait_time = f"{days} days"
+                    elif hours > 0:
+                        patient.wait_time = f"{hours} hours"
+                    else:
+                        patient.wait_time = f"{minutes} minutes"
             
-            db.session.commit()
+            await self.db.commit()
         except Exception as e:
-            logging.error(f"Error updating wait times: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error updating wait times: {e}", exc_info=True)
+
 
 class DBCancelledSlotManager:
     """Manages cancelled appointment slots using the database."""
 
-    def __init__(self, user_id: str):
-        """Initialize with user ID."""
+    def __init__(self, user_id: str, db_session: AsyncSession):
+        """Initialize with user ID and database session."""
         self.user_id = user_id
+        self.db = db_session
 
-    def get_all_slots(self) -> List[Dict[str, Any]]:
+    async def get_all_slots(self) -> List[Dict[str, Any]]:
         """Get all slots for the current user."""
-        slots = CancelledSlot.query.filter_by(user_id=self.user_id).all()
-        return [s.to_dict() for s in slots]
+        try:
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return []
 
-    def add_slot(
+            result = await self.db.execute(
+                select(CancelledSlot).where(CancelledSlot.user_id == user.id)
+            )
+            slots = result.scalars().all()
+            
+            return [
+                {
+                    'id': slot.slot_id,
+                    'provider': slot.provider,
+                    'slot_date': slot.slot_date,
+                    'slot_time': slot.slot_time,
+                    'slot_period': slot.slot_period,
+                    'duration': slot.duration,
+                    'status': slot.status,
+                    'proposed_patient_id': slot.proposed_patient_id,
+                    'proposed_patient_name': slot.proposed_patient_name,
+                    'notes': slot.notes
+                }
+                for slot in slots
+            ]
+        except Exception as e:
+            logger.error(f"Error getting slots: {e}", exc_info=True)
+            return []
+
+    async def add_slot(
         self,
         provider: str,
         slot_date: str,
@@ -262,49 +492,65 @@ class DBCancelledSlotManager:
         duration: int,
         notes: str = ""
     ) -> bool:
-        """Add a new cancelled appointment slot."""
+        """Add a new cancelled slot."""
         try:
-            # Convert date string to datetime.date object
-            try:
-                date_obj = datetime.strptime(slot_date, "%Y-%m-%d").date()
-            except ValueError:
-                logging.error(f"Invalid date format: {slot_date}")
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
                 return False
 
             slot = CancelledSlot(
-                id=str(uuid.uuid4()),
+                user_id=user.id,
+                slot_id=str(uuid.uuid4()),
                 provider=provider,
-                duration=duration,
-                slot_date=date_obj,
-                slot_period=slot_period,
+                slot_date=slot_date,
                 slot_time=slot_time,
+                slot_period=slot_period,
+                duration=duration,
                 notes=notes,
-                status="available",
-                user_id=self.user_id
+                status="available"
             )
-            db.session.add(slot)
-            db.session.commit()
+            self.db.add(slot)
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error adding slot: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error adding slot: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def remove_slot(self, slot_id: str) -> bool:
-        """Remove a cancelled appointment slot."""
+    async def remove_slot(self, slot_id: str) -> bool:
+        """Remove a slot."""
         try:
-            slot = CancelledSlot.query.filter_by(id=slot_id, user_id=self.user_id).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(CancelledSlot).where(
+                    CancelledSlot.slot_id == slot_id,
+                    CancelledSlot.user_id == user.id
+                )
+            )
+            slot = result.scalar_one_or_none()
+            
             if slot:
-                db.session.delete(slot)
-                db.session.commit()
+                await self.db.delete(slot)
+                await self.db.commit()
                 return True
             return False
         except Exception as e:
-            logging.error(f"Error removing slot: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error removing slot: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def update_slot(
+    async def update_slot(
         self,
         slot_id: str,
         provider: str,
@@ -314,65 +560,101 @@ class DBCancelledSlotManager:
         duration: int,
         notes: str = ""
     ) -> bool:
-        """Update an existing cancelled appointment slot."""
+        """Update a slot."""
         try:
-            slot = CancelledSlot.query.filter_by(id=slot_id, user_id=self.user_id).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(CancelledSlot).where(
+                    CancelledSlot.slot_id == slot_id,
+                    CancelledSlot.user_id == user.id
+                )
+            )
+            slot = result.scalar_one_or_none()
+            
             if not slot:
                 return False
-
-            try:
-                date_obj = datetime.strptime(slot_date, "%Y-%m-%d").date()
-            except ValueError:
-                logging.error(f"Invalid date format: {slot_date}")
-                return False
-
+                
             slot.provider = provider
-            slot.duration = duration
-            slot.slot_date = date_obj
-            slot.slot_period = slot_period
+            slot.slot_date = slot_date
             slot.slot_time = slot_time
+            slot.slot_period = slot_period
+            slot.duration = duration
             slot.notes = notes
-            slot.status = "available"
-            slot.proposed_patient_id = None
-            slot.proposed_patient_name = None
             
-            db.session.commit()
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error updating slot: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error updating slot: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def mark_as_pending(self, slot_id: str, patient_id: str, patient_name: str = "Unknown") -> bool:
+    async def mark_as_pending(self, slot_id: str, patient_id: str, patient_name: str = "Unknown") -> bool:
         """Mark a slot as pending for a specific patient."""
         try:
-            slot = CancelledSlot.query.filter_by(id=slot_id, user_id=self.user_id).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(CancelledSlot).where(
+                    CancelledSlot.slot_id == slot_id,
+                    CancelledSlot.user_id == user.id
+                )
+            )
+            slot = result.scalar_one_or_none()
+            
             if not slot or slot.status != "available":
                 return False
                 
             slot.status = "pending"
             slot.proposed_patient_id = patient_id
             slot.proposed_patient_name = patient_name
-            db.session.commit()
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error marking slot as pending: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error marking slot as pending: {e}", exc_info=True)
+            await self.db.rollback()
             return False
 
-    def cancel_proposal(self, slot_id: str) -> bool:
-        """Reset a pending slot back to available."""
+    async def cancel_proposal(self, slot_id: str) -> bool:
+        """Cancel a pending proposal and return slot to available status."""
         try:
-            slot = CancelledSlot.query.filter_by(id=slot_id, user_id=self.user_id).first()
+            # Get user first
+            result = await self.db.execute(
+                select(User).where(User.username == self.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                return False
+
+            result = await self.db.execute(
+                select(CancelledSlot).where(
+                    CancelledSlot.slot_id == slot_id,
+                    CancelledSlot.user_id == user.id
+                )
+            )
+            slot = result.scalar_one_or_none()
+            
             if not slot or slot.status != "pending":
                 return False
                 
             slot.status = "available"
             slot.proposed_patient_id = None
             slot.proposed_patient_name = None
-            db.session.commit()
+            await self.db.commit()
             return True
         except Exception as e:
-            logging.error(f"Error cancelling slot proposal: {e}", exc_info=True)
-            db.session.rollback()
+            logger.error(f"Error cancelling proposal: {e}", exc_info=True)
+            await self.db.rollback()
             return False 

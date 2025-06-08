@@ -8,34 +8,22 @@ ENV PYTHONUNBUFFERED=1
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including PostgreSQL client
 RUN apt-get update && apt-get install -y \
     build-essential \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
+    libpq-dev \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Create the persistent storage directory and set permissions
-RUN mkdir -p /data/users \
-    && mkdir -p /data/flask_sessions \
-    && mkdir -p /data/diff_store \
-    # Set base permissions for /data (drwxr-xr-x)
-    && chmod 755 /data \
-    # Set permissions for users directory (drwxrwxr-x)
-    && chmod 775 /data/users \
-    # Set permissions for flask_sessions (drwxrwxr-x)
-    && chmod 775 /data/flask_sessions \
-    # Set permissions for diff_store (drwxrwxr-x)
-    && chmod 775 /data/diff_store \
-    # Set ownership for all data directories
-    #&& chown -R nobody:nogroup /data
-    && chmod -R 777 /data
+# Create the data directory for any local storage needs
+RUN mkdir -p /app/data \
+    && chmod 755 /app/data
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+# Copy pyproject.toml first to leverage Docker cache
+COPY pyproject.toml .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -e .
 
 # Copy the rest of the application
 COPY . .
@@ -46,12 +34,15 @@ RUN find /app -type d -exec chmod 755 {} \; \
     # 644 for files (rw-r--r--)
     && find /app -type f -exec chmod 644 {} \; \
     # Make app.py executable
-    && chmod 755 /app/app.py \
+    && chmod 755 /app/main.py \
     # Set ownership
     && chown -R nobody:nogroup /app
 
-# Expose the Flask app port
-EXPOSE 7860
+# Create non-root user
+USER nobody
 
-# Command to run your app
-CMD ["python", "app.py"]
+# Expose the FastAPI app port
+EXPOSE 8000
+
+# Command to run the FastAPI app with uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
