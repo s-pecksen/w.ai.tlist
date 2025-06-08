@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    libpq-dev \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Create the persistent storage directory and set permissions
@@ -28,7 +30,6 @@ RUN mkdir -p /data/users \
     # Set permissions for diff_store (drwxrwxr-x)
     && chmod 775 /data/diff_store \
     # Set ownership for all data directories
-    #&& chown -R nobody:nogroup /data
     && chmod -R 777 /data
 
 # Copy requirements first to leverage Docker cache
@@ -39,6 +40,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
+
+# Make wait-for-db script executable
+RUN chmod +x wait-for-db.sh
 
 # Set permissions for the application directory
 # 755 for directories (drwxr-xr-x)
