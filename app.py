@@ -29,6 +29,8 @@ from cryptography.fernet import Fernet
 import io
 import hashlib
 from src.diffstore import save_to_diff_store, load_from_diff_store
+from flask_session import Session
+from pathlib import Path
 
 # Load environment variables from .env file
 load_dotenv()
@@ -40,6 +42,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Get the project root directory
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# Set up data directories
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+USERS_DIR = os.path.join(DATA_DIR, 'users')
+SESSIONS_DIR = os.path.join(DATA_DIR, 'flask_sessions')
+DIFF_STORE_DIR = os.path.join(DATA_DIR, 'diff_store')
+
+# Create directories if they don't exist
+for directory in [DATA_DIR, USERS_DIR, SESSIONS_DIR, DIFF_STORE_DIR]:
+    os.makedirs(directory, exist_ok=True)
+
+logger.info(f"Setting up persistent storage at: {DATA_DIR}")
+
+# Configure Flask app
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SESSION_SECRET_KEY', 'dev')
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = SESSIONS_DIR
+app.config['SESSION_FILE_THRESHOLD'] = 500
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
+# Initialize session
+Session(app)
+
 # --- Encryption Setup ---
 ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
 if not ENCRYPTION_KEY:
@@ -50,13 +78,12 @@ except Exception as e:
     raise ValueError(f"CRITICAL: Invalid FLASK_APP_ENCRYPTION_KEY. It must be a 32 url-safe base64-encoded bytes. Error: {e}")
 
 # --- Flask App Initialization ---
-app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
 
 # Configure SQLite database
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
     'DATABASE_URL',
-    f'sqlite:///{os.path.join(PERSISTENT_STORAGE_PATH, "app.db")}'
+    'postgresql://postgres.xqfmkhrlogcjpmxdnqky:lOw8qrlmpdpSYwVKSiWYhy_flHU0DbzUBbiUAa48Ul8@aws-0-us-west-1.pooler.supabase.com:5432/postgres'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -67,29 +94,18 @@ login_manager.login_view = "login"
 login_manager.login_message = None
 login_manager.session_protection = "strong"
 
-# Define paths BEFORE session configuration
-# Use AppData on Windows, fallback to user's home directory
-if os.name == 'nt':  # Windows
-    PERSISTENT_STORAGE_PATH = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'WaitlistApp')
-else:  # Unix-like
-    PERSISTENT_STORAGE_PATH = os.path.join(os.path.expanduser('~'), '.waitlistapp')
-
-DIFF_STORE_PATH = os.path.join(PERSISTENT_STORAGE_PATH, "diff_store")
-SESSION_DIR = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
-USERS_DIR = os.path.join(PERSISTENT_STORAGE_PATH, "users")
-
 # Add debug logging for storage setup
-logger.info(f"Setting up persistent storage at: {PERSISTENT_STORAGE_PATH}")
+logger.info(f"Setting up persistent storage at: {DATA_DIR}")
 logger.info(f"Current working directory: {os.getcwd()}")
 
 # Check if /data exists and is writable
-if not os.path.exists(PERSISTENT_STORAGE_PATH):
-    logger.info(f"Creating persistent storage directory at: {PERSISTENT_STORAGE_PATH}")
+if not os.path.exists(DATA_DIR):
+    logger.info(f"Creating persistent storage directory at: {DATA_DIR}")
     try:
-        os.makedirs(PERSISTENT_STORAGE_PATH, exist_ok=True)
+        os.makedirs(DATA_DIR, exist_ok=True)
         os.makedirs(USERS_DIR, exist_ok=True)
-        os.makedirs(SESSION_DIR, exist_ok=True)
-        os.makedirs(DIFF_STORE_PATH, exist_ok=True)
+        os.makedirs(SESSIONS_DIR, exist_ok=True)
+        os.makedirs(DIFF_STORE_DIR, exist_ok=True)
     except Exception as e:
         logger.error(f"Error creating persistent storage directories: {e}")
         raise RuntimeError(f"Failed to create persistent storage directories: {e}")
@@ -97,11 +113,11 @@ if not os.path.exists(PERSISTENT_STORAGE_PATH):
 # Create and verify session directory
 try:
     # Test write permissions
-    test_file = os.path.join(SESSION_DIR, "test_write.tmp")
+    test_file = os.path.join(SESSIONS_DIR, "test_write.tmp")
     with open(test_file, "w") as f:
         f.write("test")
     os.remove(test_file)
-    logger.info(f"Session directory verified at: {SESSION_DIR}")
+    logger.info(f"Session directory verified at: {SESSIONS_DIR}")
 except Exception as e:
     logger.error(f"Error setting up session directory: {e}")
     raise RuntimeError(f"Failed to set up session directory: {e}")
@@ -110,14 +126,14 @@ except Exception as e:
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)  # Sessions last 7 days
-app.config["SESSION_FILE_DIR"] = SESSION_DIR
+app.config["SESSION_FILE_DIR"] = SESSIONS_DIR
 app.config["SESSION_FILE_THRESHOLD"] = 500  # Maximum number of sessions
 app.config["SESSION_FILE_MODE"] = 0o600  # Secure file permissions
 app.config["SESSION_USE_SIGNER"] = True  # Sign the session cookie
 app.config["SESSION_COOKIE_SECURE"] = False  # Set to True in production with HTTPS
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["PERSISTENT_STORAGE_PATH"] = PERSISTENT_STORAGE_PATH
+app.config["PERSISTENT_STORAGE_PATH"] = DATA_DIR
 app.config["USERS_DIR"] = USERS_DIR
 
 # Initialize the database
@@ -1317,7 +1333,7 @@ def debug_show_profile(username):
 
 if __name__ == "__main__":
     # Create session directory if it doesn't exist
-    session_dir = os.path.join(PERSISTENT_STORAGE_PATH, "flask_sessions")
+    session_dir = os.path.join(DATA_DIR, "flask_sessions")
     try:
         os.makedirs(session_dir, exist_ok=True)
         logger.info(f"Created session directory at: {session_dir}")

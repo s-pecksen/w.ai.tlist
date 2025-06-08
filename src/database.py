@@ -3,10 +3,11 @@ from datetime import datetime
 import json
 from typing import Dict, Any
 import os
-from sqlalchemy import event, create_engine
+from sqlalchemy import event
 from sqlalchemy.engine import Engine
 import logging
 from cryptography.fernet import Fernet
+from .supabase_client import get_supabase_client
 
 # Configure logging
 logging.basicConfig(
@@ -30,14 +31,6 @@ def configure_encryption(app):
         # Create cipher suite
         cipher_suite = Fernet(encryption_key.encode())
         
-        # Set up encryption for sensitive fields
-        @event.listens_for(Engine, "connect")
-        def set_encryption(dbapi_connection, connection_record):
-            # Enable foreign keys
-            cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA foreign_keys = ON")
-            cursor.close()
-            
         logging.info("Database encryption configuration completed successfully")
         return cipher_suite
     except Exception as e:
@@ -168,8 +161,58 @@ def init_db(app):
     if not cipher_suite:
         raise RuntimeError("Failed to configure database encryption")
     
+    # Initialize Supabase client
+    supabase = get_supabase_client()
+    
+    # Initialize SQLAlchemy with Supabase connection
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
     db.init_app(app)
     
     with app.app_context():
+        # Create tables if they don't exist
         db.create_all()
-        logger.info("Database initialized successfully") 
+        
+        # Create RLS policies in Supabase
+        try:
+            # Create policies for providers table
+            supabase.table('providers').create_policy(
+                'Enable read access for all users',
+                'SELECT',
+                'true'
+            )
+            supabase.table('providers').create_policy(
+                'Enable insert for authenticated users',
+                'INSERT',
+                'auth.role() = \'authenticated\''
+            )
+            
+            # Create policies for patients table
+            supabase.table('patients').create_policy(
+                'Enable read access for all users',
+                'SELECT',
+                'true'
+            )
+            supabase.table('patients').create_policy(
+                'Enable insert for authenticated users',
+                'INSERT',
+                'auth.role() = \'authenticated\''
+            )
+            
+            # Create policies for cancelled_slots table
+            supabase.table('cancelled_slots').create_policy(
+                'Enable read access for all users',
+                'SELECT',
+                'true'
+            )
+            supabase.table('cancelled_slots').create_policy(
+                'Enable insert for authenticated users',
+                'INSERT',
+                'auth.role() = \'authenticated\''
+            )
+            
+            logger.info("Database and RLS policies initialized successfully")
+        except Exception as e:
+            logger.error(f"Error creating RLS policies: {e}")
+            raise 
