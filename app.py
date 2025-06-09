@@ -13,8 +13,7 @@ import os
 from dotenv import load_dotenv
 import csv
 from io import StringIO
-from src.db_managers import DBProviderManager, DBPatientWaitlistManager, DBCancelledSlotManager
-from src.database import init_db
+from src.database import init_db, DatabaseManager
 import logging
 import json
 from flask_login import (
