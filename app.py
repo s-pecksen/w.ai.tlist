@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import csv
 from io import StringIO
 from src.db_managers import DBProviderManager, DBPatientWaitlistManager, DBCancelledSlotManager
-from src.database import init_db, db
+from src.database import init_db
 import logging
 import json
 from flask_login import (
@@ -79,12 +79,6 @@ except Exception as e:
 
 # --- Flask App Initialization ---
 app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
-
-# Configure SQLite database
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
-if not app.config['SQLALCHEMY_DATABASE_URI']:
-    raise ValueError("DATABASE_URL environment variable is not set")
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize Flask-Login
 login_manager = LoginManager()
