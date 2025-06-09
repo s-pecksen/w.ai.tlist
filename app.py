@@ -81,10 +81,9 @@ except Exception as e:
 app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
 
 # Configure SQLite database
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DATABASE_URL',
-    'postgresql://postgres.xqfmkhrlogcjpmxdnqky:lOw8qrlmpdpSYwVKSiWYhy_flHU0DbzUBbiUAa48Ul8@aws-0-us-west-1.pooler.supabase.com:5432/postgres'
-)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+if not app.config['SQLALCHEMY_DATABASE_URI']:
+    raise ValueError("DATABASE_URL environment variable is not set")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize Flask-Login
