@@ -30,6 +30,7 @@ class CancelledSlotManager:
             "proposed_patient_name",
         ]
         self.load()
+        logging.info(f"Initialized CancelledSlotManager with {len(self.slots)} slots")
 
     def load(self):
         """Load slots from the CSV file."""
@@ -37,6 +38,8 @@ class CancelledSlotManager:
             # Use the decryption helper
             self.slots = load_decrypted_csv(self.slots_file, self.headers)
             logging.info(f"Loaded {len(self.slots)} slots from {self.slots_file}")
+            for slot in self.slots:
+                logging.debug(f"Loaded slot: {slot}")
         except Exception as e:
             logging.error(f"Error loading or decrypting slots: {e}", exc_info=True)
             self.slots = []
@@ -54,6 +57,7 @@ class CancelledSlotManager:
 
     def get_all_slots(self):
         """Return all slots."""
+        logging.info(f"Returning {len(self.slots)} slots")
         return self.slots
 
     def add_slot(self, provider, slot_date, slot_time, slot_period, duration, notes=""):
@@ -209,6 +213,7 @@ class PatientWaitlistManager:
             "proposed_slot_id",
         ]
         self.load()
+        logging.info(f"Initialized PatientWaitlistManager with {len(self.patients)} patients")
 
     def load(self):
         """Load patients from the CSV file."""
@@ -228,7 +233,6 @@ class PatientWaitlistManager:
                 elif not isinstance(row.get("availability"), dict): # Ensure it's a dict if not a parsable string
                     row["availability"] = {}
 
-
                 # Handle timestamp AFTER decryption
                 if "timestamp" in row and isinstance(row["timestamp"], str) and row["timestamp"]:
                     try:
@@ -237,13 +241,12 @@ class PatientWaitlistManager:
                         logging.warning(f"Could not parse timestamp for patient {row.get('id')}: {row['timestamp']}")
                         row["timestamp"] = datetime.now() # Default to now on error
                 elif not isinstance(row.get("timestamp"), datetime): # Ensure it is datetime
-                     row["timestamp"] = datetime.now()
-
+                    row["timestamp"] = datetime.now()
 
                 self.patients.append(row)
-            logging.info(
-                f"Loaded and processed {len(self.patients)} patients from {self.waitlist_file}"
-            )
+                logging.debug(f"Loaded patient: {row}")
+            
+            logging.info(f"Loaded and processed {len(self.patients)} patients from {self.waitlist_file}")
         except Exception as e:
             logging.error(f"Error loading or decrypting patients: {e}", exc_info=True)
             self.patients = []
@@ -278,6 +281,7 @@ class PatientWaitlistManager:
 
     def get_all_patients(self):
         """Return all patients."""
+        logging.info(f"Returning {len(self.patients)} patients")
         return self.patients
 
     def get_patient(self, patient_id):
@@ -289,10 +293,12 @@ class PatientWaitlistManager:
         Returns:
             dict: The patient record if found, None otherwise
         """
-        for patient in self.patients:
-            if patient.get("id") == patient_id:
-                return patient
-        return None
+        patient = next((p for p in self.patients if p.get("id") == patient_id), None)
+        if patient:
+            logging.info(f"Found patient {patient_id}: {patient}")
+        else:
+            logging.warning(f"Patient {patient_id} not found")
+        return patient
 
     def save_backup(self):
         """Manually create a backup of the waitlist."""

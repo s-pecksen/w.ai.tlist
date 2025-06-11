@@ -66,11 +66,20 @@ def init_db(app):
     
     # Create tables if they don't exist
     try:
-        # Test if providers table exists
-        supabase.table('providers').select('*').limit(1).execute()
+        # Test if users table exists
+        supabase.table('users').select('*').limit(1).execute()
     except Exception as e:
         if 'does not exist' in str(e):
             try:
+                # Create users table (profile data only, auth handled by Supabase)
+                supabase.table('users').insert({
+                    'username': 'test',
+                    'clinic_name': 'test',
+                    'user_name_for_message': 'test'
+                }).execute()
+                # Delete the test record
+                supabase.table('users').delete().eq('username', 'test').execute()
+                
                 # Create providers table
                 supabase.table('providers').insert({
                     'first_name': 'test',
@@ -113,6 +122,74 @@ class DatabaseManager:
         self.user_id = user_id
         self.cipher_suite = cipher_suite
     
+    # User management operations
+    def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """Get user by username."""
+        try:
+            response = supabase.table('users').select('*').eq('username', username).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error getting user by username: {e}")
+            return None
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user by ID."""
+        try:
+            response = supabase.table('users').select('*').eq('id', user_id).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error getting user by ID: {e}")
+            return None
+
+    def create_user(
+        self,
+        user_id: str,
+        username: str,
+        clinic_name: str = "",
+        user_name_for_message: str = "",
+        appointment_types: List[str] = None,
+        appointment_types_data: List[Dict] = None
+    ) -> bool:
+        """Create a new user profile."""
+        try:
+            data = {
+                'id': user_id,
+                'username': username,
+                'clinic_name': clinic_name,
+                'user_name_for_message': user_name_for_message,
+                'appointment_types': json.dumps(appointment_types or []),
+                'appointment_types_data': json.dumps(appointment_types_data or [])
+            }
+            response = supabase.table('users').insert(data).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error creating user profile: {e}")
+            return False
+
+    def update_user(self, user_id: str, **updates) -> bool:
+        """Update user information."""
+        try:
+            # Convert lists to JSON strings if present
+            if 'appointment_types' in updates and isinstance(updates['appointment_types'], list):
+                updates['appointment_types'] = json.dumps(updates['appointment_types'])
+            if 'appointment_types_data' in updates and isinstance(updates['appointment_types_data'], list):
+                updates['appointment_types_data'] = json.dumps(updates['appointment_types_data'])
+
+            response = supabase.table('users').update(updates).eq('id', user_id).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error updating user: {e}")
+            return False
+
+    def username_exists(self, username: str) -> bool:
+        """Check if username exists."""
+        try:
+            response = supabase.table('users').select('id').eq('username', username).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error checking username existence: {e}")
+            return False
+
     # Provider operations
     def get_providers(self) -> List[Dict[str, Any]]:
         """Get all providers for the current user."""
@@ -349,4 +426,20 @@ class DatabaseManager:
             return bool(response.data)
         except Exception as e:
             logger.error(f"Error cancelling patient proposal: {e}")
+            return False
+
+    def remove_slot(self, slot_id: str) -> bool:
+        """Remove a slot (alias for remove_cancelled_slot for compatibility)."""
+        return self.remove_cancelled_slot(slot_id)
+
+    def mark_as_filled(self, slot_id: str) -> bool:
+        """Mark a slot as filled."""
+        try:
+            updates = {
+                'status': 'filled'
+            }
+            response = supabase.table('cancelled_slots').update(updates).eq('id', slot_id).eq('user_id', self.user_id).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error marking slot as filled: {e}")
             return False 

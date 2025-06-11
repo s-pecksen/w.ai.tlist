@@ -13,7 +13,7 @@ import os
 from dotenv import load_dotenv
 import csv
 from io import StringIO
-from src.database import init_db, DatabaseManager
+from src.database import init_db, DatabaseManager, supabase
 import logging
 import json
 from flask_login import (
@@ -32,6 +32,9 @@ from src.encryption_utils import load_decrypted_json, save_encrypted_json
 from flask_session import Session
 from pathlib import Path
 import re
+import uuid
+from werkzeug.security import generate_password_hash, check_password_hash
+import secrets
 
 # Helper functions for wait time conversion
 def wait_time_to_days(wait_time_str):
@@ -104,8 +107,8 @@ app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
-login_manager.login_message = None
-login_manager.session_protection = "strong"
+login_manager.login_message = "Please log in to access this page."
+login_manager.login_message_category = "error"
 
 # Add debug logging for storage setup
 logger.info(f"Setting up persistent storage at: {DATA_DIR}")
@@ -143,7 +146,7 @@ app.config["SESSION_FILE_DIR"] = SESSIONS_DIR
 app.config["SESSION_FILE_THRESHOLD"] = 500  # Maximum number of sessions
 app.config["SESSION_FILE_MODE"] = 0o600  # Secure file permissions
 app.config["SESSION_USE_SIGNER"] = True  # Sign the session cookie
-app.config["SESSION_COOKIE_SECURE"] = False  # Set to True in production with HTTPS
+app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERSISTENT_STORAGE_PATH"] = DATA_DIR
@@ -152,13 +155,27 @@ app.config["USERS_DIR"] = USERS_DIR
 # Initialize the database
 init_db(app)
 
+# Password validation
+def validate_password(password):
+    """Validate password strength."""
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    if not re.search(r"[A-Z]", password):
+        return False, "Password must contain at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return False, "Password must contain at least one lowercase letter"
+    if not re.search(r"\d", password):
+        return False, "Password must contain at least one number"
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return False, "Password must contain at least one special character"
+    return True, "Password is valid"
+
 # --- User Class ---
 class User(UserMixin):
     def __init__(
         self,
         user_id,
         username,
-        password_hash,
         clinic_name=None,
         user_name_for_message=None,
         appointment_types=None,
@@ -166,98 +183,121 @@ class User(UserMixin):
     ):
         self.id = user_id
         self.username = username
-        self.password_hash = password_hash
         self.clinic_name = clinic_name or ""
         self.user_name_for_message = user_name_for_message or ""
         self.appointment_types = appointment_types or []
         self.appointment_types_data = appointment_types_data or []
 
-    def check_password(self, password):
-        return hashlib.md5(password.encode()).hexdigest() == self.password_hash
-
     def to_dict(self):
-        """Convert user object to dictionary for JSON storage"""
+        """Convert user object to dictionary for storage."""
         return {
             "id": self.id,
             "username": self.username,
-            "password_hash": self.password_hash,
             "clinic_name": self.clinic_name,
             "user_name_for_message": self.user_name_for_message,
             "appointment_types": self.appointment_types,
-            "appointment_types_data": self.appointment_types_data,
+            "appointment_types_data": self.appointment_types_data
         }
 
     @classmethod
     def from_dict(cls, data):
-        """Create user object from dictionary"""
+        """Create user object from dictionary."""
+        # Parse JSON strings back to lists if needed
+        appointment_types = data.get("appointment_types", [])
+        appointment_types_data = data.get("appointment_types_data", [])
+        
+        if isinstance(appointment_types, str):
+            try:
+                appointment_types = json.loads(appointment_types)
+            except json.JSONDecodeError:
+                appointment_types = []
+                
+        if isinstance(appointment_types_data, str):
+            try:
+                appointment_types_data = json.loads(appointment_types_data)
+            except json.JSONDecodeError:
+                appointment_types_data = []
+        
         return cls(
             user_id=data.get("id"),
             username=data.get("username"),
-            password_hash=data.get("password_hash"),
             clinic_name=data.get("clinic_name"),
             user_name_for_message=data.get("user_name_for_message"),
-            appointment_types=data.get("appointment_types"),
-            appointment_types_data=data.get("appointment_types_data"),
+            appointment_types=appointment_types,
+            appointment_types_data=appointment_types_data
         )
 
 # --- User Management Functions ---
 def save_user(user):
-    """Save user to JSON file"""
-    user_dir = os.path.join(USERS_DIR, user.username)
-    logging.info(f"Attempting to create user directory at: {user_dir}")
-    os.makedirs(user_dir, exist_ok=True)
-    user_file = os.path.join(user_dir, f"profile.json")
-    logging.info(f"Attempting to save user profile to: {user_file}")
-    save_encrypted_json(user.to_dict(), user_file)
-    logging.info(f"Successfully saved user profile for: {user.username}")
-    return True
+    """Save user to database"""
+    try:
+        db_manager = DatabaseManager(user.id, app.cipher_suite)
+        success = db_manager.update_user(
+            user.id,
+            username=user.username,
+            clinic_name=user.clinic_name,
+            user_name_for_message=user.user_name_for_message,
+            appointment_types=user.appointment_types,
+            appointment_types_data=user.appointment_types_data
+        )
+        if success:
+            logging.info(f"Successfully saved user profile for: {user.username}")
+            return True
+        else:
+            logging.error(f"Failed to save user profile for: {user.username}")
+            return False
+    except Exception as e:
+        logging.error(f"Error saving user profile: {e}", exc_info=True)
+        return False
 
 def get_user_by_username(username):
-    """Get user by username from JSON file"""
-    user_file = os.path.join(USERS_DIR, username, "profile.json")
-    logging.info(f"Attempting to load user profile from: {user_file}")
-    user_data = load_decrypted_json(user_file)
-    if not user_data:
-        logging.warning(f"No user data found at: {user_file}")
+    """Get user by username from database"""
+    try:
+        db_manager = DatabaseManager("system", app.cipher_suite)
+        user_data = db_manager.get_user_by_username(username)
+        if not user_data:
+            logging.warning(f"No user data found for username: {username}")
+            return None
+        logging.info(f"Successfully loaded user profile for: {username}")
+        return User.from_dict(user_data)
+    except Exception as e:
+        logging.error(f"Error getting user by username: {e}", exc_info=True)
         return None
-    logging.info(f"Successfully loaded user profile for: {username}")
-    return User.from_dict(user_data)
 
 def get_user_by_id(user_id):
-    """Get user by ID from JSON files"""
-    # Since we don't have an index, we need to scan all user directories
-    if not os.path.exists(USERS_DIR):
+    """Get user by ID from database"""
+    try:
+        db_manager = DatabaseManager("system", app.cipher_suite)
+        user_data = db_manager.get_user_by_id(user_id)
+        if not user_data:
+            logging.warning(f"No user data found for ID: {user_id}")
+            return None
+        return User.from_dict(user_data)
+    except Exception as e:
+        logging.error(f"Error getting user by ID: {e}", exc_info=True)
         return None
 
-    for username_folder in os.listdir(USERS_DIR):
-        user_folder_path = os.path.join(USERS_DIR, username_folder)
-        if os.path.isdir(user_folder_path):
-            profile_path = os.path.join(user_folder_path, "profile.json")
-            if os.path.exists(profile_path):
-                try:
-                    user_data = load_decrypted_json(profile_path)
-                    if user_data and str(user_data.get("id")) == str(user_id):
-                        return User.from_dict(user_data)
-                except Exception as e:
-                    logging.error(f"Error processing user file {profile_path} for ID {user_id}: {e}")
-    return None
-
 def username_exists(username):
-    """Check if username exists"""
-    user_dir = os.path.join(USERS_DIR, username)
-    return os.path.exists(user_dir)
+    """Check if username exists in database"""
+    try:
+        db_manager = DatabaseManager("system", app.cipher_suite)
+        return db_manager.username_exists(username)
+    except Exception as e:
+        logging.error(f"Error checking username existence: {e}", exc_info=True)
+        return False
 
 # Flask-Login user loader callback
 @login_manager.user_loader
 def load_user(user_id):
     """Load user by ID"""
-    logging.debug(f"Loading user with ID: {user_id}")
-    user = get_user_by_id(user_id)
-    if user:
-        logging.debug(f"Found user: {user.username}")
-    else:
-        logging.debug(f"No user found for ID: {user_id}")
-    return user
+    try:
+        db_manager = DatabaseManager("system", app.cipher_suite)
+        user_data = db_manager.get_user_by_id(user_id)
+        if user_data:
+            return User.from_dict(user_data)
+    except Exception as e:
+        logging.error(f"Error loading user: {e}", exc_info=True)
+    return None
 
 # Function to get user-specific managers
 def get_user_managers(username):
@@ -271,110 +311,66 @@ def get_user_managers(username):
 # Add Registration Route
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    if current_user.is_authenticated:
-        return redirect(url_for("index"))
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
         clinic_name = request.form.get("clinic_name")
-        user_name = request.form.get("user_name")
-        appointment_types_json = request.form.get("appointment_types_json", "[]")
-        providers_json = request.form.get("providers_json", "[]")
-
-        # Process appointment types
-        appointment_types_data = []
-        appt_types_list = []
-        try:
-            parsed_appt_types = json.loads(appointment_types_json)
-            # Validate structure slightly (expecting list of dicts)
-            if isinstance(parsed_appt_types, list):
-                 appointment_types_data = [
-                     item for item in parsed_appt_types
-                     if isinstance(item, dict) and item.get('appointment_type')
-                 ]
-                 appt_types_list = [item['appointment_type'] for item in appointment_types_data]
-            else:
-                logging.warning(f"Parsed appointment_types_json was not a list for user {username}.")
-        except json.JSONDecodeError:
-            logging.warning(f"Failed to decode appointment_types_json for user {username}.")
-            appt_types_list = [] # Ensure it's empty on error
-            appointment_types_data = []
-
-        # Process providers
-        providers_data = []
-        try:
-            parsed_providers = json.loads(providers_json)
-             # Validate structure (list of dicts with 'first_name')
-            if isinstance(parsed_providers, list):
-                providers_data = [
-                    p for p in parsed_providers
-                    if isinstance(p, dict) and p.get('first_name') # Ensure first_name exists
-                ]
-            else:
-                 logging.warning(f"Parsed providers_json was not a list for user {username}.")
-        except json.JSONDecodeError:
-            logging.warning(f"Failed to decode providers_json for user {username}.")
-            providers_data = [] # Ensure empty on error
+        user_name_for_message = request.form.get("user_name_for_message")
 
         if not username or not password:
-            flash("Username and password are required.", "warning")
-            return redirect(url_for("register"))
-
-        if username_exists(username):
-            flash("Username already exists. Please choose a different one.", "warning")
-            return redirect(url_for("register"))
-
-        # Create new user
-        user_id_raw = username + password
-        user_id = hashlib.md5(user_id_raw.encode()).hexdigest()
-        password_hash = hashlib.md5(password.encode()).hexdigest()
-        new_user = User(
-            user_id=user_id,
-            username=username,
-            password_hash=password_hash,
-            clinic_name=clinic_name,
-            user_name_for_message=user_name,
-            appointment_types=appt_types_list,
-            appointment_types_data=appointment_types_data,
-        )
+            flash("Username and password are required", "error")
+            return render_template("register.html")
 
         try:
-            # Create user directory
-            user_dir = os.path.join(USERS_DIR, username)
-            os.makedirs(user_dir, exist_ok=True)
-            logging.info(f"Created user directory at: {user_dir}")
+            # Register user with Supabase Auth
+            auth_response = supabase.auth.sign_up({
+                "email": f"{username}@example.com",  # Supabase requires email
+                "password": password,
+                "options": {
+                    "data": {
+                        "username": username,
+                        "clinic_name": clinic_name,
+                        "user_name_for_message": user_name_for_message
+                    }
+                }
+            })
 
-            # Save user profile
-            save_user(new_user)
-            logging.info(f"Saved user profile for: {username}")
+            if not auth_response.user:
+                flash("Registration failed", "error")
+                return render_template("register.html")
 
-            # Initialize user-specific provider manager
-            user_provider_manager = DatabaseManager(username, app.cipher_suite)
+            # Create user profile in database
+            db_manager = DatabaseManager("system", app.cipher_suite)
+            success = db_manager.create_user(
+                user_id=auth_response.user.id,
+                username=username,
+                clinic_name=clinic_name,
+                user_name_for_message=user_name_for_message,
+                appointment_types=[],
+                appointment_types_data=[]
+            )
+            
+            if not success:
+                # Rollback auth creation if profile creation fails
+                supabase.auth.admin.delete_user(auth_response.user.id)
+                flash("Failed to create user profile", "error")
+                return render_template("register.html")
 
-            # Add providers from registration form
-            providers_added_count = 0
-            if providers_data:
-                logging.info(f"Adding {len(providers_data)} providers for new user {username} from registration form.")
-                for provider_info in providers_data:
-                    first_name = provider_info.get('first_name')
-                    last_initial = provider_info.get('last_initial', '') 
-                    if first_name: 
-                        added = user_provider_manager.add_provider(first_name, last_initial)
-                        if added:
-                            providers_added_count += 1
-                        else:
-                             logging.warning(f"Could not add provider '{first_name} {last_initial}' for user {username} during registration (duplicate or error).")
-                logging.info(f"Successfully added {providers_added_count} initial providers for user {username}.")
-            else:
-                logging.info(f"No initial providers submitted during registration for user {username}.")
+            # Create user object and log in
+            user = User(
+                user_id=auth_response.user.id,
+                username=username,
+                clinic_name=clinic_name,
+                user_name_for_message=user_name_for_message
+            )
+            login_user(user)
+            flash("Registration successful!", "success")
+            return redirect(url_for("index"))
 
-            flash("Registration successful! Please log in.", "success")
-            return redirect(url_for("login"))
         except Exception as e:
-            error_msg = f"Error during registration for user {username}: {e}"
-            logger.error(error_msg, exc_info=True)
-            flash(error_msg, "danger")  # Show the actual error!
-            return redirect(url_for("register"))
+            logging.error(f"Error during registration: {e}", exc_info=True)
+            flash("An error occurred during registration", "error")
+            return render_template("register.html")
 
     return render_template("register.html")
 
@@ -382,53 +378,43 @@ def register():
 # Add Login Route
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if current_user.is_authenticated:
-        logger.info(f"User already authenticated: {current_user.username}")
-        return redirect(url_for("index"))
-    
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-        
-        logger.info(f"Login attempt for username: {username}")
-        
-        user = get_user_by_username(username)
-        logger.info(f"User lookup result: {user is not None}")
-        
-        if not user:
-            logger.warning(f"Login failed: User {username} not found")
-            flash("Invalid username or password.", "danger")
-            return redirect(url_for("login"))
-            
-        if not user.check_password(password):
-            logger.warning(f"Login failed: Invalid password for user {username}")
-            flash("Invalid username or password.", "danger")
-            return redirect(url_for("login"))
-            
+
+        if not username or not password:
+            flash("Username and password are required", "error")
+            return render_template("login.html")
+
         try:
-            # More explicit login process
-            login_user(user, remember=request.form.get("remember"))
-            session.permanent = True  # Make the session permanent
+            # Authenticate with Supabase
+            auth_response = supabase.auth.sign_in_with_password({
+                "email": f"{username}@example.com",
+                "password": password
+            })
+
+            if not auth_response.user:
+                flash("Invalid username or password", "error")
+                return render_template("login.html")
+
+            # Get user profile from database
+            db_manager = DatabaseManager("system", app.cipher_suite)
+            user_data = db_manager.get_user_by_id(auth_response.user.id)
             
-            # Force session save
-            session.modified = True
-            
-            # Debug logging
-            logger.info(f"User {username} logged in successfully")
-            logger.info(f"Session after login: {dict(session)}")
-            logger.info(f"User authenticated: {current_user.is_authenticated}")
-            logger.info(f"Session ID: {session.sid if hasattr(session, 'sid') else 'No session ID'}")
-            logger.info(f"Session directory exists: {os.path.exists(app.config['SESSION_FILE_DIR'])}")
-            logger.info(f"Session directory contents: {os.listdir(app.config['SESSION_FILE_DIR']) if os.path.exists(app.config['SESSION_FILE_DIR']) else 'Directory not found'}")
-            
-            next_page = request.args.get("next")
-            flash("Logged in successfully.", "success")
-            return redirect(next_page or url_for("index"))
-            
+            if not user_data:
+                flash("User profile not found", "error")
+                return render_template("login.html")
+
+            # Create user object and log in
+            user = User.from_dict(user_data)
+            login_user(user)
+            flash("Login successful!", "success")
+            return redirect(url_for("index"))
+
         except Exception as e:
-            logger.error(f"Error during login for user {username}: {str(e)}", exc_info=True)
-            flash(f"An error occurred during login: {str(e)}", "danger")
-            return redirect(url_for("login"))
+            logging.error(f"Error during login: {e}", exc_info=True)
+            flash("An error occurred during login", "error")
+            return render_template("login.html")
 
     return render_template("login.html")
 
@@ -437,8 +423,15 @@ def login():
 @app.route("/logout")
 @login_required  # User must be logged in to log out
 def logout():
-    logout_user()
-    flash("You have been logged out.", "success")
+    try:
+        # Sign out from Supabase
+        supabase.auth.sign_out()
+        # Log out from Flask-Login
+        logout_user()
+        flash("Logged out successfully", "success")
+    except Exception as e:
+        logging.error(f"Error during logout: {e}", exc_info=True)
+        flash("An error occurred during logout", "error")
     return redirect(url_for("login"))
 
 
@@ -464,6 +457,7 @@ def slots():
         slot_for_match = next((s for s in all_slots if s.get('id') == current_appointment_id_in_session), None)
         if slot_for_match and slot_for_match.get('status') == 'available': # Only find matches for available slots
             current_appointment_for_matching = slot_for_match
+            logging.info(f"Finding matches for slot {current_appointment_id_in_session}: {slot_for_match}")
             
             # Logic to find eligible patients for this slot
             all_patients = user_waitlist_manager.get_patients()
@@ -481,16 +475,21 @@ def slots():
             elif isinstance(slot_date_str, datetime):
                 slot_dt = slot_date_str
 
+            logging.info(f"Slot requirements - Duration: {slot_duration}, Provider: {slot_provider}, Date: {slot_dt}, Period: {slot_period}")
+
             for patient in all_patients:
                 if patient.get("status") != "waiting":
+                    logging.info(f"Patient {patient.get('id')} skipped: Status is {patient.get('status')} (not waiting)")
                     continue
 
                 patient_duration = int(patient.get("duration", 0))
                 if patient_duration > slot_duration:
+                    logging.info(f"Patient {patient.get('id')} skipped: Duration mismatch (patient: {patient_duration} > slot: {slot_duration})")
                     continue
 
                 patient_provider_pref = patient.get("provider", "no preference").lower()
                 if patient_provider_pref != "no preference" and patient_provider_pref != slot_provider:
+                    logging.info(f"Patient {patient.get('id')} skipped: Provider mismatch (patient: '{patient_provider_pref}' != slot: '{slot_provider}')")
                     continue
                 
                 # Availability Check
@@ -507,14 +506,16 @@ def slots():
                     
                     if patient_availability_mode == "available":
                         if not day_periods or not is_patient_available_for_slot_period: # Must be explicitly available
+                            logging.info(f"Patient {patient.get('id')} skipped: Availability mismatch (mode: available, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
                             continue
                     elif patient_availability_mode == "unavailable":
                         if patient_availability and is_patient_available_for_slot_period: # Must NOT be explicitly unavailable
+                            logging.info(f"Patient {patient.get('id')} skipped: Availability mismatch (mode: unavailable, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
                             continue
                 else: # If slot_dt is not valid, cannot perform date-based availability check
                     logging.debug(f"Skipping date-based availability for patient {patient.get('id')} due to invalid slot date for slot {slot_for_match.get('id')}")
 
-
+                logging.info(f"Patient {patient.get('id')} matched for slot {current_appointment_id_in_session}")
                 eligible_patients_data.append(patient)
             
             # Sort eligible patients (e.g., by urgency, then wait time)
@@ -524,18 +525,20 @@ def slots():
                 return (urgency_order.get(p.get('urgency', 'medium'), 99), -wait_days_val)
             eligible_patients_data.sort(key=sort_key_eligible)
 
+            logging.info(f"Found {len(eligible_patients_data)} eligible patients for slot {current_appointment_id_in_session}")
+
     return render_template("slots.html",
-                           cancelled_appointments=all_slots, # Changed variable name
+                           cancelled_appointments=all_slots,
                            providers=providers,
                            has_providers=len(providers) > 0,
                            appointment_types=current_user.appointment_types or [],
-                           appointment_types_data=appointment_types_data, # Pass this for modals/JS
+                           appointment_types_data=appointment_types_data,
                            duration_map=duration_map,
                            current_user_name=current_user.user_name_for_message or "the scheduling team",
                            current_clinic_name=current_user.clinic_name or "our clinic",
                            current_appointment_id_for_matching=current_appointment_id_in_session,
-                           current_appointment=current_appointment_for_matching, # Pass the matched slot
-                           eligible_patients=eligible_patients_data # Pass the found patients
+                           current_appointment=current_appointment_for_matching,
+                           eligible_patients=eligible_patients_data
                            )
 
 
@@ -908,25 +911,25 @@ def propose_slot(slot_id, patient_id):
 def confirm_booking(slot_id, patient_id):
     """Confirms the booking, removing the patient and the slot."""
     _, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
-    try:
-        slot = user_slot_manager.get_cancelled_slots()
-        slot = next((s for s in slot if s.get('id') == slot_id), None)
-        patient = user_waitlist_manager.get_patient(patient_id)
-        if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
-            flash("Error confirming: Slot not found, not pending, or proposed to a different patient.", "danger")
+    # try:
+    slot = user_slot_manager.get_cancelled_slots()
+    slot = next((s for s in slot if s.get('id') == slot_id), None)
+    patient = user_waitlist_manager.get_patient(patient_id)
+    if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
+        flash("Error confirming: Slot not found, not pending, or proposed to a different patient.", "danger")
+        return redirect(request.referrer or url_for('index'))
+    if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
+            flash("Error confirming: Patient not found, not pending, or proposed for a different slot.", "danger")
             return redirect(request.referrer or url_for('index'))
-        if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
-             flash("Error confirming: Patient not found, not pending, or proposed for a different slot.", "danger")
-             return redirect(request.referrer or url_for('index'))
-        patient_removed = user_waitlist_manager.remove_patient(patient_id)
-        slot_removed = user_slot_manager.remove_slot(slot_id)
-        if patient_removed and slot_removed:
-            flash("Booking confirmed. Patient removed from waitlist and slot closed.", "success")
-        else:
-            flash("Error confirming booking during removal. Patient or slot may not have been fully removed.", "danger")
-    except Exception as e:
-        logging.error(f"Error confirming booking for slot {slot_id} / patient {patient_id}: {e}", exc_info=True)
-        flash("An unexpected error occurred while confirming the booking.", "danger")
+    patient_removed = user_waitlist_manager.remove_patient(patient_id)
+    slot_removed = user_slot_manager.remove_slot(slot_id)
+    if patient_removed and slot_removed:
+        flash("Booking confirmed. Patient removed from waitlist and slot closed.", "success")
+    else:
+        flash("Error confirming booking during removal. Patient or slot may not have been fully removed.", "danger")
+    # except Exception as e:
+      #  logging.error(f"Error confirming booking for slot {slot_id} / patient {patient_id}: {e}", exc_info=True)
+      #  flash("An unexpected error occurred while confirming the booking.", "danger")
     return redirect(url_for("index"))
 
 
@@ -935,23 +938,23 @@ def confirm_booking(slot_id, patient_id):
 def cancel_proposal(slot_id, patient_id):
     """Cancels a pending proposal, making the slot and patient available again."""
     _, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
-    try:
-        slot = user_slot_manager.get_cancelled_slots()
-        slot = next((s for s in slot if s.get('id') == slot_id), None)
-        patient = user_waitlist_manager.get_patient(patient_id)
-        if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
-            flash("Error cancelling: Slot not found, not pending, or proposed to a different patient.", "warning")
+    # try:
+    slot = user_slot_manager.get_cancelled_slots()
+    slot = next((s for s in slot if s.get('id') == slot_id), None)
+    patient = user_waitlist_manager.get_patient(patient_id)
+    if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
+        flash("Error cancelling: Slot not found, not pending, or proposed to a different patient.", "warning")
+        return redirect(request.referrer or url_for('index'))
+    if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
+            flash("Error cancelling: Patient not found, not pending, or proposed for a different slot.", "warning")
             return redirect(request.referrer or url_for('index'))
-        if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
-             flash("Error cancelling: Patient not found, not pending, or proposed for a different slot.", "warning")
-             return redirect(request.referrer or url_for('index'))
-        slot_reset = user_slot_manager.cancel_slot_proposal(slot_id)
-        patient_reset = user_waitlist_manager.cancel_patient_proposal(patient_id)
-        if slot_reset and patient_reset:
-            flash("Proposal cancelled. Slot and patient are available again.", "info")
-        else:
-            flash("Error cancelling proposal state. Please check logs.", "danger")
-    except Exception as e:
+    slot_reset = user_slot_manager.cancel_slot_proposal(slot_id)
+    patient_reset = user_waitlist_manager.cancel_patient_proposal(patient_id)
+    if slot_reset and patient_reset:
+        flash("Proposal cancelled. Slot and patient are available again.", "info")
+    else:
+        flash("Error cancelling proposal state. Please check logs.", "danger")
+    # except Exception as e:
         logging.error(f"Error cancelling proposal for slot {slot_id} / patient {patient_id}: {e}", exc_info=True)
         flash("An unexpected error occurred while cancelling the proposal.", "danger")
     redirect_url = request.referrer or url_for('index')
@@ -1111,39 +1114,41 @@ def api_find_matches_for_patient(patient_id):
     )
 
     patient = user_waitlist_manager.get_patient(patient_id)
+    logging.info(f"Finding matches for patient {patient_id}: {patient}")
 
     if not patient:
         return jsonify({"error": "Patient not found"}), 404
     if patient.get("status", "waiting") != "waiting":
-        return jsonify({"error": "Patient is not currently waiting", "status": patient.get("status")}), 400 # Use 400 Bad Request
+        return jsonify({"error": "Patient is not currently waiting", "status": patient.get("status")}), 400
 
     # Get all available slots (status 'available')
     all_slots = user_slot_manager.get_cancelled_slots()
     available_slots = [
         slot for slot in all_slots if slot.get("status", "available") == "available"
     ]
-    logging.debug(f"Found {len(available_slots)} available slots for patient {patient_id}")
+    logging.info(f"Found {len(available_slots)} available slots for patient {patient_id}")
 
-
-    # Filter slots based on patient requirements (Logic copied from api_matching_slots)
+    # Filter slots based on patient requirements
     matching_slots = []
     patient_duration = int(patient.get("duration", 0))
     patient_provider_pref = patient.get("provider", "no preference").lower()
     patient_availability = patient.get("availability", {})
     patient_availability_mode = patient.get("availability_mode", "available")
 
+    logging.info(f"Patient requirements - Duration: {patient_duration}, Provider: {patient_provider_pref}, Availability Mode: {patient_availability_mode}")
+    logging.info(f"Patient availability preferences: {patient_availability}")
 
     for slot in available_slots:
         # Check duration
         slot_duration = int(slot.get("duration", 0))
         if patient_duration > slot_duration:
-            logging.debug(f"Slot {slot.get('id')} rejected: Duration mismatch ({slot_duration} < {patient_duration})")
+            logging.info(f"Slot {slot.get('id')} rejected: Duration mismatch (slot: {slot_duration} < patient: {patient_duration})")
             continue
 
         # Check provider
         slot_provider = slot.get("provider", "").lower()
         if patient_provider_pref != "no preference" and patient_provider_pref != slot_provider:
-            logging.debug(f"Slot {slot.get('id')} rejected: Provider mismatch ('{slot_provider}' != '{patient_provider_pref}')")
+            logging.info(f"Slot {slot.get('id')} rejected: Provider mismatch (slot: '{slot_provider}' != patient: '{patient_provider_pref}')")
             continue
 
         # Check availability
@@ -1155,14 +1160,13 @@ def api_find_matches_for_patient(patient_id):
             try:
                 slot_date = datetime.strptime(slot_date_str, "%Y-%m-%d")
             except ValueError:
-                 logging.warning(f"Could not parse slot date '{slot_date_str}' for slot {slot.get('id')}")
-                 continue # Skip if date is invalid
+                logging.warning(f"Could not parse slot date '{slot_date_str}' for slot {slot.get('id')}")
+                continue
         elif isinstance(slot_date_str, datetime):
-             slot_date = slot_date_str
+            slot_date = slot_date_str
         else:
-             logging.warning(f"Invalid slot date type '{type(slot_date_str)}' for slot {slot.get('id')}")
-             continue # Skip if date is invalid type
-
+            logging.warning(f"Invalid slot date type '{type(slot_date_str)}' for slot {slot.get('id')}")
+            continue
 
         if patient_availability: # Only check if patient specified preferences
             slot_weekday = slot_date.strftime("%A") # Full day name e.g. Monday
@@ -1173,16 +1177,16 @@ def api_find_matches_for_patient(patient_id):
             if patient_availability_mode == "available":
                 # Patient must be explicitly available
                 if not day_periods or not is_available_on_day_period:
-                    logging.debug(f"Slot {slot.get('id')} rejected: Availability mismatch (mode: available, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
+                    logging.info(f"Slot {slot.get('id')} rejected: Availability mismatch (mode: available, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
                     continue
             else: # patient_availability_mode == "unavailable"
                 # Patient must NOT be explicitly unavailable
                 if day_periods and is_available_on_day_period:
-                    logging.debug(f"Slot {slot.get('id')} rejected: Availability mismatch (mode: unavailable, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
+                    logging.info(f"Slot {slot.get('id')} rejected: Availability mismatch (mode: unavailable, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
                     continue
 
         # If all checks pass, add the slot
-        logging.debug(f"Slot {slot.get('id')} matched for patient {patient_id}")
+        logging.info(f"Slot {slot.get('id')} matched for patient {patient_id}")
         matching_slots.append(slot)
 
     # Sort matching slots by date
@@ -1192,23 +1196,21 @@ def api_find_matches_for_patient(patient_id):
             try:
                 return datetime.strptime(date_str, "%Y-%m-%d")
             except ValueError:
-                return datetime.max # Put unparseable dates last
+                return datetime.max
         elif isinstance(date_str, datetime):
             return date_str
-        return datetime.max # Put slots with missing/invalid dates last
+        return datetime.max
 
     matching_slots.sort(key=sort_key)
 
     logging.info(f"Returning {len(matching_slots)} matching slots for patient {patient_id}")
     # Return only necessary slot info for the modal
-    # Convert date obj back to string for JSON if needed
     result_slots = []
     for slot in matching_slots:
         slot_data = slot.copy()
         if isinstance(slot_data.get("date"), datetime):
             slot_data["date"] = slot_data["date"].strftime('%Y-%m-%d')
         result_slots.append(slot_data)
-
 
     return jsonify({"patient": patient, "matching_slots": result_slots})
 
