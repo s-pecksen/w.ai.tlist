@@ -24,7 +24,7 @@
 </style>
 {% endblock %}
 
-{% block content %}
+{% block content %} 
 {# Macro needed for formatting appointment types in eligible patient list #}
 {% macro format_appointment_type(patient) %}
     {% set appt_type = patient.appointment_type.strip()|lower %}
@@ -78,24 +78,24 @@
                             <label for="slot_provider" class="form-label">Provider</label>
                             <select class="form-select" id="slot_provider" name="provider" required>
                                 <option value="" selected disabled>Select Provider</option>
-                                {% for provider_dict in providers %}
-                                    <option value="{{ provider_dict.name }}">{{ provider_dict.name }}</option>
+                                {% for provider in providers %}
+                                    <option value="{{ provider.id }}">{{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}</option>
                                 {% endfor %}
                             </select>
                         </div>
                          <div class="row">
                              <div class="col-md-6 mb-3">
-                                <label for="slot_date" class="form-label">Date</label>
-                                <input type="date" class="form-control" id="slot_date" name="slot_date" required>
+                                <label for="date" class="form-label">Date</label>
+                                <input type="date" class="form-control" id="date" name="date" required>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="slot_time" class="form-label">Time</label>
-                                <input type="time" class="form-control" id="slot_time" name="slot_time" required>
+                                <label for="time" class="form-label">Time</label>
+                                <input type="time" class="form-control" id="time" name="time" required>
                             </div>
                          </div>
                         <div class="mb-3">
-                            <label for="slot_duration" class="form-label">Duration</label>
-                            <select class="form-select" id="slot_duration" name="duration" required>
+                            <label for="duration" class="form-label">Duration</label>
+                            <select class="form-select" id="duration" name="duration" required>
                                 <option value="" disabled selected>Select Duration</option>
                                 <option value="30">30 minutes</option>
                                 <option value="60">1 hour</option>
@@ -105,8 +105,8 @@
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label for="slot_notes" class="form-label">Notes (Optional)</label>
-                            <textarea class="form-control" id="slot_notes" name="notes" rows="2"></textarea>
+                            <label for="notes" class="form-label">Notes (Optional)</label>
+                            <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
                         </div>
                         <button type="submit" class="btn btn-primary">Add Slot</button>
                     </form>
@@ -130,15 +130,11 @@
                                     <div>
                                         <strong>{{ appointment.provider }}</strong><br>
                                         <div class="slot-details">
-                                            {% if appointment.slot_date %}
-                                                {% if appointment.slot_date is string %}
-                                                    {{ appointment.slot_date }}
-                                                {% else %}
-                                                    {{ appointment.slot_date.strftime('%a, %b %d, %Y') }}
-                                                {% endif %}
-                                                {% if appointment.slot_time %} at {{ appointment.slot_time }}
-                                                {% endif %}
-                                            {% else %} Date/Time Unknown {% endif %}
+                                            {% if appointment.date %}
+                                                {{ appointment.date }}
+                                            {% endif %}
+                                            {% if appointment.time %} at {{ appointment.time }}
+                                            {% endif %}
                                             <br> Duration: {{ appointment.duration }} minutes
                                             {% if appointment.notes %} <br>Notes: {{ appointment.notes }} {% endif %}
                                             {# Display Pending Status #}
@@ -176,11 +172,11 @@
                                                     data-bs-toggle="modal"
                                                     data-bs-target="#editSlotModal"
                                                     data-slot-id="{{ appointment.id }}"
-                                                    data-provider="{{ appointment.provider }}"
+                                                    data-provider-id="{{ appointment.provider_id }}"
                                                     data-duration="{{ appointment.duration }}"
-                                                    data-slot-date="{{ appointment.slot_date.strftime('%Y-%m-%d') if appointment.slot_date is not string else appointment.slot_date }}"
-                                                    data-slot-time="{{ appointment.slot_time or ''}}"
-                                                    data-notes="{{ appointment.notes or '' }}"
+                                                    data-slot-date="{{ appointment.date }}"
+                                                    data-slot-time="{{ appointment.time }}"
+                                                    data-notes="{{ appointment.notes }}"
                                                     title="Edit Slot">
                                                  <i class="bi bi-pencil"></i> Edit
                                             </button>
@@ -212,13 +208,9 @@
           <div class="card-header bg-primary text-white">
             <h5 class="mb-0">Eligible Patients Found for Slot</h5>
             <p class="mb-0" id="eligible-patients-slot-info">
-              {% if current_appointment and current_appointment.slot_date %}
-                {% if current_appointment.slot_date is string %}
-                    {{ current_appointment.slot_date }}
-                {% else %}
-                    {{ current_appointment.slot_date.strftime('%A, %B %d, %Y') }}
-                {% endif %}
-                {% if current_appointment.slot_time %} at {{ current_appointment.slot_time }}
+              {% if current_appointment and current_appointment.date %}
+                {{ current_appointment.date }}
+                {% if current_appointment.time %} at {{ current_appointment.time }}
                 {% endif %}
                 | Provider: {{ current_appointment.provider }} | Duration: {{ current_appointment.duration }} minutes
               {% else %}
@@ -308,7 +300,7 @@
                         </div>
                       </td>
                       <td> {# Action Buttons: Propose + Mark as Proposed #}
-                        {% if patient.id and current_appointment.id and current_appointment.slot_date and current_appointment.slot_time %}
+                        {% if patient.id and current_appointment.id and current_appointment.date and current_appointment.time %}
                            {# Propose Slot Button (Opens Modal) #}
                           <button type="button" class="btn btn-sm btn-info propose-slot-btn"
                                   data-bs-toggle="modal" data-bs-target="#proposeSlotModal"
@@ -316,9 +308,9 @@
                                   data-patient-name="{{ patient.name }}"
                                   data-patient-first-name="{{ patient.name.split()[0] }}"
                                   data-appointment-id="{{ current_appointment.id }}"
-                                  data-slot-weekday="{{ current_appointment.slot_date.strftime('%A') if current_appointment.slot_date is not string else 'Unknown' }}"
-                                  data-slot-date-str="{{ current_appointment.slot_date.strftime('%B %d, %Y') if current_appointment.slot_date is not string else 'Unknown' }}"
-                                  data-slot-time="{{ current_appointment.slot_time }}"
+                                  data-slot-weekday="{{ current_appointment.date.strftime('%A') if current_appointment.date is not string else 'Unknown' }}"
+                                  data-slot-date-str="{{ current_appointment.date.strftime('%B %d, %Y') if current_appointment.date is not string else 'Unknown' }}"
+                                  data-slot-time="{{ current_appointment.time }}"
                                   data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}"
                                   data-provider-name="{{ current_appointment.provider }}"
                                   data-patient-email="{{ patient.email or '' }}">
@@ -370,19 +362,19 @@
             <label for="edit_slot_provider" class="form-label">Provider</label>
             <select class="form-select" id="edit_slot_provider" name="provider" required>
               <option value="" disabled>Select Provider</option>
-              {% for provider_dict in providers %}
-                <option value="{{ provider_dict.name }}">{{ provider_dict.name }}</option>
+              {% for provider in providers %}
+                <option value="{{ provider.id }}">{{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}</option>
               {% endfor %}
             </select>
           </div>
           <div class="row">
             <div class="col-md-6 mb-3">
               <label for="edit_slot_date" class="form-label">Date</label>
-              <input type="date" class="form-control" id="edit_slot_date" name="slot_date" required>
+              <input type="date" class="form-control" id="edit_slot_date" name="date" required>
             </div>
             <div class="col-md-6 mb-3">
               <label for="edit_slot_time" class="form-label">Time</label>
-              <input type="time" class="form-control" id="edit_slot_time" name="slot_time" required>
+              <input type="time" class="form-control" id="edit_slot_time" name="time" required step="1800">
             </div>
           </div>
           <div class="mb-3">
@@ -472,20 +464,25 @@
                 const form = document.getElementById('edit-slot-form');
 
                 // Update the form action URL
-                // Ensure the placeholder is unique if multiple forms use this pattern
                 let actionUrl = "{{ url_for('update_cancelled_slot', appointment_id='SLOT_ID_PLACEHOLDER') }}";
-                // Basic check to prevent replacing if already done (less likely here)
                 if (actionUrl.includes('SLOT_ID_PLACEHOLDER')) {
                     form.action = actionUrl.replace('SLOT_ID_PLACEHOLDER', slotId);
                 }
 
-
                 // Populate form fields from data attributes
-                document.getElementById('edit_slot_provider').value = button.getAttribute('data-provider');
+                document.getElementById('edit_slot_provider').value = button.getAttribute('data-provider-id');
                 document.getElementById('edit_slot_date').value = button.getAttribute('data-slot-date');
-                document.getElementById('edit_slot_time').value = button.getAttribute('data-slot-time');
+                
+                // Format time value to ensure HH:MM format
+                const timeValue = button.getAttribute('data-slot-time');
+                if (timeValue) {
+                    const [hours, minutes] = timeValue.split(':');
+                    const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+                    document.getElementById('edit_slot_time').value = formattedTime;
+                }
+                
                 document.getElementById('edit_slot_duration').value = button.getAttribute('data-duration');
-                document.getElementById('edit_slot_notes').value = button.getAttribute('data-notes');
+                document.getElementById('edit_slot_notes').value = button.getAttribute('data-notes') || '';
             });
         }
 

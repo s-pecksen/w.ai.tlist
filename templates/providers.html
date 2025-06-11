@@ -49,14 +49,13 @@
                 </div>
                 <ul class="list-group list-group-flush">
                     {% if providers %}
-                        {% for provider_dict in providers %}
+                        {% for provider in providers %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
-                                {{ provider_dict.name }}
+                                {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}
                                 <div>
-                                    <form action="{{ url_for('remove_provider') }}" method="post" class="d-inline" onsubmit="return confirm('Are you sure you want to remove provider {{ provider_dict.name }}?');">
-                                        {% set name_parts = provider_dict.name.split(maxsplit=1) %}
-                                        <input type="hidden" name="first_name" value="{{ name_parts[0] }}">
-                                        <input type="hidden" name="last_initial" value="{{ name_parts[1] if name_parts|length > 1 else '' }}">
+                                    <form action="{{ url_for('remove_provider') }}" method="post" class="d-inline" onsubmit="return confirm('Are you sure you want to remove provider {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}?');">
+                                        <input type="hidden" name="first_name" value="{{ provider.first_name }}">
+                                        <input type="hidden" name="last_initial" value="{{ provider.last_initial or '' }}">
                                         <button type="submit" class="btn btn-sm btn-danger">Remove</button>
                                     </form>
                                 </div>

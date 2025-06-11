@@ -28,8 +28,29 @@ from cryptography.fernet import Fernet
 import io
 import hashlib
 from src.diffstore import save_to_diff_store, load_from_diff_store
+from src.encryption_utils import load_decrypted_json, save_encrypted_json
 from flask_session import Session
 from pathlib import Path
+import re
+
+# Helper functions for wait time conversion
+def wait_time_to_days(wait_time_str):
+    """Convert wait time string to number of days."""
+    if not wait_time_str:
+        return 0
+    match = re.match(r'(\d+)\s*days?', wait_time_str.lower())
+    if match:
+        return int(match.group(1))
+    return 0
+
+def wait_time_to_minutes(wait_time_str):
+    """Convert wait time string to number of minutes."""
+    if not wait_time_str:
+        return 0
+    match = re.match(r'(\d+)\s*minutes?', wait_time_str.lower())
+    if match:
+        return int(match.group(1))
+    return 0
 
 # Load environment variables from .env file
 load_dotenv()
@@ -242,9 +263,9 @@ def load_user(user_id):
 def get_user_managers(username):
     """Get managers initialized with user-specific data paths"""
     return (
-        DBProviderManager(username),
-        DBPatientWaitlistManager(username),
-        DBCancelledSlotManager(username)
+        DatabaseManager(username, app.cipher_suite),
+        DatabaseManager(username, app.cipher_suite),
+        DatabaseManager(username, app.cipher_suite)
     )
 
 # Add Registration Route
@@ -328,22 +349,7 @@ def register():
             logging.info(f"Saved user profile for: {username}")
 
             # Initialize user-specific provider manager
-            user_provider_file = get_user_data_path(username, "provider.csv")
-            logging.info(f"Provider file path: {user_provider_file}")
-            
-            # --- MODIFICATION START for provider.csv ---
-            # Old code:
-            # with open(user_provider_file, "w", newline="", encoding="utf-8") as f:
-            #     writer = csv.writer(f)
-            #     writer.writerow(["name"]) # Write header only
-            
-            # New code: Create an empty encrypted CSV with header
-            provider_fieldnames = ["name"] # Matches the old logic
-            save_encrypted_csv([], user_provider_file, fieldnames=provider_fieldnames)
-            # --- MODIFICATION END for provider.csv ---
-
-            # Instantiate manager AFTER creating the encrypted file
-            user_provider_manager = DBProviderManager(username)
+            user_provider_manager = DatabaseManager(username, app.cipher_suite)
 
             # Add providers from registration form
             providers_added_count = 0
@@ -361,38 +367,6 @@ def register():
                 logging.info(f"Successfully added {providers_added_count} initial providers for user {username}.")
             else:
                 logging.info(f"No initial providers submitted during registration for user {username}.")
-
-            # Create empty encrypted waitlist.csv and cancelled.csv
-            waitlist_file = get_user_data_path(username, "waitlist.csv")
-            # --- MODIFICATION START for waitlist.csv ---
-            # Old code:
-            # if not os.path.exists(waitlist_file):
-            #      wl_mgr_temp = PatientWaitlistManager(waitlist_file=waitlist_file)
-            #      with open(waitlist_file, 'w', newline='', encoding='utf-8') as f:
-            #          writer = csv.DictWriter(f, fieldnames=wl_mgr_temp.fieldnames)
-            #          writer.writeheader()
-
-            # New code:
-            # Instantiate a temporary manager to get fieldnames (its load method handles non-existent files gracefully)
-            wl_mgr_fieldnames = DBPatientWaitlistManager(username).fieldnames
-            save_encrypted_csv([], waitlist_file, fieldnames=wl_mgr_fieldnames)
-            # --- MODIFICATION END for waitlist.csv ---
-
-
-            slots_file = get_user_data_path(username, "cancelled.csv")
-            # --- MODIFICATION START for cancelled.csv ---
-            # Old code:
-            # if not os.path.exists(slots_file):
-            #      slot_mgr_temp = CancelledSlotManager(slots_file=slots_file)
-            #      with open(slots_file, 'w', newline='', encoding='utf-8') as f:
-            #          writer = csv.DictWriter(f, fieldnames=slot_mgr_temp.headers)
-            #          writer.writeheader()
-
-            # New code:
-            # Instantiate a temporary manager to get headers
-            slot_mgr_headers = DBCancelledSlotManager(username).headers
-            save_encrypted_csv([], slots_file, fieldnames=slot_mgr_headers)
-            # --- MODIFICATION END for cancelled.csv ---
 
             flash("Registration successful! Please log in.", "success")
             return redirect(url_for("login"))
@@ -472,8 +446,8 @@ def logout():
 @login_required
 def slots():
     user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
-    providers = user_provider_manager.get_provider_list()
-    all_slots = user_slot_manager.get_all_slots()
+    providers = user_provider_manager.get_providers()
+    all_slots = user_slot_manager.get_cancelled_slots()
     
     appointment_types_data = current_user.appointment_types_data or []
     duration_map = {
@@ -492,11 +466,11 @@ def slots():
             current_appointment_for_matching = slot_for_match
             
             # Logic to find eligible patients for this slot
-            all_patients = user_waitlist_manager.get_all_patients()
+            all_patients = user_waitlist_manager.get_patients()
             slot_duration = int(slot_for_match.get("duration", 0))
             slot_provider = slot_for_match.get("provider", "").lower()
             
-            slot_date_str = slot_for_match.get("slot_date")
+            slot_date_str = slot_for_match.get("date")
             slot_period = slot_for_match.get("slot_period", "").upper()
             slot_dt = None
             if isinstance(slot_date_str, str):
@@ -582,16 +556,24 @@ def index():
     logging.debug(f"Session contents: {dict(session)}")
     
     try:
+        logging.info("Getting user managers...")
         user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
-        user_waitlist_manager.update_wait_times() # Update wait times on load
+        logging.info("Got user managers successfully")
 
-        providers = user_provider_manager.get_provider_list()
-        waitlist = user_waitlist_manager.get_all_patients()
+        logging.info("Getting providers...")
+        providers = user_provider_manager.get_providers()
+        logging.info(f"Got {len(providers)} providers")
+
+        logging.info("Getting patients...")
+        waitlist = user_waitlist_manager.get_patients()
+        logging.info(f"Got {len(waitlist)} patients")
+
         appointment_types = current_user.appointment_types or []
         appointment_types_data = current_user.appointment_types_data or []
 
-        # Fetch slot data to potentially display proposed slot info
-        all_slots = user_slot_manager.get_all_slots()
+        logging.info("Getting cancelled slots...")
+        all_slots = user_slot_manager.get_cancelled_slots()
+        logging.info(f"Got {len(all_slots)} cancelled slots")
         slot_map = {s['id']: s for s in all_slots}
 
         # Augment patient data with proposed slot details if pending
@@ -600,7 +582,7 @@ def index():
                  proposed_slot = slot_map.get(patient["proposed_slot_id"])
                  if proposed_slot:
                      # Format date if it's an object
-                     slot_date_display = proposed_slot.get("slot_date")
+                     slot_date_display = proposed_slot.get("date")
                      if isinstance(slot_date_display, datetime):
                          slot_date_display = slot_date_display.strftime('%a, %b %d') # Example format
 
@@ -608,24 +590,20 @@ def index():
                  else:
                      patient["proposed_slot_details"] = "Proposed slot details unavailable"
 
-
-        # Prepare duration map (already exists)
+        # Prepare duration map
         duration_map = {
             item["appointment_type"].lower().replace(" ", "_"): item["durations"]
             for item in appointment_types_data
             if "appointment_type" in item and "durations" in item
         }
 
-        # Sorting (keep existing placeholder or implement actual sort)
-        # Example: Sort by status (pending first), then wait time (descending)
+        # Sorting
         def sort_key_waitlist(p):
             status_order = {'pending': 0, 'waiting': 1}
-            # Use the wait_time_to_minutes helper
             wait_minutes = wait_time_to_minutes(p.get('wait_time', '0 minutes'))
             return (status_order.get(p.get('status', 'waiting'), 99), -wait_minutes)
 
         sorted_waitlist = sorted(waitlist, key=sort_key_waitlist)
-
 
         if not providers:
             flash("Please add Provider names via settings to proceed", "warning")
@@ -633,12 +611,11 @@ def index():
         return render_template(
             "index.html",
             providers=providers,
-            waitlist=sorted_waitlist, # Use sorted list
+            waitlist=sorted_waitlist,
             has_providers=len(providers) > 0,
             appointment_types=appointment_types,
             appointment_types_data=appointment_types_data,
             duration_map=duration_map,
-            # Pass current_user details needed for the proposal modal JS
             current_clinic_name=current_user.clinic_name or "our clinic",
             current_user_name=current_user.user_name_for_message or "the scheduling team"
         )
@@ -775,9 +752,9 @@ def update_patient(patient_id):
 def add_cancelled_appointment():
     """Add a new cancelled appointment (open slot)"""
     _, _, user_slot_manager = get_user_managers(current_user.username)
-    provider = request.form.get("provider")
-    slot_date = request.form.get("slot_date")
-    slot_time_str = request.form.get("slot_time")
+    provider_id = request.form.get("provider")
+    slot_date = request.form.get("date")
+    slot_time_str = request.form.get("time")
     duration = request.form.get("duration")
     notes = request.form.get("notes", "")
     slot_period = "AM"
@@ -791,12 +768,16 @@ def add_cancelled_appointment():
     else:
         flash("Time is required.", "danger")
         return redirect(url_for("slots"))
-    if not all([provider, slot_date, slot_time_str, duration]):
+    if not all([provider_id, slot_date, slot_time_str, duration]):
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots"))
-    success = user_slot_manager.add_slot(
-        provider=provider, slot_date=slot_date, slot_time=slot_time_str,
-        slot_period=slot_period, duration=duration, notes=notes)
+    success = user_slot_manager.add_cancelled_slot(
+        provider_id=provider_id,
+        date=slot_date,
+        time=slot_time_str,
+        duration=duration,
+        notes=notes
+    )
     if success:
         flash("Open slot added successfully", "success")
     else:
@@ -809,7 +790,7 @@ def add_cancelled_appointment():
 def remove_cancelled_slot(appointment_id):
     """Remove a cancelled appointment (open slot)"""
     _, _, user_slot_manager = get_user_managers(current_user.username)
-    success = user_slot_manager.remove_slot(appointment_id)
+    success = user_slot_manager.remove_cancelled_slot(appointment_id)
     if success:
         flash("Open slot removed successfully", "success")
     else:
@@ -822,32 +803,61 @@ def remove_cancelled_slot(appointment_id):
 def update_cancelled_slot(appointment_id):
     """Update a cancelled appointment (open slot)"""
     _, _, user_slot_manager = get_user_managers(current_user.username)
+    
+    # Log the incoming request data
+    logging.info(f"Updating slot {appointment_id} with form data: {request.form}")
+    
     provider = request.form.get("provider")
-    slot_date = request.form.get("slot_date")
-    slot_time_str = request.form.get("slot_time")
+    slot_date = request.form.get("date")
+    slot_time_str = request.form.get("time")
     duration = request.form.get("duration")
     notes = request.form.get("notes", "")
-    slot_period = "AM"
-    if slot_time_str:
-        try:
-            time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
-            if time_obj.hour >= 12: slot_period = "PM"
-        except ValueError:
-            flash("Invalid time format entered.", "danger")
-            return redirect(url_for("slots"))
-    else:
-        flash("Time is required.", "danger")
-        return redirect(url_for("slots"))
+    
     if not all([provider, slot_date, slot_time_str, duration]):
+        missing_fields = [f for f, v in [("provider", provider), ("date", slot_date), 
+                                       ("time", slot_time_str), ("duration", duration)] if not v]
+        logging.error(f"Missing required fields: {missing_fields}")
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots"))
-    success = user_slot_manager.update_slot(
-        slot_id=appointment_id, provider=provider, slot_date=slot_date, slot_time=slot_time_str,
-        slot_period=slot_period, duration=duration, notes=notes)
-    if success:
-        flash("Open slot updated successfully", "success")
-    else:
+        
+    # Validate time format
+    try:
+        # Try parsing the time to validate format
+        time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
+        # Ensure the time is in HH:MM format
+        slot_time_str = time_obj.strftime("%H:%M")
+        logging.info(f"Validated time format: {slot_time_str}")
+    except ValueError as e:
+        logging.error(f"Invalid time format: {slot_time_str}, error: {str(e)}")
+        flash("Invalid time format entered. Please use HH:MM format (e.g., 09:30).", "danger")
+        return redirect(url_for("slots"))
+    
+    try:
+        # Log the data being sent to update_cancelled_slot
+        update_data = {
+            "provider": provider,
+            "date": slot_date,
+            "time": slot_time_str,
+            "duration": duration,
+            "notes": notes
+        }
+        logging.info(f"Attempting to update slot with data: {update_data}")
+        
+        success = user_slot_manager.update_cancelled_slot(
+            slot_id=appointment_id,
+            **update_data
+        )
+        
+        if success:
+            logging.info(f"Successfully updated slot {appointment_id}")
+            flash("Open slot updated successfully", "success")
+        else:
+            logging.error(f"Failed to update slot {appointment_id}")
+            flash("Error updating open slot", "danger")
+    except Exception as e:
+        logging.error(f"Exception while updating slot {appointment_id}: {str(e)}", exc_info=True)
         flash("Error updating open slot", "danger")
+        
     return redirect(url_for("slots"))
 
 
@@ -867,25 +877,25 @@ def propose_slot(slot_id, patient_id):
     try:
         patient = user_waitlist_manager.get_patient(patient_id)
         patient_name = patient.get("name", "Unknown") if patient else "Unknown"
-        slot_marked = user_slot_manager.mark_as_pending(slot_id, patient_id, patient_name)
-        patient_marked = user_waitlist_manager.mark_as_pending(patient_id, slot_id)
+        slot_marked = user_slot_manager.mark_slot_as_pending(slot_id, patient_id, patient_name)
+        patient_marked = user_waitlist_manager.mark_patient_as_pending(patient_id, slot_id)
         if slot_marked and patient_marked:
             flash("Slot proposed and marked as pending confirmation.", "info")
             session.pop("current_appointment_id", None)
         elif not slot_marked:
              flash("Error marking slot as pending. It might be already taken or not found.", "danger")
-             user_waitlist_manager.cancel_proposal(patient_id)
+             user_waitlist_manager.cancel_patient_proposal(patient_id)
         elif not patient_marked:
              flash("Error marking patient as pending. They might not be waiting or not found.", "danger")
-             user_slot_manager.cancel_proposal(slot_id)
+             user_slot_manager.cancel_slot_proposal(slot_id)
         else:
              flash("Error marking slot or patient as pending. Please check logs.", "danger")
     except Exception as e:
         logging.error(f"Error proposing slot {slot_id} to patient {patient_id}: {e}", exc_info=True)
         flash("An unexpected error occurred while proposing the slot.", "danger")
         try:
-            user_slot_manager.cancel_proposal(slot_id)
-            user_waitlist_manager.cancel_proposal(patient_id)
+            user_slot_manager.cancel_slot_proposal(slot_id)
+            user_waitlist_manager.cancel_patient_proposal(patient_id)
         except Exception as revert_e:
             logging.error(f"Error reverting state during proposal error: {revert_e}")
     redirect_url = request.referrer or url_for('index')
@@ -899,7 +909,7 @@ def confirm_booking(slot_id, patient_id):
     """Confirms the booking, removing the patient and the slot."""
     _, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
     try:
-        slot = user_slot_manager.get_all_slots()
+        slot = user_slot_manager.get_cancelled_slots()
         slot = next((s for s in slot if s.get('id') == slot_id), None)
         patient = user_waitlist_manager.get_patient(patient_id)
         if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
@@ -926,7 +936,7 @@ def cancel_proposal(slot_id, patient_id):
     """Cancels a pending proposal, making the slot and patient available again."""
     _, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
     try:
-        slot = user_slot_manager.get_all_slots()
+        slot = user_slot_manager.get_cancelled_slots()
         slot = next((s for s in slot if s.get('id') == slot_id), None)
         patient = user_waitlist_manager.get_patient(patient_id)
         if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
@@ -935,8 +945,8 @@ def cancel_proposal(slot_id, patient_id):
         if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
              flash("Error cancelling: Patient not found, not pending, or proposed for a different slot.", "warning")
              return redirect(request.referrer or url_for('index'))
-        slot_reset = user_slot_manager.cancel_proposal(slot_id)
-        patient_reset = user_waitlist_manager.cancel_proposal(patient_id)
+        slot_reset = user_slot_manager.cancel_slot_proposal(slot_id)
+        patient_reset = user_waitlist_manager.cancel_patient_proposal(patient_id)
         if slot_reset and patient_reset:
             flash("Proposal cancelled. Slot and patient are available again.", "info")
         else:
@@ -985,11 +995,11 @@ def upload_csv():
                 skipped_count = 0
                 
                 # Pre-fetch existing patients to check for duplicates
-                existing_patients_tuples = set((p['name'].lower(), p['phone']) for p in user_waitlist_manager.get_all_patients())
+                existing_patients_tuples = set((p['name'].lower(), p['phone']) for p in user_waitlist_manager.get_patients())
                 
                 # Define available appointment types and providers for validation
                 valid_appointment_types = [apt['appointment_type'].lower().replace(' ', '_') for apt in (current_user.appointment_types_data or [])]
-                valid_providers = [p['name'].lower() for p in user_provider_manager.get_provider_list()]
+                valid_providers = [p['name'].lower() for p in user_provider_manager.get_providers()]
                 valid_providers.append("no preference") # Allow "no preference"
 
                 # Helpers for validation
@@ -1108,7 +1118,7 @@ def api_find_matches_for_patient(patient_id):
         return jsonify({"error": "Patient is not currently waiting", "status": patient.get("status")}), 400 # Use 400 Bad Request
 
     # Get all available slots (status 'available')
-    all_slots = user_slot_manager.get_all_slots()
+    all_slots = user_slot_manager.get_cancelled_slots()
     available_slots = [
         slot for slot in all_slots if slot.get("status", "available") == "available"
     ]
@@ -1137,7 +1147,7 @@ def api_find_matches_for_patient(patient_id):
             continue
 
         # Check availability
-        slot_date_str = slot.get("slot_date")
+        slot_date_str = slot.get("date")
         slot_period = slot.get("slot_period", "").upper() # AM/PM
 
         slot_date = None
@@ -1177,7 +1187,7 @@ def api_find_matches_for_patient(patient_id):
 
     # Sort matching slots by date
     def sort_key(slot):
-        date_str = slot.get("slot_date")
+        date_str = slot.get("date")
         if isinstance(date_str, str):
             try:
                 return datetime.strptime(date_str, "%Y-%m-%d")
@@ -1195,8 +1205,8 @@ def api_find_matches_for_patient(patient_id):
     result_slots = []
     for slot in matching_slots:
         slot_data = slot.copy()
-        if isinstance(slot_data.get("slot_date"), datetime):
-            slot_data["slot_date"] = slot_data["slot_date"].strftime('%Y-%m-%d')
+        if isinstance(slot_data.get("date"), datetime):
+            slot_data["date"] = slot_data["date"].strftime('%Y-%m-%d')
         result_slots.append(slot_data)
 
 
@@ -1207,7 +1217,7 @@ def api_find_matches_for_patient(patient_id):
 @login_required
 def list_providers():
     user_provider_manager, _, _ = get_user_managers(current_user.username)
-    providers = user_provider_manager.get_provider_list()
+    providers = user_provider_manager.get_providers()
     return render_template("providers.html", providers=providers)
 
 
@@ -1250,7 +1260,7 @@ def edit_patient(patient_id):
         flash("Patient not found.", "danger")
         return redirect(url_for("index"))
     
-    providers = user_provider_manager.get_provider_list()
+    providers = user_provider_manager.get_providers()
     # Ensure appointment_types and appointment_types_data are available for the form
     appointment_types = current_user.appointment_types or []
     appointment_types_data = current_user.appointment_types_data or []

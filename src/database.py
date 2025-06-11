@@ -66,52 +66,45 @@ def init_db(app):
     
     # Create tables if they don't exist
     try:
-        # Create providers table
-        supabase.table('providers').create({
-            'id': 'int8 primary key generated always as identity',
-            'first_name': 'text not null',
-            'last_initial': 'text',
-            'user_id': 'text not null'
-        })
-        
-        # Create patients table
-        supabase.table('patients').create({
-            'id': 'uuid primary key default gen_random_uuid()',
-            'name': 'text not null',
-            'phone': 'text not null',
-            'email': 'text',
-            'reason': 'text',
-            'urgency': 'text default \'medium\'',
-            'appointment_type': 'text',
-            'duration': 'int default 30',
-            'provider': 'text default \'no preference\'',
-            'status': 'text default \'waiting\'',
-            'timestamp': 'timestamp with time zone default now()',
-            'wait_time': 'text',
-            'availability': 'jsonb',
-            'availability_mode': 'text default \'available\'',
-            'proposed_slot_id': 'uuid',
-            'user_id': 'text not null'
-        })
-        
-        # Create cancelled_slots table
-        supabase.table('cancelled_slots').create({
-            'id': 'uuid primary key default gen_random_uuid()',
-            'provider_id': 'int8 references providers(id) not null',
-            'date': 'date not null',
-            'time': 'time not null',
-            'duration': 'int default 30',
-            'notes': 'text',
-            'status': 'text default \'available\'',
-            'proposed_patient_id': 'uuid',
-            'proposed_patient_name': 'text',
-            'user_id': 'text not null'
-        })
-        
-        logger.info("Database tables initialized successfully")
+        # Test if providers table exists
+        supabase.table('providers').select('*').limit(1).execute()
     except Exception as e:
-        logger.error(f"Error creating database tables: {e}")
-        raise
+        if 'does not exist' in str(e):
+            try:
+                # Create providers table
+                supabase.table('providers').insert({
+                    'first_name': 'test',
+                    'user_id': 'test'
+                }).execute()
+                # Delete the test record
+                supabase.table('providers').delete().eq('first_name', 'test').execute()
+                
+                # Create patients table
+                supabase.table('patients').insert({
+                    'name': 'test',
+                    'phone': 'test',
+                    'user_id': 'test'
+                }).execute()
+                # Delete the test record
+                supabase.table('patients').delete().eq('name', 'test').execute()
+                
+                # Create cancelled_slots table
+                supabase.table('cancelled_slots').insert({
+                    'provider_id': 1,
+                    'date': '2024-01-01',
+                    'time': '09:00',
+                    'user_id': 'test'
+                }).execute()
+                # Delete the test record
+                supabase.table('cancelled_slots').delete().eq('date', '2024-01-01').execute()
+                
+                logger.info("Database tables initialized successfully")
+            except Exception as create_error:
+                logger.error(f"Error creating database tables: {create_error}")
+                raise
+        else:
+            logger.error(f"Error checking database tables: {e}")
+            raise
 
 class DatabaseManager:
     """Unified database manager for all database operations."""
@@ -153,7 +146,15 @@ class DatabaseManager:
     def get_patients(self) -> List[Dict[str, Any]]:
         """Get all patients for the current user."""
         response = supabase.table('patients').select('*').eq('user_id', self.user_id).execute()
-        return response.data
+        patients = response.data
+        for patient in patients:
+            avail = patient.get('availability')
+            if isinstance(avail, str):
+                try:
+                    patient['availability'] = json.loads(avail)
+                except Exception:
+                    patient['availability'] = {}
+        return patients
     
     def get_patient(self, patient_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific patient by ID."""
@@ -220,7 +221,8 @@ class DatabaseManager:
     def get_cancelled_slots(self) -> List[Dict[str, Any]]:
         """Get all cancelled slots for the current user."""
         response = supabase.table('cancelled_slots').select('*').eq('user_id', self.user_id).execute()
-        return response.data
+        slots = response.data
+        return slots
     
     def add_cancelled_slot(
         self,
@@ -253,10 +255,37 @@ class DatabaseManager:
     ) -> bool:
         """Update a cancelled slot."""
         try:
+            logging.info(f"DatabaseManager: Updating slot {slot_id} with updates: {updates}")
+            
+            # Convert provider to provider_id if present
+            if 'provider' in updates:
+                updates['provider_id'] = updates.pop('provider')
+            
+            # Validate required fields
+            required_fields = ['provider_id', 'date', 'time', 'duration']
+            missing_fields = [field for field in required_fields if field not in updates]
+            if missing_fields:
+                logging.error(f"Missing required fields for slot update: {missing_fields}")
+                return False
+                
+            # Ensure time is in correct format
+            if 'time' in updates:
+                try:
+                    time_obj = datetime.strptime(updates['time'], "%H:%M").time()
+                    updates['time'] = time_obj.strftime("%H:%M")
+                except ValueError as e:
+                    logging.error(f"Invalid time format in database update: {updates['time']}, error: {str(e)}")
+                    return False
+            
             response = supabase.table('cancelled_slots').update(updates).eq('id', slot_id).eq('user_id', self.user_id).execute()
-            return bool(response.data)
+            success = bool(response.data)
+            if success:
+                logging.info(f"Successfully updated slot {slot_id} in database")
+            else:
+                logging.error(f"No data returned from database update for slot {slot_id}")
+            return success
         except Exception as e:
-            logger.error(f"Error updating cancelled slot: {e}")
+            logging.error(f"Error updating cancelled slot {slot_id}: {str(e)}", exc_info=True)
             return False
     
     def remove_cancelled_slot(self, slot_id: str) -> bool:
@@ -266,4 +295,58 @@ class DatabaseManager:
             return bool(response.data)
         except Exception as e:
             logger.error(f"Error removing cancelled slot: {e}")
+            return False
+
+    def mark_slot_as_pending(self, slot_id: str, patient_id: str, patient_name: str = "Unknown") -> bool:
+        """Mark a slot as pending for a specific patient."""
+        try:
+            updates = {
+                'status': 'pending',
+                'proposed_patient_id': patient_id,
+                'proposed_patient_name': patient_name
+            }
+            response = supabase.table('cancelled_slots').update(updates).eq('id', slot_id).eq('user_id', self.user_id).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error marking slot as pending: {e}")
+            return False
+
+    def cancel_slot_proposal(self, slot_id: str) -> bool:
+        """Cancel a pending slot proposal."""
+        try:
+            updates = {
+                'status': 'available',
+                'proposed_patient_id': None,
+                'proposed_patient_name': None
+            }
+            response = supabase.table('cancelled_slots').update(updates).eq('id', slot_id).eq('user_id', self.user_id).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error cancelling slot proposal: {e}")
+            return False
+
+    def mark_patient_as_pending(self, patient_id: str, slot_id: str) -> bool:
+        """Mark a patient as pending for a specific slot."""
+        try:
+            updates = {
+                'status': 'pending',
+                'proposed_slot_id': slot_id
+            }
+            response = supabase.table('patients').update(updates).eq('id', patient_id).eq('user_id', self.user_id).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error marking patient as pending: {e}")
+            return False
+
+    def cancel_patient_proposal(self, patient_id: str) -> bool:
+        """Cancel a pending patient proposal."""
+        try:
+            updates = {
+                'status': 'waiting',
+                'proposed_slot_id': None
+            }
+            response = supabase.table('patients').update(updates).eq('id', patient_id).eq('user_id', self.user_id).execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error cancelling patient proposal: {e}")
             return False 

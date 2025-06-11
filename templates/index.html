@@ -149,8 +149,10 @@
                                     <label for="provider" class="form-label">Provider Pref.*</label>
                                     <select class="form-select form-select-sm" id="provider" name="provider" required>
                                         <option value="no preference">No Preference</option>
-                                        {% for provider_dict in providers %}
-                                            <option value="{{ provider_dict.name }}">{{ provider_dict.name }}</option>
+                                        {% for provider in providers %}
+                                            <option value="{{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}">
+                                                {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}
+                                            </option>
                                         {% endfor %}
                                     </select>
                                 </div>
