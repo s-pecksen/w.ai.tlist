@@ -7,13 +7,14 @@ from flask import (
     flash,
     session,
     jsonify,
+    make_response,
 )
 from datetime import datetime, date, timedelta
 import os
 from dotenv import load_dotenv
 import csv
 from io import StringIO
-from src.database import init_db, DatabaseManager, supabase
+from src.database import get_supabase_client, validate_env_vars
 import logging
 import json
 from flask_login import (
@@ -27,9 +28,6 @@ from flask_login import (
 from cryptography.fernet import Fernet
 import io
 import hashlib
-from src.diffstore import save_to_diff_store, load_from_diff_store
-from src.encryption_utils import load_decrypted_json, save_encrypted_json
-from flask_session import Session
 from pathlib import Path
 import re
 import uuid
@@ -58,6 +56,9 @@ def wait_time_to_minutes(wait_time_str):
 # Load environment variables from .env file
 load_dotenv()
 
+# Validate environment variables
+validate_env_vars()
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -83,13 +84,10 @@ logger.info(f"Setting up persistent storage at: {DATA_DIR}")
 # Configure Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SESSION_SECRET_KEY', 'dev')
-app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = SESSIONS_DIR
-app.config['SESSION_FILE_THRESHOLD'] = 500
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
-
-# Initialize session
-Session(app)
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # --- Encryption Setup ---
 ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
@@ -100,15 +98,15 @@ try:
 except Exception as e:
     raise ValueError(f"CRITICAL: Invalid FLASK_APP_ENCRYPTION_KEY. It must be a 32 url-safe base64-encoded bytes. Error: {e}")
 
-# --- Flask App Initialization ---
-app.secret_key = os.environ.get("FLASK_SESSION_SECRET_KEY", os.urandom(24))
-
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
 login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "error"
+
+# Get Supabase client
+supabase = get_supabase_client()
 
 # Add debug logging for storage setup
 logger.info(f"Setting up persistent storage at: {DATA_DIR}")
@@ -151,24 +149,6 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERSISTENT_STORAGE_PATH"] = DATA_DIR
 app.config["USERS_DIR"] = USERS_DIR
-
-# Initialize the database
-init_db(app)
-
-# Password validation
-def validate_password(password):
-    """Validate password strength."""
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
-    if not re.search(r"[A-Z]", password):
-        return False, "Password must contain at least one uppercase letter"
-    if not re.search(r"[a-z]", password):
-        return False, "Password must contain at least one lowercase letter"
-    if not re.search(r"\d", password):
-        return False, "Password must contain at least one number"
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-        return False, "Password must contain at least one special character"
-    return True, "Password is valid"
 
 # --- User Class ---
 class User(UserMixin):
@@ -227,102 +207,58 @@ class User(UserMixin):
             appointment_types_data=appointment_types_data
         )
 
-# --- User Management Functions ---
-def save_user(user):
-    """Save user to database"""
-    try:
-        db_manager = DatabaseManager(user.id, app.cipher_suite)
-        success = db_manager.update_user(
-            user.id,
-            username=user.username,
-            clinic_name=user.clinic_name,
-            user_name_for_message=user.user_name_for_message,
-            appointment_types=user.appointment_types,
-            appointment_types_data=user.appointment_types_data
-        )
-        if success:
-            logging.info(f"Successfully saved user profile for: {user.username}")
-            return True
-        else:
-            logging.error(f"Failed to save user profile for: {user.username}")
-            return False
-    except Exception as e:
-        logging.error(f"Error saving user profile: {e}", exc_info=True)
-        return False
-
-def get_user_by_username(username):
-    """Get user by username from database"""
-    try:
-        db_manager = DatabaseManager("system", app.cipher_suite)
-        user_data = db_manager.get_user_by_username(username)
-        if not user_data:
-            logging.warning(f"No user data found for username: {username}")
-            return None
-        logging.info(f"Successfully loaded user profile for: {username}")
-        return User.from_dict(user_data)
-    except Exception as e:
-        logging.error(f"Error getting user by username: {e}", exc_info=True)
-        return None
-
-def get_user_by_id(user_id):
-    """Get user by ID from database"""
-    try:
-        db_manager = DatabaseManager("system", app.cipher_suite)
-        user_data = db_manager.get_user_by_id(user_id)
-        if not user_data:
-            logging.warning(f"No user data found for ID: {user_id}")
-            return None
-        return User.from_dict(user_data)
-    except Exception as e:
-        logging.error(f"Error getting user by ID: {e}", exc_info=True)
-        return None
-
-def username_exists(username):
-    """Check if username exists in database"""
-    try:
-        db_manager = DatabaseManager("system", app.cipher_suite)
-        return db_manager.username_exists(username)
-    except Exception as e:
-        logging.error(f"Error checking username existence: {e}", exc_info=True)
-        return False
-
 # Flask-Login user loader callback
 @login_manager.user_loader
 def load_user(user_id):
-    """Load user by ID"""
+    """Load user by ID from Supabase"""
     try:
-        db_manager = DatabaseManager("system", app.cipher_suite)
-        user_data = db_manager.get_user_by_id(user_id)
+        response = supabase.table("users").select("*").eq("id", user_id).single().execute()
+        user_data = response.data
         if user_data:
             return User.from_dict(user_data)
     except Exception as e:
-        logging.error(f"Error loading user: {e}", exc_info=True)
+        logging.error(f"Error loading user from Supabase: {e}", exc_info=True)
     return None
-
-# Function to get user-specific managers
-def get_user_managers(username):
-    """Get managers initialized with user-specific data paths"""
-    return (
-        DatabaseManager(username, app.cipher_suite),
-        DatabaseManager(username, app.cipher_suite),
-        DatabaseManager(username, app.cipher_suite)
-    )
 
 # Add Registration Route
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        clinic_name = request.form.get("clinic_name")
-        user_name_for_message = request.form.get("user_name_for_message")
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        clinic_name = request.form.get("clinic_name", "").strip()
+        user_name_for_message = request.form.get("user_name_for_message", "").strip()
 
+        logger.info(f"Registration attempt for username: {username}")
+        logger.info(f"Form data received: clinic_name={clinic_name}, user_name_for_message={user_name_for_message}")
+
+        # Validate input
         if not username or not password:
+            logger.warning("Registration failed: Missing username or password")
             flash("Username and password are required", "error")
+            return render_template("register.html")
+        
+        if len(password) < 8:
+            logger.warning("Registration failed: Password too short")
+            flash("Password must be at least 8 characters long", "error")
+            return render_template("register.html")
+        
+        if not re.match(r'^[a-zA-Z0-9_-]+$', username):
+            logger.warning("Registration failed: Invalid username format")
+            flash("Username can only contain letters, numbers, underscores, and hyphens", "error")
             return render_template("register.html")
 
         try:
+            # Check if username already exists
+            logger.info("Checking if username exists in Supabase")
+            response = supabase.table("users").select("id").eq("username", username).execute()
+            if response.data:
+                logger.warning(f"Registration failed: Username {username} already exists")
+                flash("Username already exists", "error")
+                return render_template("register.html")
+
             # Register user with Supabase Auth
+            logger.info("Attempting to create user in Supabase Auth")
             auth_response = supabase.auth.sign_up({
                 "email": f"{username}@example.com",  # Supabase requires email
                 "password": password,
@@ -334,25 +270,32 @@ def register():
                     }
                 }
             })
+            logger.info(f"Supabase Auth response: {auth_response}")
 
             if not auth_response.user:
+                logger.error("Registration failed: No user returned from Supabase Auth")
                 flash("Registration failed", "error")
                 return render_template("register.html")
 
             # Create user profile in database
-            db_manager = DatabaseManager("system", app.cipher_suite)
-            success = db_manager.create_user(
-                user_id=auth_response.user.id,
-                username=username,
-                clinic_name=clinic_name,
-                user_name_for_message=user_name_for_message,
-                appointment_types=[],
-                appointment_types_data=[]
-            )
-            
-            if not success:
+            logger.info("Creating user profile in database")
+            response = supabase.table("users").insert({
+                "id": auth_response.user.id,
+                "username": username,
+                "clinic_name": clinic_name,
+                "user_name_for_message": user_name_for_message,
+                "appointment_types": [],
+                "appointment_types_data": []
+            }).execute()
+            logger.info(f"Database insert response: {response}")
+
+            if not response.data:
                 # Rollback auth creation if profile creation fails
-                supabase.auth.admin.delete_user(auth_response.user.id)
+                logger.error("Profile creation failed, attempting to rollback auth creation")
+                try:
+                    supabase.auth.admin.delete_user(auth_response.user.id)
+                except Exception as e:
+                    logger.error(f"Failed to rollback auth creation: {e}")
                 flash("Failed to create user profile", "error")
                 return render_template("register.html")
 
@@ -364,11 +307,12 @@ def register():
                 user_name_for_message=user_name_for_message
             )
             login_user(user)
+            logger.info(f"User {username} registered and logged in successfully")
             flash("Registration successful!", "success")
             return redirect(url_for("index"))
 
         except Exception as e:
-            logging.error(f"Error during registration: {e}", exc_info=True)
+            logger.error(f"Error during registration: {str(e)}", exc_info=True)
             flash("An error occurred during registration", "error")
             return render_template("register.html")
 
@@ -379,8 +323,9 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        remember = request.form.get("remember", False)
 
         if not username or not password:
             flash("Username and password are required", "error")
@@ -389,7 +334,7 @@ def login():
         try:
             # Authenticate with Supabase
             auth_response = supabase.auth.sign_in_with_password({
-                "email": f"{username}@example.com",
+                "email": username,  # Use username directly as email
                 "password": password
             })
 
@@ -398,8 +343,8 @@ def login():
                 return render_template("login.html")
 
             # Get user profile from database
-            db_manager = DatabaseManager("system", app.cipher_suite)
-            user_data = db_manager.get_user_by_id(auth_response.user.id)
+            response = supabase.table("users").select("*").eq("id", auth_response.user.id).single().execute()
+            user_data = response.data
             
             if not user_data:
                 flash("User profile not found", "error")
@@ -407,13 +352,23 @@ def login():
 
             # Create user object and log in
             user = User.from_dict(user_data)
-            login_user(user)
+            login_user(user, remember=remember)
+            
+            # Set session as permanent if remember is checked
+            session.permanent = remember
+            
+            # Log successful login
+            logger.info(f"User {username} logged in successfully")
+            
             flash("Login successful!", "success")
             return redirect(url_for("index"))
 
         except Exception as e:
-            logging.error(f"Error during login: {e}", exc_info=True)
-            flash("An error occurred during login", "error")
+            logger.error(f"Error during login: {e}", exc_info=True)
+            if "Invalid login credentials" in str(e):
+                flash("Invalid username or password", "error")
+            else:
+                flash("An error occurred during login. Please try again.", "error")
             return render_template("login.html")
 
     return render_template("login.html")
@@ -428,9 +383,11 @@ def logout():
         supabase.auth.sign_out()
         # Log out from Flask-Login
         logout_user()
+        # Clear session
+        session.clear()
         flash("Logged out successfully", "success")
     except Exception as e:
-        logging.error(f"Error during logout: {e}", exc_info=True)
+        logger.error(f"Error during logout: {e}", exc_info=True)
         flash("An error occurred during logout", "error")
     return redirect(url_for("login"))
 
@@ -560,22 +517,20 @@ def index():
     
     try:
         logging.info("Getting user managers...")
-        user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
-        logging.info("Got user managers successfully")
-
-        logging.info("Getting providers...")
-        providers = user_provider_manager.get_providers()
+        providers_response = supabase.table("providers").select("*").eq("user_id", current_user.id).execute()
+        providers = providers_response.data
         logging.info(f"Got {len(providers)} providers")
 
-        logging.info("Getting patients...")
-        waitlist = user_waitlist_manager.get_patients()
+        waitlist_response = supabase.table("waitlist").select("*").eq("user_id", current_user.id).execute()
+        waitlist = waitlist_response.data
         logging.info(f"Got {len(waitlist)} patients")
 
         appointment_types = current_user.appointment_types or []
         appointment_types_data = current_user.appointment_types_data or []
 
         logging.info("Getting cancelled slots...")
-        all_slots = user_slot_manager.get_cancelled_slots()
+        slots_response = supabase.table("slots").select("*").eq("user_id", current_user.id).execute()
+        all_slots = slots_response.data
         logging.info(f"Got {len(all_slots)} cancelled slots")
         slot_map = {s['id']: s for s in all_slots}
 
@@ -611,6 +566,7 @@ def index():
         if not providers:
             flash("Please add Provider names via settings to proceed", "warning")
 
+        logging.info("About to render template...")
         return render_template(
             "index.html",
             providers=providers,
@@ -633,7 +589,8 @@ def index():
 def add_patient():
     try:  # Main try block for the whole route
         # Get user-specific managers
-        _, user_waitlist_manager, _ = get_user_managers(current_user.username)
+        waitlist_response = supabase.table("waitlist").select("*").eq("user_id", current_user.id).execute()
+        waitlist = waitlist_response.data
 
         # --- Get Basic Info ---
         name = request.form.get("name")
@@ -678,18 +635,19 @@ def add_patient():
             return redirect(url_for("index") + "#add-patient-form")
 
         # --- Add Patient via Manager ---
-        user_waitlist_manager.add_patient(
-            name=name,
-            phone=phone,
-            email=email,
-            reason=reason,
-            urgency=urgency,
-            appointment_type=appointment_type,
-            duration=duration,
-            provider=provider,
-            availability=availability_prefs,
-            availability_mode=availability_mode,
-        )
+        waitlist_response = supabase.table("waitlist").insert({
+            "name": name,
+            "phone": phone,
+            "email": email,
+            "reason": reason,
+            "urgency": urgency,
+            "appointment_type": appointment_type,
+            "duration": duration,
+            "provider": provider,
+            "availability": availability_prefs,
+            "availability_mode": availability_mode,
+            "user_id": current_user.id
+        }).execute()
 
         flash("Patient added successfully.", "success")
 
@@ -707,8 +665,8 @@ def add_patient():
 @login_required
 def remove_patient(patient_id):
     """Remove a patient from the waitlist"""
-    _, user_waitlist_manager, _ = get_user_managers(current_user.username)
-    success = user_waitlist_manager.remove_patient(patient_id)
+    waitlist_response = supabase.table("waitlist").delete().eq("id", patient_id).eq("user_id", current_user.id).execute()
+    success = waitlist_response.rowcount > 0
     if success:
         flash("Patient removed successfully", "success")
     else:
@@ -720,7 +678,12 @@ def remove_patient(patient_id):
 @login_required
 def update_patient(patient_id):
     """Update a patient's information"""
-    _, user_waitlist_manager, _ = get_user_managers(current_user.username)
+    waitlist_response = supabase.table("waitlist").select("*").eq("id", patient_id).eq("user_id", current_user.id).execute()
+    patient = waitlist_response.data[0] if waitlist_response.data else None
+    if not patient:
+        flash("Patient not found", "danger")
+        return redirect(url_for("index"))
+    
     name = request.form.get("name")
     phone = request.form.get("phone")
     email = request.form.get("email", "")
@@ -739,10 +702,18 @@ def update_patient(patient_id):
         if am_key in request.form: periods.append("AM")
         if pm_key in request.form: periods.append("PM")
         if periods: availability[day.capitalize()] = periods
-    success = user_waitlist_manager.update_patient(
-        patient_id=patient_id, name=name, phone=phone, email=email, provider=provider,
-        appointment_type=appointment_type, duration=duration, urgency=urgency, reason=reason,
-        availability=availability, availability_mode=availability_mode)
+    success = waitlist_response = supabase.table("waitlist").update({
+        "name": name,
+        "phone": phone,
+        "email": email,
+        "reason": reason,
+        "urgency": urgency,
+        "appointment_type": appointment_type,
+        "duration": duration,
+        "provider": provider,
+        "availability": availability,
+        "availability_mode": availability_mode
+    }).eq("id", patient_id).eq("user_id", current_user.id).execute()
     if success:
         flash("Patient updated successfully", "success")
     else:
@@ -1275,65 +1246,65 @@ def edit_patient(patient_id):
                            appointment_types_data=appointment_types_data)
 
 
-@app.route("/save_user_data/<user_id>", methods=["POST"])
-def save_user_data(user_id):
-    data = request.json
-    save_to_diff_store(user_id, data)
-    return jsonify({"status": "success"})
-
-@app.route("/load_user_data/<user_id>", methods=["GET"])
-def load_user_data(user_id):
-    data = load_from_diff_store(user_id)
-    if data is not None:
-        return jsonify(data)
-    else:
-        return jsonify({"error": "No data found"}), 404
-
 @app.route("/debug/session")
 def debug_session():
     if not app.debug:
         return "Debug route not available in production", 403
-        
-    session_info = {
-        "session_id": session.sid if hasattr(session, 'sid') else 'No session ID',
-        "session_contents": dict(session),
-        "user_authenticated": current_user.is_authenticated,
-        "user_id": current_user.id if current_user.is_authenticated else None,
-        "session_permanent": session.permanent,
-        "session_directory": app.config["SESSION_FILE_DIR"],
-        "session_directory_exists": os.path.exists(app.config["SESSION_FILE_DIR"]),
-        "session_files": os.listdir(app.config["SESSION_FILE_DIR"]) if os.path.exists(app.config["SESSION_FILE_DIR"]) else []
-    }
-    return jsonify(session_info)
+    return jsonify({"error": "This endpoint is deprecated"}), 410
 
 @app.route("/debug/write_test")
 def debug_write_test():
-    test_path = os.path.join(USERS_DIR, "test_write.txt")
-    try:
-        with open(test_path, "w") as f:
-            f.write("test")
-        return f"Successfully wrote to {test_path}"
-    except Exception as e:
-        return f"Failed to write to {test_path}: {e}", 500
+    return jsonify({"error": "This endpoint is deprecated"}), 410
 
 @app.route("/debug/list_user_files/<username>")
 def debug_list_user_files(username):
-    user_dir = os.path.join(USERS_DIR, username)
-    if not os.path.exists(user_dir):
-        return f"User directory {user_dir} does not exist.", 404
-    files = os.listdir(user_dir)
-    return jsonify({"user_dir": user_dir, "files": files})
+    return jsonify({"error": "This endpoint is deprecated"}), 410
 
 @app.route("/debug/show_profile/<username>")
 def debug_show_profile(username):
-    user_file = os.path.join(USERS_DIR, username, "profile.json")
-    if not os.path.exists(user_file):
-        return f"Profile file {user_file} does not exist.", 404
-    try:
-        user_data = load_decrypted_json(user_file)
-        return jsonify(user_data)
-    except Exception as e:
-        return f"Error reading profile: {e}", 500
+    return jsonify({"error": "This endpoint is deprecated"}), 410
+
+# Add before_request handler for security headers
+@app.before_request
+def add_security_headers():
+    """Add security headers to all responses."""
+    # Don't return a response here, just set headers on the request
+    pass
+
+# Add after_request handler for security headers
+@app.after_request
+def add_security_headers_after(response):
+    """Add security headers to all responses."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;"
+    return response
+
+# Add after_request handler for CORS
+@app.after_request
+def add_cors_headers(response):
+    """Add CORS headers to all responses."""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
+
+# Add request logging middleware
+@app.before_request
+def log_request_info():
+    """Log request information."""
+    logger.info('Headers: %s', request.headers)
+    logger.info('Body: %s', request.get_data())
+
+# Add response logging middleware
+@app.after_request
+def log_response_info(response):
+    """Log response information."""
+    logger.info('Response Status: %s', response.status)
+    logger.info('Response Headers: %s', response.headers)
+    return response
 
 if __name__ == "__main__":
     # Create session directory if it doesn't exist
