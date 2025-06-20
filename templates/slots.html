@@ -4,7 +4,7 @@
 
 {% block head %}
 {{ super() }}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <style>
     /* Styles needed for this page (from index/cancelled_appointments) */
     .eligibility-match { background-color: #d1e7dd; /* Greenish */ }
@@ -14,7 +14,7 @@
     .action-buttons form, .action-buttons a, .action-buttons button { display: inline-block; margin-bottom: 5px; margin-right: 3px; } /* Adjusted for inline-block */
     .action-buttons .btn-group { display: block; width: 100%; } /* Group confirm/cancel */
     .propose-slot-btn {} /* Placeholder */
-    .waitlist-availability { font-size: 0.85em; color: #6c757d; }
+    .patient-availability { font-size: 0.85em; color: #6c757d; }
     /* Urgency badge styles (needed for eligible patient list) */
     .badge.urgency-high { background-color: #dc3545; color: white; }
     .badge.urgency-medium { background-color: #ffc107; color: black; }
@@ -128,7 +128,7 @@
                             <div class="list-group-item {% if appointment.status == 'pending' %}slot-pending{% endif %}" id="slot-{{ appointment.id }}">
                                 <div class="d-flex justify-content-between align-items-start">
                                     <div>
-                                        <strong>{{ appointment.provider }}</strong><br>
+                                        <strong>{{ appointment.provider_name | default('Unknown Provider') }}</strong><br>
                                         <div class="slot-details">
                                             {% if appointment.date %}
                                                 {{ appointment.date }}
@@ -172,7 +172,7 @@
                                                     data-bs-toggle="modal"
                                                     data-bs-target="#editSlotModal"
                                                     data-slot-id="{{ appointment.id }}"
-                                                    data-provider-id="{{ appointment.provider_id }}"
+                                                    data-provider-id="{{ appointment.provider }}"
                                                     data-duration="{{ appointment.duration }}"
                                                     data-slot-date="{{ appointment.date }}"
                                                     data-slot-time="{{ appointment.time }}"
@@ -212,7 +212,7 @@
                 {{ current_appointment.date }}
                 {% if current_appointment.time %} at {{ current_appointment.time }}
                 {% endif %}
-                | Provider: {{ current_appointment.provider }} | Duration: {{ current_appointment.duration }} minutes
+                | Provider: {{ current_appointment.provider_name | default('N/A') }} | Duration: {{ current_appointment.duration }} minutes
               {% else %}
                 Slot Information Unavailable
               {% endif %}
@@ -267,7 +267,7 @@
                         {% if not availability %}
                           <span class="text-muted">Any Day/Time</span>
                         {% else %}
-                          <span class="waitlist-availability">
+                          <span class="patient-availability">
                           {% if mode == 'available' %}<strong class="text-success">Available:</strong>
                           {% else %}<strong class="text-danger">NOT Avail:</strong>{% endif %}
                           {# Use capitalize for display consistency #}
@@ -284,7 +284,7 @@
                           <div><strong>Duration:</strong> {{ patient.duration }} min</div>
                           <div><strong>Provider Pref:</strong>
                             {% set patient_provider_lower = patient.provider|lower if patient.provider else 'no preference' %}
-                            {% set slot_provider_lower = current_appointment.provider|lower if current_appointment else '' %}
+                            {% set slot_provider_lower = current_appointment.provider_name|lower if current_appointment and current_appointment.provider_name else '' %}
                             {% if patient_provider_lower == slot_provider_lower %}
                               <span class="text-success">{{ patient.provider }}</span>
                             {% elif patient_provider_lower == 'no preference' %}
@@ -312,7 +312,7 @@
                                   data-slot-date-str="{{ current_appointment.date.strftime('%B %d, %Y') if current_appointment.date is not string else 'Unknown' }}"
                                   data-slot-time="{{ current_appointment.time }}"
                                   data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}"
-                                  data-provider-name="{{ current_appointment.provider }}"
+                                  data-provider-name="{{ current_appointment.provider_name | default('the provider') }}"
                                   data-patient-email="{{ patient.email or '' }}">
                             <i class="bi bi-send"></i> Propose
                           </button>

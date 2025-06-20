@@ -85,7 +85,7 @@ logger.info(f"Setting up persistent storage at: {DATA_DIR}")
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SESSION_SECRET_KEY', 'dev')
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to False for development
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
@@ -93,10 +93,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
 if not ENCRYPTION_KEY:
     raise ValueError("CRITICAL: FLASK_APP_ENCRYPTION_KEY environment variable not set!")
-try:
-    cipher_suite = Fernet(ENCRYPTION_KEY.encode())
-except Exception as e:
-    raise ValueError(f"CRITICAL: Invalid FLASK_APP_ENCRYPTION_KEY. It must be a 32 url-safe base64-encoded bytes. Error: {e}")
+cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 
 # Initialize Flask-Login
 login_manager = LoginManager()
@@ -115,26 +112,17 @@ logger.info(f"Current working directory: {os.getcwd()}")
 # Check if /data exists and is writable
 if not os.path.exists(DATA_DIR):
     logger.info(f"Creating persistent storage directory at: {DATA_DIR}")
-    try:
-        os.makedirs(DATA_DIR, exist_ok=True)
-        os.makedirs(USERS_DIR, exist_ok=True)
-        os.makedirs(SESSIONS_DIR, exist_ok=True)
-        os.makedirs(DIFF_STORE_DIR, exist_ok=True)
-    except Exception as e:
-        logger.error(f"Error creating persistent storage directories: {e}")
-        raise RuntimeError(f"Failed to create persistent storage directories: {e}")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(USERS_DIR, exist_ok=True)
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
+    os.makedirs(DIFF_STORE_DIR, exist_ok=True)
 
 # Create and verify session directory
-try:
-    # Test write permissions
-    test_file = os.path.join(SESSIONS_DIR, "test_write.tmp")
-    with open(test_file, "w") as f:
-        f.write("test")
-    os.remove(test_file)
-    logger.info(f"Session directory verified at: {SESSIONS_DIR}")
-except Exception as e:
-    logger.error(f"Error setting up session directory: {e}")
-    raise RuntimeError(f"Failed to set up session directory: {e}")
+test_file = os.path.join(SESSIONS_DIR, "test_write.tmp")
+with open(test_file, "w") as f:
+    f.write("test")
+os.remove(test_file)
+logger.info(f"Session directory verified at: {SESSIONS_DIR}")
 
 # Add these session configurations AFTER path definition
 app.config["SESSION_TYPE"] = "filesystem"
@@ -144,7 +132,7 @@ app.config["SESSION_FILE_DIR"] = SESSIONS_DIR
 app.config["SESSION_FILE_THRESHOLD"] = 500  # Maximum number of sessions
 app.config["SESSION_FILE_MODE"] = 0o600  # Secure file permissions
 app.config["SESSION_USE_SIGNER"] = True  # Sign the session cookie
-app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SECURE"] = False  # Set to False for development
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERSISTENT_STORAGE_PATH"] = DATA_DIR
@@ -187,16 +175,10 @@ class User(UserMixin):
         appointment_types_data = data.get("appointment_types_data", [])
         
         if isinstance(appointment_types, str):
-            try:
-                appointment_types = json.loads(appointment_types)
-            except json.JSONDecodeError:
-                appointment_types = []
-                
+            appointment_types = json.loads(appointment_types)
+        
         if isinstance(appointment_types_data, str):
-            try:
-                appointment_types_data = json.loads(appointment_types_data)
-            except json.JSONDecodeError:
-                appointment_types_data = []
+            appointment_types_data = json.loads(appointment_types_data)
         
         return cls(
             user_id=data.get("id"),
@@ -210,111 +192,131 @@ class User(UserMixin):
 # Flask-Login user loader callback
 @login_manager.user_loader
 def load_user(user_id):
-    """Load user by ID from Supabase"""
+    """Load user by ID from Supabase, ensuring profile exists."""
     try:
+        # The .single() method throws an error if no rows are found, which is what we're seeing.
+        # We will handle this case gracefully.
         response = supabase.table("users").select("*").eq("id", user_id).single().execute()
         user_data = response.data
         if user_data:
             return User.from_dict(user_data)
     except Exception as e:
-        logging.error(f"Error loading user from Supabase: {e}", exc_info=True)
+        # This will catch the 'PGRST116' error when no user is found.
+        logger.warning(f"Could not load user {user_id}. Profile may be missing. Error: {e}")
+    
+    # If no user profile is found in our public.users table, it's an inconsistent state.
+    # Returning None is the safest option, as it will invalidate the session and prompt a re-login.
     return None
 
 # Add Registration Route
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
         clinic_name = request.form.get("clinic_name", "").strip()
         user_name_for_message = request.form.get("user_name_for_message", "").strip()
 
-        logger.info(f"Registration attempt for username: {username}")
-        logger.info(f"Form data received: clinic_name={clinic_name}, user_name_for_message={user_name_for_message}")
+        # Get JSON data from hidden fields
+        appointment_types_json = request.form.get("appointment_types_json", "[]")
+        providers_json = request.form.get("providers_json", "[]")
+        
+        logger.info(f"Registration attempt for email: {email}")
 
-        # Validate input
-        if not username or not password:
-            logger.warning("Registration failed: Missing username or password")
-            flash("Username and password are required", "error")
+        # --- Input Validation ---
+        if not email or not password:
+            flash("Email and password are required", "error")
             return render_template("register.html")
         
-        if len(password) < 8:
-            logger.warning("Registration failed: Password too short")
-            flash("Password must be at least 8 characters long", "error")
-            return render_template("register.html")
-        
-        if not re.match(r'^[a-zA-Z0-9_-]+$', username):
-            logger.warning("Registration failed: Invalid username format")
-            flash("Username can only contain letters, numbers, underscores, and hyphens", "error")
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            flash("Please enter a valid email address", "error")
             return render_template("register.html")
 
+        # --- Parse JSON data ---
         try:
-            # Check if username already exists
-            logger.info("Checking if username exists in Supabase")
-            response = supabase.table("users").select("id").eq("username", username).execute()
-            if response.data:
-                logger.warning(f"Registration failed: Username {username} already exists")
-                flash("Username already exists", "error")
-                return render_template("register.html")
+            appointment_types_data = json.loads(appointment_types_json)
+            providers_data = json.loads(providers_json)
+            # Extract just the names for the simple list in the 'users' table
+            appointment_types_list = [item.get('appointment_type', '') for item in appointment_types_data if item.get('appointment_type')]
+        except json.JSONDecodeError:
+            flash("There was an error processing the form data.", "error")
+            return render_template("register.html")
 
-            # Register user with Supabase Auth
-            logger.info("Attempting to create user in Supabase Auth")
-            auth_response = supabase.auth.sign_up({
-                "email": f"{username}@example.com",  # Supabase requires email
-                "password": password,
-                "options": {
-                    "data": {
-                        "username": username,
-                        "clinic_name": clinic_name,
-                        "user_name_for_message": user_name_for_message
-                    }
+        # --- Create User in Supabase Auth ---
+        auth_response = supabase.auth.sign_up({
+            "email": email,
+            "password": password,
+            "options": {
+                "data": {
+                    "username": email,
+                    "clinic_name": clinic_name,
+                    "user_name_for_message": user_name_for_message
                 }
-            })
-            logger.info(f"Supabase Auth response: {auth_response}")
+            }
+        })
 
-            if not auth_response.user:
-                logger.error("Registration failed: No user returned from Supabase Auth")
-                flash("Registration failed", "error")
-                return render_template("register.html")
+        if not auth_response.user:
+            logger.error(f"Supabase Auth Error: {auth_response.api_error.message if auth_response.api_error else 'No user returned'}")
+            flash("Error creating user. An account with this email may already exist.", "error")
+            return render_template("register.html")
 
-            # Create user profile in database
-            logger.info("Creating user profile in database")
-            response = supabase.table("users").insert({
-                "id": auth_response.user.id,
-                "username": username,
-                "clinic_name": clinic_name,
-                "user_name_for_message": user_name_for_message,
-                "appointment_types": [],
-                "appointment_types_data": []
-            }).execute()
-            logger.info(f"Database insert response: {response}")
+        user_id = auth_response.user.id
+        logger.info(f"Successfully created user in Supabase Auth with ID: {user_id}")
+        
+        # --- Create User Profile and Initial Data ---
+        try:
+            # 1. Create the user profile in the 'users' table
+            profile_response = supabase.table("users").insert({
+                "id": user_id,
+                "username": email,
+            "clinic_name": clinic_name,
+            "user_name_for_message": user_name_for_message,
+                "appointment_types": appointment_types_list,
+                "appointment_types_data": appointment_types_data
+        }).execute()
 
-            if not response.data:
-                # Rollback auth creation if profile creation fails
-                logger.error("Profile creation failed, attempting to rollback auth creation")
-                try:
-                    supabase.auth.admin.delete_user(auth_response.user.id)
-                except Exception as e:
-                    logger.error(f"Failed to rollback auth creation: {e}")
-                flash("Failed to create user profile", "error")
-                return render_template("register.html")
+            if not profile_response.data:
+                 raise Exception("Failed to create user profile in database.")
 
-            # Create user object and log in
-            user = User(
-                user_id=auth_response.user.id,
-                username=username,
-                clinic_name=clinic_name,
-                user_name_for_message=user_name_for_message
-            )
-            login_user(user)
-            logger.info(f"User {username} registered and logged in successfully")
-            flash("Registration successful!", "success")
-            return redirect(url_for("index"))
+            # 2. Insert initial providers from the registration form
+            if providers_data:
+                providers_to_insert = [
+                    {
+                        "user_id": user_id,
+                        "first_name": provider.get("first_name"),
+                        "last_initial": provider.get("last_initial", "")
+                    }
+                    for provider in providers_data if provider.get("first_name")
+                ]
+                if providers_to_insert:
+                    supabase.table("providers").insert(providers_to_insert).execute()
+                    logger.info(f"Inserted {len(providers_to_insert)} initial providers for user {user_id}")
 
         except Exception as e:
-            logger.error(f"Error during registration: {str(e)}", exc_info=True)
-            flash("An error occurred during registration", "error")
+            # This is a critical failure. We should roll back the user creation.
+            logger.error(f"Failed to set up initial data for user {user_id}. Rolling back. Error: {e}", exc_info=True)
+            # Use the admin client to delete the user from auth
+            supabase.auth.admin.delete_user(user_id)
+            
+            error_message = "Failed to create user profile."
+            if "does not exist" in str(e):
+                error_message = "Database is not set up correctly. Please contact support."
+            
+            flash(error_message, "danger")
             return render_template("register.html")
+
+        # --- Login User and Redirect ---
+        user = User(
+            user_id=user_id,
+            username=email,
+            clinic_name=clinic_name,
+            user_name_for_message=user_name_for_message
+        )
+        login_user(user)
+        logger.info(f"User {email} registered and logged in successfully")
+        flash("Registration successful!", "success")
+        return redirect(url_for("index"))
 
     return render_template("register.html")
 
@@ -323,53 +325,58 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        email = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
         remember = request.form.get("remember", False)
 
-        if not username or not password:
-            flash("Username and password are required", "error")
+        if not email or not password:
+            flash("Email and password are required", "error")
             return render_template("login.html")
 
-        try:
-            # Authenticate with Supabase
-            auth_response = supabase.auth.sign_in_with_password({
-                "email": username,  # Use username directly as email
-                "password": password
-            })
+        # Authenticate with Supabase
+        auth_response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
 
-            if not auth_response.user:
-                flash("Invalid username or password", "error")
-                return render_template("login.html")
-
-            # Get user profile from database
-            response = supabase.table("users").select("*").eq("id", auth_response.user.id).single().execute()
-            user_data = response.data
-            
-            if not user_data:
-                flash("User profile not found", "error")
-                return render_template("login.html")
-
-            # Create user object and log in
-            user = User.from_dict(user_data)
-            login_user(user, remember=remember)
-            
-            # Set session as permanent if remember is checked
-            session.permanent = remember
-            
-            # Log successful login
-            logger.info(f"User {username} logged in successfully")
-            
-            flash("Login successful!", "success")
-            return redirect(url_for("index"))
-
-        except Exception as e:
-            logger.error(f"Error during login: {e}", exc_info=True)
-            if "Invalid login credentials" in str(e):
-                flash("Invalid username or password", "error")
-            else:
-                flash("An error occurred during login. Please try again.", "error")
+        if not auth_response.user:
+            flash("Invalid email or password", "error")
             return render_template("login.html")
+
+        # --- Self-Healing: Check for and create user profile if missing ---
+        user_id = auth_response.user.id
+        profile_response = supabase.table("users").select("*").eq("id", user_id).execute()
+
+        user_data = None
+        if profile_response.data:
+            user_data = profile_response.data[0]
+        else:
+            # Profile is missing, create it now.
+            logger.warning(f"User '{email}' logged in but has no profile. Creating one now.")
+            
+            # Create a default profile. The user can update details later.
+            creation_response = supabase.table("users").insert({
+                "id": user_id,
+                "username": email,
+                "clinic_name": f"{email.split('@')[0]}'s Clinic", # A sensible default
+            }).execute()
+
+            if not creation_response.data:
+                logger.error(f"CRITICAL: Failed to create profile for user {user_id} after login. Check RLS policies.")
+                flash("Could not create your user profile after login. Please contact support.", "danger")
+                return redirect(url_for('login'))
+            
+            user_data = creation_response.data[0]
+            flash("Welcome! We've set up your new profile.", "success")
+
+        # --- Proceed with login ---
+        user = User.from_dict(user_data)
+        login_user(user, remember=remember)
+        session.permanent = remember
+        
+        logger.info(f"User {email} logged in successfully")
+        flash("Login successful!", "success")
+        return redirect(url_for("index"))
 
     return render_template("login.html")
 
@@ -378,26 +385,44 @@ def login():
 @app.route("/logout")
 @login_required  # User must be logged in to log out
 def logout():
-    try:
-        # Sign out from Supabase
-        supabase.auth.sign_out()
-        # Log out from Flask-Login
-        logout_user()
-        # Clear session
-        session.clear()
-        flash("Logged out successfully", "success")
-    except Exception as e:
-        logger.error(f"Error during logout: {e}", exc_info=True)
-        flash("An error occurred during logout", "error")
+    # Sign out from Supabase
+    supabase.auth.sign_out()
+    # Log out from Flask-Login
+    logout_user()
+    # Clear session
+    session.clear()
+    flash("Logged out successfully", "success")
     return redirect(url_for("login"))
 
 
 @app.route("/slots", methods=["GET"])
 @login_required
 def slots():
-    user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
-    providers = user_provider_manager.get_providers()
-    all_slots = user_slot_manager.get_cancelled_slots()
+    try:
+        # Fetch providers for the user (critical for the form)
+        providers_response = supabase.table("providers").select("*").eq("user_id", current_user.id).execute()
+        providers = providers_response.data or []
+        provider_map = {str(p['id']): f"{p['first_name']} {p['last_initial'] or ''}".strip() for p in providers}
+    except Exception as e:
+        logger.error(f"Failed to load provider data for user {current_user.id}: {e}", exc_info=True)
+        flash("Could not load provider data, which is required for the slots page.", "danger")
+        return redirect(url_for('index'))
+
+    all_slots = []
+    try:
+        # Fetch all slots for the user (non-critical, may not exist yet)
+        slots_response = supabase.table("cancelled_slots").select("*").eq("user_id", current_user.id).execute()
+        all_slots = slots_response.data or []
+        for slot in all_slots:
+            # The 'provider' column stores the provider's UUID. We'll replace it with the name for display.
+            provider_name = provider_map.get(str(slot.get("provider")))
+            if provider_name:
+                slot["provider_name"] = provider_name # Keep original ID if needed elsewhere
+            else:
+                slot["provider_name"] = "Unknown Provider" # Fallback
+    except Exception as e:
+        logger.warning(f"Could not load slots for user {current_user.id}. The table may not exist yet. Error: {e}")
+        # If this fails, all_slots will remain an empty list, and the page will still render.
     
     appointment_types_data = current_user.appointment_types_data or []
     duration_map = {
@@ -417,22 +442,26 @@ def slots():
             logging.info(f"Finding matches for slot {current_appointment_id_in_session}: {slot_for_match}")
             
             # Logic to find eligible patients for this slot
-            all_patients = user_waitlist_manager.get_patients()
+            try:
+                waitlist_response = supabase.table("patients").select("*").eq("user_id", current_user.id).execute()
+                all_patients = waitlist_response.data or []
+            except Exception as e:
+                logger.error(f"Failed to load patients data for match finding: {e}", exc_info=True)
+                flash("Could not load patients to find matches.", "danger")
+                all_patients = []
+
             slot_duration = int(slot_for_match.get("duration", 0))
-            slot_provider = slot_for_match.get("provider", "").lower()
+            slot_provider_id = slot_for_match.get("provider") # This is the UUID
             
             slot_date_str = slot_for_match.get("date")
             slot_period = slot_for_match.get("slot_period", "").upper()
             slot_dt = None
             if isinstance(slot_date_str, str):
-                try:
-                    slot_dt = datetime.strptime(slot_date_str, "%Y-%m-%d")
-                except ValueError:
-                    logging.warning(f"Could not parse slot_date '{slot_date_str}' for matching in /slots")
+                slot_dt = datetime.strptime(slot_date_str, "%Y-%m-%d")
             elif isinstance(slot_date_str, datetime):
                 slot_dt = slot_date_str
 
-            logging.info(f"Slot requirements - Duration: {slot_duration}, Provider: {slot_provider}, Date: {slot_dt}, Period: {slot_period}")
+            logging.info(f"Slot requirements - Duration: {slot_duration}, Provider: {slot_provider_id}, Date: {slot_dt}, Period: {slot_period}")
 
             for patient in all_patients:
                 if patient.get("status") != "waiting":
@@ -444,9 +473,12 @@ def slots():
                     logging.info(f"Patient {patient.get('id')} skipped: Duration mismatch (patient: {patient_duration} > slot: {slot_duration})")
                     continue
 
+                # The patient provider preference is a name, but the slot has an ID.
+                # We need to get the provider name from our map to compare.
+                slot_provider_name = provider_map.get(str(slot_provider_id), "").lower()
                 patient_provider_pref = patient.get("provider", "no preference").lower()
-                if patient_provider_pref != "no preference" and patient_provider_pref != slot_provider:
-                    logging.info(f"Patient {patient.get('id')} skipped: Provider mismatch (patient: '{patient_provider_pref}' != slot: '{slot_provider}')")
+                if patient_provider_pref != "no preference" and patient_provider_pref != slot_provider_name:
+                    logging.info(f"Patient {patient.get('id')} skipped: Provider mismatch (patient: '{patient_provider_pref}' != slot: '{slot_provider_name}')")
                     continue
                 
                 # Availability Check
@@ -499,74 +531,63 @@ def slots():
                            )
 
 
-# Initialize managers
-# Create user-specific paths for data files
-def get_user_data_path(username, filename):
-    """Get path to a user-specific data file"""
-    user_dir = os.path.join(USERS_DIR, username)
-    os.makedirs(user_dir, exist_ok=True)
-    return os.path.join(user_dir, filename)
-
-
 # Modify Index Route (Example of protecting and using current_user)
 @app.route("/", methods=["GET"])
-@login_required  # Protect the main page
+@login_required
 def index():
-    logging.debug(f"Entering index route for user: {current_user.username if current_user.is_authenticated else 'Not authenticated'}")
-    logging.debug(f"Session contents: {dict(session)}")
-    
     try:
-        logging.info("Getting user managers...")
+        # Core data: providers and user info are essential.
         providers_response = supabase.table("providers").select("*").eq("user_id", current_user.id).execute()
-        providers = providers_response.data
-        logging.info(f"Got {len(providers)} providers")
-
-        waitlist_response = supabase.table("waitlist").select("*").eq("user_id", current_user.id).execute()
-        waitlist = waitlist_response.data
-        logging.info(f"Got {len(waitlist)} patients")
-
+        providers = providers_response.data or []
         appointment_types = current_user.appointment_types or []
         appointment_types_data = current_user.appointment_types_data or []
 
-        logging.info("Getting cancelled slots...")
-        slots_response = supabase.table("slots").select("*").eq("user_id", current_user.id).execute()
-        all_slots = slots_response.data
-        logging.info(f"Got {len(all_slots)} cancelled slots")
+        # Optional data: These may be empty or unavailable for a new user.
+        waitlist = []
+        try:
+            waitlist_response = supabase.table("patients").select("*").eq("user_id", current_user.id).execute()
+            waitlist = waitlist_response.data or []
+        except Exception as e:
+            logger.warning(f"Could not load patients for user {current_user.id}. It may not exist yet. Error: {e}")
+
+        all_slots = []
+        try:
+            slots_response = supabase.table("cancelled_slots").select("*").eq("user_id", current_user.id).execute()
+            all_slots = slots_response.data or []
+        except Exception as e:
+            logger.warning(f"Could not load slots for user {current_user.id}. It may not exist yet. Error: {e}")
+
+        # Proceed with processing, which is now safe for empty lists.
         slot_map = {s['id']: s for s in all_slots}
 
-        # Augment patient data with proposed slot details if pending
         for patient in waitlist:
              if patient.get("status") == "pending" and patient.get("proposed_slot_id"):
                  proposed_slot = slot_map.get(patient["proposed_slot_id"])
                  if proposed_slot:
-                     # Format date if it's an object
-                     slot_date_display = proposed_slot.get("date")
-                     if isinstance(slot_date_display, datetime):
-                         slot_date_display = slot_date_display.strftime('%a, %b %d') # Example format
-
+                     slot_date_display = proposed_slot.get("date", "")
+                     if isinstance(slot_date_display, str) and slot_date_display:
+                         try:
+                             slot_date_display = datetime.strptime(slot_date_display, '%Y-%m-%d').strftime('%a, %b %d')
+                         except (ValueError, TypeError):
+                             pass
+                     elif isinstance(slot_date_display, (datetime, date)):
+                         slot_date_display = slot_date_display.strftime('%a, %b %d')
                      patient["proposed_slot_details"] = f"Slot on {slot_date_display} ({proposed_slot.get('slot_period', '')}) w/ {proposed_slot.get('provider')}"
-                 else:
-                     patient["proposed_slot_details"] = "Proposed slot details unavailable"
 
-        # Prepare duration map
         duration_map = {
             item["appointment_type"].lower().replace(" ", "_"): item["durations"]
-            for item in appointment_types_data
-            if "appointment_type" in item and "durations" in item
+            for item in appointment_types_data if "appointment_type" in item and "durations" in item
         }
 
-        # Sorting
         def sort_key_waitlist(p):
             status_order = {'pending': 0, 'waiting': 1}
             wait_minutes = wait_time_to_minutes(p.get('wait_time', '0 minutes'))
             return (status_order.get(p.get('status', 'waiting'), 99), -wait_minutes)
-
         sorted_waitlist = sorted(waitlist, key=sort_key_waitlist)
 
         if not providers:
-            flash("Please add Provider names via settings to proceed", "warning")
+            flash("Get started by adding your providers in the settings page.", "info")
 
-        logging.info("About to render template...")
         return render_template(
             "index.html",
             providers=providers,
@@ -579,83 +600,77 @@ def index():
             current_user_name=current_user.user_name_for_message or "the scheduling team"
         )
     except Exception as e:
-        logging.error(f"Exception in index route: {str(e)}", exc_info=True)
-        flash(f"An error occurred while loading the main page: {str(e)}", "danger")
-        return "<h1>An error occurred</h1><p>Please check the server logs.</p>", 500
+        # This is a fallback for unexpected errors.
+        logging.error(f"A critical error occurred in the index route: {e}", exc_info=True)
+        flash("A critical error occurred. Please try logging in again.", "danger")
+        return redirect(url_for('login'))
 
 
 @app.route("/add_patient", methods=["POST"])
 @login_required
 def add_patient():
-    try:  # Main try block for the whole route
-        # Get user-specific managers
-        waitlist_response = supabase.table("waitlist").select("*").eq("user_id", current_user.id).execute()
-        waitlist = waitlist_response.data
+    # Get user-specific managers
+    waitlist_response = supabase.table("patients").select("*").eq("user_id", current_user.id).execute()
+    waitlist = waitlist_response.data
 
-        # --- Get Basic Info ---
-        name = request.form.get("name")
-        phone = request.form.get("phone")
-        email = request.form.get("email")
-        reason = request.form.get("reason")
-        urgency = request.form.get("urgency")
-        appointment_type = request.form.get("appointment_type")
-        duration = request.form.get("duration")
-        provider = request.form.get("provider")
-        availability_mode = request.form.get("availability_mode", "available")
+    # --- Get Basic Info ---
+    name = request.form.get("name")
+    phone = request.form.get("phone")
+    email = request.form.get("email")
+    reason = request.form.get("reason")
+    urgency = request.form.get("urgency")
+    appointment_type = request.form.get("appointment_type")
+    duration = request.form.get("duration")
+    provider = request.form.get("provider")
+    availability_mode = request.form.get("availability_mode", "available")
 
-        # --- Process Availability ---
-        availability_prefs = {}
-        days = [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]
-        for day in days:
-            day_lower = day.lower()
-            am_checked = request.form.get(f"avail_{day_lower}_am")
-            pm_checked = request.form.get(f"avail_{day_lower}_pm")
-            periods = []
-            if am_checked:
-                periods.append("AM")
-            if pm_checked:
-                periods.append("PM")
-            if periods:  # Only add day if AM or PM was selected
-                availability_prefs[day] = periods
+    # --- Process Availability ---
+    availability_prefs = {}
+    days = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+    for day in days:
+        day_lower = day.lower()
+        am_checked = request.form.get(f"avail_{day_lower}_am")
+        pm_checked = request.form.get(f"avail_{day_lower}_pm")
+        periods = []
+        if am_checked:
+            periods.append("AM")
+        if pm_checked:
+            periods.append("PM")
+        if periods:  # Only add day if AM or PM was selected
+            availability_prefs[day] = periods
 
-        logging.debug(f"Received availability days/times: {availability_prefs}")
-        logging.debug(f"Received availability mode: {availability_mode}")
+    logging.debug(f"Received availability days/times: {availability_prefs}")
+    logging.debug(f"Received availability mode: {availability_mode}")
 
-        # --- Basic Validation ---
-        if not name or not phone:
-            flash("Name and Phone are required.", "warning")
-            return redirect(url_for("index") + "#add-patient-form")
+    # --- Basic Validation ---
+    if not name or not phone:
+        flash("Name and Phone are required.", "warning")
+        return redirect(url_for("index") + "#add-patient-form")
 
-        # --- Add Patient via Manager ---
-        waitlist_response = supabase.table("waitlist").insert({
-            "name": name,
-            "phone": phone,
-            "email": email,
-            "reason": reason,
-            "urgency": urgency,
-            "appointment_type": appointment_type,
-            "duration": duration,
-            "provider": provider,
-            "availability": availability_prefs,
-            "availability_mode": availability_mode,
-            "user_id": current_user.id
-        }).execute()
+    # --- Add Patient via Manager ---
+    waitlist_response = supabase.table("patients").insert({
+        "name": name,
+        "phone": phone,
+        "email": email,
+        "reason": reason,
+        "urgency": urgency,
+        "appointment_type": appointment_type,
+        "duration": duration,
+        "provider": provider,
+        "availability": availability_prefs,
+        "availability_mode": availability_mode,
+        "user_id": current_user.id
+    }).execute()
 
-        flash("Patient added successfully.", "success")
-
-    except Exception as e:  # This except matches the initial try
-        logging.error(
-            f"Error in add_patient route for user {current_user.id}: {e}", exc_info=True
-        )
-        flash("An unexpected error occurred while adding the patient.", "danger")
+    flash("Patient added successfully.", "success")
 
     # This return is outside the try/except block
     return redirect(url_for("index") + "#add-patient-form")
@@ -664,8 +679,8 @@ def add_patient():
 @app.route("/remove_patient/<patient_id>", methods=["POST"])
 @login_required
 def remove_patient(patient_id):
-    """Remove a patient from the waitlist"""
-    waitlist_response = supabase.table("waitlist").delete().eq("id", patient_id).eq("user_id", current_user.id).execute()
+    """Remove a patient from the patients list"""
+    waitlist_response = supabase.table("patients").delete().eq("id", patient_id).eq("user_id", current_user.id).execute()
     success = waitlist_response.rowcount > 0
     if success:
         flash("Patient removed successfully", "success")
@@ -678,7 +693,7 @@ def remove_patient(patient_id):
 @login_required
 def update_patient(patient_id):
     """Update a patient's information"""
-    waitlist_response = supabase.table("waitlist").select("*").eq("id", patient_id).eq("user_id", current_user.id).execute()
+    waitlist_response = supabase.table("patients").select("*").eq("id", patient_id).eq("user_id", current_user.id).execute()
     patient = waitlist_response.data[0] if waitlist_response.data else None
     if not patient:
         flash("Patient not found", "danger")
@@ -702,7 +717,7 @@ def update_patient(patient_id):
         if am_key in request.form: periods.append("AM")
         if pm_key in request.form: periods.append("PM")
         if periods: availability[day.capitalize()] = periods
-    success = waitlist_response = supabase.table("waitlist").update({
+    success = waitlist_response = supabase.table("patients").update({
         "name": name,
         "phone": phone,
         "email": email,
@@ -725,37 +740,44 @@ def update_patient(patient_id):
 @login_required
 def add_cancelled_appointment():
     """Add a new cancelled appointment (open slot)"""
-    _, _, user_slot_manager = get_user_managers(current_user.username)
-    provider_id = request.form.get("provider")
+    provider = request.form.get("provider")
     slot_date = request.form.get("date")
     slot_time_str = request.form.get("time")
     duration = request.form.get("duration")
     notes = request.form.get("notes", "")
-    slot_period = "AM"
-    if slot_time_str:
-        try:
-            time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
-            if time_obj.hour >= 12: slot_period = "PM"
-        except ValueError:
-            flash("Invalid time format entered.", "danger")
-            return redirect(url_for("slots"))
-    else:
-        flash("Time is required.", "danger")
-        return redirect(url_for("slots"))
-    if not all([provider_id, slot_date, slot_time_str, duration]):
+
+    if not all([provider, slot_date, slot_time_str, duration]):
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots"))
-    success = user_slot_manager.add_cancelled_slot(
-        provider_id=provider_id,
-        date=slot_date,
-        time=slot_time_str,
-        duration=duration,
-        notes=notes
-    )
-    if success:
-        flash("Open slot added successfully", "success")
-    else:
-        flash("Error adding open slot", "danger")
+
+    # Determine AM/PM from time for efficient filtering
+    try:
+        time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
+        slot_period = "PM" if time_obj.hour >= 12 else "AM"
+    except ValueError:
+        flash("Invalid time format. Please use HH:MM.", "danger")
+        return redirect(url_for("slots"))
+    
+    try:
+        # Include user_id with the insert for RLS
+        insert_response = supabase.table("cancelled_slots").insert({
+            "provider": provider,
+            "date": slot_date,
+            "time": slot_time_str,
+            "duration": duration,
+            "notes": notes,
+            "slot_period": slot_period,
+            "user_id": current_user.id
+        }).execute()
+        
+        if insert_response.data:
+            flash("Open slot added successfully", "success")
+        else:
+            flash("Error adding open slot.", "danger")
+            
+    except Exception as e:
+        flash(f"An error occurred: {e}", "danger")
+
     return redirect(url_for("slots"))
 
 
@@ -763,12 +785,15 @@ def add_cancelled_appointment():
 @login_required
 def remove_cancelled_slot(appointment_id):
     """Remove a cancelled appointment (open slot)"""
-    _, _, user_slot_manager = get_user_managers(current_user.username)
-    success = user_slot_manager.remove_cancelled_slot(appointment_id)
-    if success:
-        flash("Open slot removed successfully", "success")
-    else:
-        flash("Error removing open slot", "danger")
+    try:
+        delete_response = supabase.table("cancelled_slots").delete().eq("id", appointment_id).eq("user_id", current_user.id).execute()
+        if delete_response.data:
+            flash("Open slot removed successfully", "success")
+        else:
+            flash("Error removing open slot. It may have already been removed.", "danger")
+    except Exception as e:
+        logger.error(f"Error removing slot {appointment_id}: {e}", exc_info=True)
+        flash("An error occurred while removing the slot.", "danger")
     return redirect(url_for("slots"))
 
 
@@ -776,61 +801,49 @@ def remove_cancelled_slot(appointment_id):
 @login_required
 def update_cancelled_slot(appointment_id):
     """Update a cancelled appointment (open slot)"""
-    _, _, user_slot_manager = get_user_managers(current_user.username)
-    
-    # Log the incoming request data
     logging.info(f"Updating slot {appointment_id} with form data: {request.form}")
     
-    provider = request.form.get("provider")
+    provider_id = request.form.get("provider")
     slot_date = request.form.get("date")
     slot_time_str = request.form.get("time")
     duration = request.form.get("duration")
     notes = request.form.get("notes", "")
     
-    if not all([provider, slot_date, slot_time_str, duration]):
-        missing_fields = [f for f, v in [("provider", provider), ("date", slot_date), 
+    if not all([provider_id, slot_date, slot_time_str, duration]):
+        missing_fields = [f for f, v in [("provider", provider_id), ("date", slot_date), 
                                        ("time", slot_time_str), ("duration", duration)] if not v]
         logging.error(f"Missing required fields: {missing_fields}")
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots"))
         
-    # Validate time format
     try:
-        # Try parsing the time to validate format
         time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
-        # Ensure the time is in HH:MM format
-        slot_time_str = time_obj.strftime("%H:%M")
-        logging.info(f"Validated time format: {slot_time_str}")
-    except ValueError as e:
-        logging.error(f"Invalid time format: {slot_time_str}, error: {str(e)}")
-        flash("Invalid time format entered. Please use HH:MM format (e.g., 09:30).", "danger")
-        return redirect(url_for("slots"))
+        slot_period = "PM" if time_obj.hour >= 12 else "AM"
+        slot_time_str_formatted = time_obj.strftime("%H:%M") # Ensure consistent format
     
-    try:
-        # Log the data being sent to update_cancelled_slot
         update_data = {
-            "provider": provider,
+            "provider": provider_id,
             "date": slot_date,
-            "time": slot_time_str,
+            "time": slot_time_str_formatted,
             "duration": duration,
-            "notes": notes
+            "notes": notes,
+            "slot_period": slot_period
         }
-        logging.info(f"Attempting to update slot with data: {update_data}")
-        
-        success = user_slot_manager.update_cancelled_slot(
-            slot_id=appointment_id,
-            **update_data
-        )
-        
-        if success:
+    
+        update_response = supabase.table("cancelled_slots").update(update_data).eq("id", appointment_id).eq("user_id", current_user.id).execute()
+    
+        if update_response.data:
             logging.info(f"Successfully updated slot {appointment_id}")
             flash("Open slot updated successfully", "success")
         else:
             logging.error(f"Failed to update slot {appointment_id}")
-            flash("Error updating open slot", "danger")
+            flash("Error updating open slot. It may no longer exist.", "danger")
+
+    except ValueError:
+        flash("Invalid time format. Please use HH:MM.", "danger")
     except Exception as e:
-        logging.error(f"Exception while updating slot {appointment_id}: {str(e)}", exc_info=True)
-        flash("Error updating open slot", "danger")
+        logger.error(f"Exception updating slot {appointment_id}: {e}", exc_info=True)
+        flash(f"An error occurred: {e}", "danger")
         
     return redirect(url_for("slots"))
 
@@ -847,60 +860,58 @@ def find_matches_for_appointment(appointment_id):
 @login_required
 def propose_slot(slot_id, patient_id):
     """Marks a slot and patient as pending confirmation."""
-    _, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
     try:
-        patient = user_waitlist_manager.get_patient(patient_id)
-        patient_name = patient.get("name", "Unknown") if patient else "Unknown"
-        slot_marked = user_slot_manager.mark_slot_as_pending(slot_id, patient_id, patient_name)
-        patient_marked = user_waitlist_manager.mark_patient_as_pending(patient_id, slot_id)
-        if slot_marked and patient_marked:
+        patient_resp = supabase.table("patients").select("name").eq("id", patient_id).eq("user_id", current_user.id).single().execute()
+        patient_name = patient_resp.data.get("name", "Unknown") if patient_resp.data else "Unknown"
+
+        slot_update_resp = supabase.table("cancelled_slots").update({
+            "status": "pending", 
+            "proposed_patient_id": patient_id, 
+            "proposed_patient_name": patient_name
+        }).eq("id", slot_id).eq("user_id", current_user.id).execute()
+
+        patient_update_resp = supabase.table("patients").update({
+            "status": "pending", 
+            "proposed_slot_id": slot_id
+        }).eq("id", patient_id).eq("user_id", current_user.id).execute()
+
+        if slot_update_resp.data and patient_update_resp.data:
             flash("Slot proposed and marked as pending confirmation.", "info")
             session.pop("current_appointment_id", None)
-        elif not slot_marked:
-             flash("Error marking slot as pending. It might be already taken or not found.", "danger")
-             user_waitlist_manager.cancel_patient_proposal(patient_id)
-        elif not patient_marked:
-             flash("Error marking patient as pending. They might not be waiting or not found.", "danger")
-             user_slot_manager.cancel_slot_proposal(slot_id)
         else:
-             flash("Error marking slot or patient as pending. Please check logs.", "danger")
+            raise Exception("Failed to update slot or patient status.")
+
     except Exception as e:
-        logging.error(f"Error proposing slot {slot_id} to patient {patient_id}: {e}", exc_info=True)
-        flash("An unexpected error occurred while proposing the slot.", "danger")
-        try:
-            user_slot_manager.cancel_slot_proposal(slot_id)
-            user_waitlist_manager.cancel_patient_proposal(patient_id)
-        except Exception as revert_e:
-            logging.error(f"Error reverting state during proposal error: {revert_e}")
-    redirect_url = request.referrer or url_for('index')
-    if '/api/' in redirect_url or '/propose_slot/' in redirect_url: redirect_url = url_for('index')
-    return redirect(redirect_url)
+        logger.error(f"Error proposing slot: {e}", exc_info=True)
+        flash("Error proposing slot. The slot may have been taken or the patient is no longer available.", "danger")
+        # Attempt to roll back state if something went wrong
+        supabase.table("cancelled_slots").update({"status": "available", "proposed_patient_id": None, "proposed_patient_name": None}).eq("id", slot_id).execute()
+        supabase.table("patients").update({"status": "waiting", "proposed_slot_id": None}).eq("id", patient_id).execute()
+
+    return redirect(request.referrer or url_for('index'))
 
 
 @app.route("/confirm_booking/<slot_id>/<patient_id>", methods=["POST"])
 @login_required
 def confirm_booking(slot_id, patient_id):
     """Confirms the booking, removing the patient and the slot."""
-    _, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
-    # try:
-    slot = user_slot_manager.get_cancelled_slots()
-    slot = next((s for s in slot if s.get('id') == slot_id), None)
-    patient = user_waitlist_manager.get_patient(patient_id)
-    if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
-        flash("Error confirming: Slot not found, not pending, or proposed to a different patient.", "danger")
-        return redirect(request.referrer or url_for('index'))
-    if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
-            flash("Error confirming: Patient not found, not pending, or proposed for a different slot.", "danger")
-            return redirect(request.referrer or url_for('index'))
-    patient_removed = user_waitlist_manager.remove_patient(patient_id)
-    slot_removed = user_slot_manager.remove_slot(slot_id)
-    if patient_removed and slot_removed:
-        flash("Booking confirmed. Patient removed from waitlist and slot closed.", "success")
-    else:
-        flash("Error confirming booking during removal. Patient or slot may not have been fully removed.", "danger")
-    # except Exception as e:
-      #  logging.error(f"Error confirming booking for slot {slot_id} / patient {patient_id}: {e}", exc_info=True)
-      #  flash("An unexpected error occurred while confirming the booking.", "danger")
+    try:
+        # For safety, ensure the slot and patient are in the correct pending state before deleting.
+        slot_resp = supabase.table("cancelled_slots").select("id").eq("id", slot_id).eq("proposed_patient_id", patient_id).eq("user_id", current_user.id).single().execute()
+        patient_resp = supabase.table("patients").select("id").eq("id", patient_id).eq("proposed_slot_id", slot_id).eq("user_id", current_user.id).single().execute()
+
+        if not slot_resp.data or not patient_resp.data:
+            raise Exception("Mismatch in pending slot/patient data.")
+
+        # If checks pass, delete both records.
+        supabase.table("patients").delete().eq("id", patient_id).execute()
+        supabase.table("cancelled_slots").delete().eq("id", slot_id).execute()
+        
+        flash("Booking confirmed. Patient removed from patients list and slot closed.", "success")
+    except Exception as e:
+        logger.error(f"Error confirming booking: {e}", exc_info=True)
+        flash("Error confirming booking. The slot or patient may have been modified.", "danger")
+
     return redirect(url_for("index"))
 
 
@@ -908,29 +919,28 @@ def confirm_booking(slot_id, patient_id):
 @login_required
 def cancel_proposal(slot_id, patient_id):
     """Cancels a pending proposal, making the slot and patient available again."""
-    _, user_waitlist_manager, user_slot_manager = get_user_managers(current_user.username)
-    # try:
-    slot = user_slot_manager.get_cancelled_slots()
-    slot = next((s for s in slot if s.get('id') == slot_id), None)
-    patient = user_waitlist_manager.get_patient(patient_id)
-    if not slot or slot.get("status") != "pending" or slot.get("proposed_patient_id") != patient_id:
-        flash("Error cancelling: Slot not found, not pending, or proposed to a different patient.", "warning")
-        return redirect(request.referrer or url_for('index'))
-    if not patient or patient.get("status") != "pending" or patient.get("proposed_slot_id") != slot_id:
-            flash("Error cancelling: Patient not found, not pending, or proposed for a different slot.", "warning")
-            return redirect(request.referrer or url_for('index'))
-    slot_reset = user_slot_manager.cancel_slot_proposal(slot_id)
-    patient_reset = user_waitlist_manager.cancel_patient_proposal(patient_id)
-    if slot_reset and patient_reset:
-        flash("Proposal cancelled. Slot and patient are available again.", "info")
-    else:
-        flash("Error cancelling proposal state. Please check logs.", "danger")
-    # except Exception as e:
-        logging.error(f"Error cancelling proposal for slot {slot_id} / patient {patient_id}: {e}", exc_info=True)
-        flash("An unexpected error occurred while cancelling the proposal.", "danger")
-    redirect_url = request.referrer or url_for('index')
-    if '/api/' in redirect_url or '/cancel_proposal/' in redirect_url: redirect_url = url_for('index')
-    return redirect(redirect_url)
+    try:
+        slot_reset_resp = supabase.table("cancelled_slots").update({
+            "status": "available", 
+            "proposed_patient_id": None, 
+            "proposed_patient_name": None
+        }).eq("id", slot_id).eq("user_id", current_user.id).execute()
+
+        patient_reset_resp = supabase.table("patients").update({
+            "status": "waiting", 
+            "proposed_slot_id": None
+        }).eq("id", patient_id).eq("user_id", current_user.id).execute()
+
+        if slot_reset_resp.data and patient_reset_resp.data:
+            flash("Proposal cancelled. Slot and patient are available again.", "info")
+        else:
+            raise Exception("Failed to reset slot or patient.")
+            
+    except Exception as e:
+        logger.error(f"Error cancelling proposal: {e}", exc_info=True)
+        flash("Error cancelling proposal. Please check the data and try again.", "danger")
+
+    return redirect(request.referrer or url_for('index'))
 
 
 @app.route("/upload_csv", methods=["GET", "POST"])
@@ -944,306 +954,249 @@ def upload_csv():
         if file.filename == "":
             flash("No selected file", "warning")
             return redirect(request.url)
+
         if file and file.filename.endswith(".csv"):
             try:
-                user_provider_manager, user_waitlist_manager, _ = get_user_managers(current_user.username)
                 stream = StringIO(file.stream.read().decode("UTF8"), newline=None)
                 csv_input = csv.DictReader(stream)
-                if not csv_input.fieldnames:
-                    flash("CSV file is empty or has no header.", "warning")
-                    return redirect(url_for("index") + "#waitlist-table")
                 
-                required_fields = ["name", "phone"] # Basic required fields
-                header = [h.lower().strip().replace(" ", "_") for h in csv_input.fieldnames]
-                
-                # Normalize fieldnames in the DictReader if possible or handle it row by row
-                # For simplicity, we'll normalize expected keys when accessing row data.
-                
-                missing_req_fields = [rf for rf in required_fields if rf not in header]
-                if missing_req_fields:
-                    flash(f"CSV missing required columns: {', '.join(missing_req_fields)}.", "danger")
+                required_fields = ["name", "phone"]
+                header = [h.lower().strip().replace(" ", "_") for h in (csv_input.fieldnames or [])]
+                if not all(rf in header for rf in required_fields):
+                    missing = ", ".join([rf for rf in required_fields if rf not in header])
+                    flash(f"CSV missing required columns: {missing}.", "danger")
                     return redirect(url_for("index") + "#waitlist-table")
 
                 patients_to_add = []
-                added_count = 0
-                skipped_count = 0
                 
-                # Pre-fetch existing patients to check for duplicates
-                existing_patients_tuples = set((p['name'].lower(), p['phone']) for p in user_waitlist_manager.get_patients())
+                # Fetch existing data for validation and duplicate checks
+                existing_patients_resp = supabase.table("patients").select("name, phone").eq("user_id", current_user.id).execute()
+                existing_patients = set((p['name'].lower(), p['phone']) for p in (existing_patients_resp.data or []))
                 
-                # Define available appointment types and providers for validation
-                valid_appointment_types = [apt['appointment_type'].lower().replace(' ', '_') for apt in (current_user.appointment_types_data or [])]
-                valid_providers = [p['name'].lower() for p in user_provider_manager.get_providers()]
-                valid_providers.append("no preference") # Allow "no preference"
+                providers_resp = supabase.table("providers").select("first_name, last_initial").eq("user_id", current_user.id).execute()
+                valid_providers = {f"{p['first_name']} {p['last_initial'] or ''}".strip().lower() for p in (providers_resp.data or [])}
+                valid_providers.add("no preference")
 
-                # Helpers for validation
-                def validate_urgency(urg_val):
-                    return urg_val.lower() if urg_val and urg_val.lower() in ["high", "medium", "low"] else "medium"
-                def validate_appointment_type(appt_val):
-                    appt_norm = appt_val.lower().replace(' ', '_') if appt_val else "custom"
-                    return appt_norm if appt_norm in valid_appointment_types or appt_norm == "custom" else "custom"
-                def validate_duration(dur_val):
-                    return dur_val if dur_val and dur_val.isdigit() and int(dur_val) > 0 else "30"
-                def validate_provider(prov_val):
-                    prov_norm = prov_val.lower() if prov_val else "no preference"
-                    return prov_norm if prov_norm in valid_providers else "no preference"
+                valid_appointment_types = {apt['appointment_type'].lower().replace(' ', '_') for apt in (current_user.appointment_types_data or [])}
 
-                has_availability_col = "availability" in header
-                has_mode_col = "availability_mode" in header
+                # Validation helpers
+                def validate_provider(val):
+                    return val if (val or "no preference").lower() in valid_providers else "no preference"
 
-                for row_index, row_raw in enumerate(csv_input):
-                    # Normalize keys in the current row
-                    row = {k.lower().strip().replace(" ", "_"): v for k,v in row_raw.items()}
+                for row in csv_input:
+                    norm_row = {k.lower().strip().replace(" ", "_"): v for k, v in row.items()}
+                    name, phone = norm_row.get("name", "").strip(), norm_row.get("phone", "").strip()
 
-                    csv_name = row.get("name", "").strip()
-                    csv_phone = row.get("phone", "").strip()
-
-                    if not csv_name or not csv_phone:
-                        skipped_count += 1
-                        logging.warning(f"Skipping CSV row {row_index+1}: Missing name or phone.")
+                    if not name or not phone or (name.lower(), phone) in existing_patients:
                         continue
-                    if (csv_name.lower(), csv_phone) in existing_patients_tuples:
-                        skipped_count += 1
-                        logging.info(f"Skipping CSV row {row_index+1}: Patient '{csv_name}' with phone '{csv_phone}' already exists.")
-                        continue
-                    
-                    availability_data = {}
-                    if has_availability_col:
-                        availability_str = row.get("availability", "").strip()
-                        if availability_str:
-                            try:
-                                loaded_avail = json.loads(availability_str)
-                                if isinstance(loaded_avail, dict):
-                                    availability_data = {k.capitalize(): v for k, v in loaded_avail.items() if isinstance(v, list) and k.capitalize() in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]}
-                            except json.JSONDecodeError:
-                                logging.warning(f"Failed to parse availability JSON for {csv_name} (row {row_index+1}): '{availability_str}'")
-                                # Fallback for simple comma-separated days (e.g., "Monday,Tuesday") implies AM/PM for those days
-                                parsed_days = [d.strip().capitalize() for d in availability_str.split(',') if d.strip().capitalize() in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]]
-                                if parsed_days: availability_data = {day: ["AM", "PM"] for day in parsed_days}
-                    
-                    availability_mode = "available"
-                    if has_mode_col:
-                        mode_raw = row.get("availability_mode", "").strip().lower()
-                        if mode_raw in ["available", "unavailable"]: availability_mode = mode_raw
-
-                    patient_timestamp_str = row.get("timestamp", "")
-                    patient_timestamp = None
-                    if patient_timestamp_str:
-                        try: patient_timestamp = datetime.fromisoformat(patient_timestamp_str)
-                        except ValueError:
-                            try: patient_timestamp = datetime.strptime(patient_timestamp_str, "%m/%d/%Y %H:%M")
-                            except ValueError: logging.warning(f"Could not parse timestamp '{patient_timestamp_str}' for {csv_name}")
-                    
-                    patients_to_add.append({
-                        "name": csv_name,
-                        "phone": csv_phone,
-                        "email": row.get("email", ""),
-                        "reason": row.get("reason", ""),
-                        "urgency": validate_urgency(row.get("urgency", "medium")),
-                        "appointment_type": validate_appointment_type(row.get("appointment_type")),
-                        "duration": validate_duration(row.get("duration", "30")),
-                        "provider": validate_provider(row.get("provider")),
-                        "timestamp": patient_timestamp, # Can be None, add_patient handles it
-                        "availability": availability_data,
-                        "availability_mode": availability_mode
-                    })
-                    added_count += 1
-                    existing_patients_tuples.add((csv_name.lower(), csv_phone))
+                
+                    # Add user_id to each record for insertion
+                    patient_data = {
+                        "user_id": current_user.id,
+                        "name": name,
+                        "phone": phone,
+                        "email": norm_row.get("email", ""),
+                        "reason": norm_row.get("reason", ""),
+                        "urgency": norm_row.get("urgency", "medium").lower(),
+                        "appointment_type": norm_row.get("appointment_type", "custom"),
+                        "duration": norm_row.get("duration", "30"),
+                        "provider": validate_provider(norm_row.get("provider")),
+                        # Include other fields from CSV as needed
+                    }
+                    patients_to_add.append(patient_data)
+                    existing_patients.add((name.lower(), phone))
 
                 if patients_to_add:
-                    for p_data in patients_to_add:
-                        user_waitlist_manager.add_patient(**p_data)
-                
-                if added_count > 0 and skipped_count > 0:
-                    flash(f"Successfully added {added_count} new patients. Skipped {skipped_count} duplicates or rows with missing info.", "success")
-                elif added_count > 0:
-                    flash(f"Successfully added {added_count} new patients from CSV.", "success")
-                elif skipped_count > 0:
-                    flash(f"No new patients added. Skipped {skipped_count} duplicates or rows with missing info.", "info")
+                    insert_response = supabase.table("patients").insert(patients_to_add).execute()
+                    added_count = len(insert_response.data)
+                    skipped_count = csv_input.line_num - 1 - added_count
+                    flash(f"Successfully added {added_count} new patients. Skipped {skipped_count} rows.", "success")
                 else:
-                    flash("No patients added from CSV. Ensure file has data and correct headers (name, phone).", "info")
+                    flash("No new patients to add from the CSV file.", "info")
 
             except Exception as e:
-                logging.error(f"Error processing patient CSV: {str(e)}", exc_info=True)
-                flash(f"Error processing CSV file: {str(e)}", "danger")
+                flash(f"An error occurred during CSV processing: {e}", "danger")
         else:
             flash("Invalid file format. Please upload a .csv file.", "danger")
+        
         return redirect(url_for("index") + "#waitlist-table")
     
-    # For GET request, just render the index page (or a dedicated upload page if you create one)
-    # Typically, CSV upload is part of another page, like index.html, which would have the form.
-    # If you want a GET request to show a form, you'd render a template here.
-    # For now, redirecting to index, assuming the form is there.
-    return redirect(url_for("index") + "#csv-upload-section") # Assuming a section in index.html
+    return redirect(url_for("index") + "#csv-upload-section")
 
 
 @app.route("/api/find_matches_for_patient/<patient_id>")
 @login_required
 def api_find_matches_for_patient(patient_id):
-    user_provider_manager, user_waitlist_manager, user_slot_manager = get_user_managers(
-        current_user.username
-    )
+    try:
+        # Fetch patient data
+        patient_resp = supabase.table("patients").select("*").eq("id", patient_id).eq("user_id", current_user.id).single().execute()
+        patient = patient_resp.data
+        if not patient:
+            return jsonify({"error": "Patient not found"}), 404
+        logging.info(f"Finding matches for patient {patient_id}: {patient}")
 
-    patient = user_waitlist_manager.get_patient(patient_id)
-    logging.info(f"Finding matches for patient {patient_id}: {patient}")
+        # Fetch providers to map IDs to names
+        providers_response = supabase.table("providers").select("id, first_name, last_initial").eq("user_id", current_user.id).execute()
+        provider_map = {str(p['id']): f"{p['first_name']} {p['last_initial'] or ''}".strip() for p in (providers_response.data or [])}
 
-    if not patient:
-        return jsonify({"error": "Patient not found"}), 404
-    if patient.get("status", "waiting") != "waiting":
-        return jsonify({"error": "Patient is not currently waiting", "status": patient.get("status")}), 400
+        if patient.get("status", "waiting") != "waiting":
+            return jsonify({"error": "Patient is not currently waiting", "status": patient.get("status")}), 400
 
-    # Get all available slots (status 'available')
-    all_slots = user_slot_manager.get_cancelled_slots()
-    available_slots = [
-        slot for slot in all_slots if slot.get("status", "available") == "available"
-    ]
-    logging.info(f"Found {len(available_slots)} available slots for patient {patient_id}")
+        # Get all available slots
+        slots_resp = supabase.table("cancelled_slots").select("*").eq("user_id", current_user.id).eq("status", "available").execute()
+        available_slots = slots_resp.data or []
+        logging.info(f"Found {len(available_slots)} available slots for patient {patient_id}")
 
-    # Filter slots based on patient requirements
-    matching_slots = []
-    patient_duration = int(patient.get("duration", 0))
-    patient_provider_pref = patient.get("provider", "no preference").lower()
-    patient_availability = patient.get("availability", {})
-    patient_availability_mode = patient.get("availability_mode", "available")
+        # Filter slots based on patient requirements
+        matching_slots = []
+        patient_duration = int(patient.get("duration", 0))
+        patient_provider_pref = patient.get("provider", "no preference").lower()
+        patient_availability = patient.get("availability", {})
+        patient_availability_mode = patient.get("availability_mode", "available")
 
-    logging.info(f"Patient requirements - Duration: {patient_duration}, Provider: {patient_provider_pref}, Availability Mode: {patient_availability_mode}")
-    logging.info(f"Patient availability preferences: {patient_availability}")
+        logging.info(f"Patient requirements - Duration: {patient_duration}, Provider: {patient_provider_pref}, Availability Mode: {patient_availability_mode}")
 
-    for slot in available_slots:
-        # Check duration
-        slot_duration = int(slot.get("duration", 0))
-        if patient_duration > slot_duration:
-            logging.info(f"Slot {slot.get('id')} rejected: Duration mismatch (slot: {slot_duration} < patient: {patient_duration})")
-            continue
-
-        # Check provider
-        slot_provider = slot.get("provider", "").lower()
-        if patient_provider_pref != "no preference" and patient_provider_pref != slot_provider:
-            logging.info(f"Slot {slot.get('id')} rejected: Provider mismatch (slot: '{slot_provider}' != patient: '{patient_provider_pref}')")
-            continue
-
-        # Check availability
-        slot_date_str = slot.get("date")
-        slot_period = slot.get("slot_period", "").upper() # AM/PM
-
-        slot_date = None
-        if isinstance(slot_date_str, str):
-            try:
-                slot_date = datetime.strptime(slot_date_str, "%Y-%m-%d")
-            except ValueError:
-                logging.warning(f"Could not parse slot date '{slot_date_str}' for slot {slot.get('id')}")
+        for slot in available_slots:
+            # Check duration
+            slot_duration = int(slot.get("duration", 0))
+            if patient_duration > slot_duration:
                 continue
-        elif isinstance(slot_date_str, datetime):
-            slot_date = slot_date_str
-        else:
-            logging.warning(f"Invalid slot date type '{type(slot_date_str)}' for slot {slot.get('id')}")
-            continue
 
-        if patient_availability: # Only check if patient specified preferences
-            slot_weekday = slot_date.strftime("%A") # Full day name e.g. Monday
-            day_periods = patient_availability.get(slot_weekday, []) # Patient's pref for this day
+            # Check provider
+            slot_provider_id = str(slot.get("provider"))
+            slot_provider_name = provider_map.get(slot_provider_id, "").lower()
+            if patient_provider_pref != "no preference" and patient_provider_pref != slot_provider_name:
+                continue
 
-            is_available_on_day_period = slot_period in day_periods
+            # Check availability
+            slot_date_str = slot.get("date")
+            slot_period = slot.get("slot_period", "").upper()
 
-            if patient_availability_mode == "available":
-                # Patient must be explicitly available
-                if not day_periods or not is_available_on_day_period:
-                    logging.info(f"Slot {slot.get('id')} rejected: Availability mismatch (mode: available, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
+            slot_date = None
+            if isinstance(slot_date_str, str):
+                try:
+                    slot_date = datetime.strptime(slot_date_str, "%Y-%m-%d")
+                except ValueError: 
                     continue
-            else: # patient_availability_mode == "unavailable"
-                # Patient must NOT be explicitly unavailable
-                if day_periods and is_available_on_day_period:
-                    logging.info(f"Slot {slot.get('id')} rejected: Availability mismatch (mode: unavailable, day: {slot_weekday}, period: {slot_period}, prefs: {day_periods})")
+            elif isinstance(slot_date_str, datetime):
+                slot_date = slot_date_str
+            else:
+                continue
+
+            if patient_availability:
+                slot_weekday = slot_date.strftime("%A")
+                day_periods = patient_availability.get(slot_weekday, [])
+                is_available_on_day_period = slot_period in day_periods
+
+                if patient_availability_mode == "available" and not is_available_on_day_period:
+                    continue
+                if patient_availability_mode == "unavailable" and is_available_on_day_period:
                     continue
 
-        # If all checks pass, add the slot
-        logging.info(f"Slot {slot.get('id')} matched for patient {patient_id}")
-        matching_slots.append(slot)
+            # If all checks pass, add the slot, enriching it with the provider name for the UI
+            slot['provider_name'] = provider_map.get(slot_provider_id, "Unknown")
+            matching_slots.append(slot)
 
-    # Sort matching slots by date
-    def sort_key(slot):
-        date_str = slot.get("date")
-        if isinstance(date_str, str):
-            try:
-                return datetime.strptime(date_str, "%Y-%m-%d")
-            except ValueError:
-                return datetime.max
-        elif isinstance(date_str, datetime):
-            return date_str
-        return datetime.max
+        # Sort matching slots by date
+        matching_slots.sort(key=lambda s: s.get("date", str(date.max)))
 
-    matching_slots.sort(key=sort_key)
+        logging.info(f"Returning {len(matching_slots)} matching slots for patient {patient_id}")
+        return jsonify({"patient": patient, "matching_slots": matching_slots})
 
-    logging.info(f"Returning {len(matching_slots)} matching slots for patient {patient_id}")
-    # Return only necessary slot info for the modal
-    result_slots = []
-    for slot in matching_slots:
-        slot_data = slot.copy()
-        if isinstance(slot_data.get("date"), datetime):
-            slot_data["date"] = slot_data["date"].strftime('%Y-%m-%d')
-        result_slots.append(slot_data)
-
-    return jsonify({"patient": patient, "matching_slots": result_slots})
+    except Exception as e:
+        logger.error(f"Error in api_find_matches_for_patient: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred."}), 500
 
 
 @app.route("/providers", methods=["GET"])
 @login_required
 def list_providers():
-    user_provider_manager, _, _ = get_user_managers(current_user.username)
-    providers = user_provider_manager.get_providers()
+    try:
+        providers_response = supabase.table("providers").select("*").eq("user_id", current_user.id).order("first_name").execute()
+        providers = providers_response.data or []
+    except Exception as e:
+        flash(f"Error loading providers: {e}", "danger")
+        providers = []
     return render_template("providers.html", providers=providers)
 
 
 @app.route("/add_provider", methods=["POST"])
 @login_required
 def add_provider():
-    user_provider_manager, _, _ = get_user_managers(current_user.username)
-    first_name = request.form.get("first_name")
-    last_initial = request.form.get("last_initial", "")
+    first_name = request.form.get("first_name", "").strip()
+    last_initial = request.form.get("last_initial", "").strip()
+
     if not first_name:
         flash("Provider first name is required.", "warning")
-    elif user_provider_manager.add_provider(first_name, last_initial):
-        flash("Provider added successfully.", "success")
-    else:
-        flash("Provider already exists or could not be added.", "warning")
+        return redirect(url_for("list_providers"))
+
+    try:
+        # Add the provider with the user_id for RLS
+        insert_response = supabase.table("providers").insert({
+            "first_name": first_name,
+            "last_initial": last_initial,
+            "user_id": current_user.id
+        }).execute()
+        
+        if insert_response.data:
+            flash("Provider added successfully.", "success")
+        else:
+            flash("Could not add provider. They may already exist.", "warning")
+    except Exception as e:
+        flash(f"An error occurred: {e}", "danger")
+
     return redirect(url_for("list_providers"))
 
 
 @app.route("/remove_provider", methods=["POST"])
 @login_required
 def remove_provider():
-    user_provider_manager, _, _ = get_user_managers(current_user.username)
-    first_name = request.form.get("first_name")
-    last_initial = request.form.get("last_initial", "")
-    if not first_name:
-        flash("Provider name not provided for removal.", "warning")
-    elif user_provider_manager.remove_provider(first_name, last_initial):
-        flash("Provider removed successfully.", "success")
-    else:
-        flash("Provider not found or could not be removed.", "danger")
+    provider_id = request.form.get("provider_id") # Safer to remove by primary key
+    if not provider_id:
+        flash("Provider ID not provided for removal.", "warning")
+        return redirect(url_for("list_providers"))
+        
+    try:
+        # RLS policies will ensure the user can only delete their own providers.
+        # The .eq("user_id", current_user.id) is technically redundant if RLS is correct, but good for defense-in-depth.
+        delete_response = supabase.table("providers").delete().eq("id", provider_id).eq("user_id", current_user.id).execute()
+        
+        if delete_response.data:
+            flash("Provider removed successfully.", "success")
+        else:
+            flash("Provider not found or could not be removed.", "danger")
+    except Exception as e:
+        flash(f"An error occurred: {e}", "danger")
+        
     return redirect(url_for("list_providers"))
 
 
 @app.route("/edit_patient/<patient_id>", methods=["GET"])
 @login_required
 def edit_patient(patient_id):
-    user_provider_manager, user_waitlist_manager, _ = get_user_managers(current_user.username)
-    patient = user_waitlist_manager.get_patient(patient_id)
-    if not patient:
-        flash("Patient not found.", "danger")
-        return redirect(url_for("index"))
+    try:
+        patient_response = supabase.table("patients").select("*").eq("id", patient_id).eq("user_id", current_user.id).single().execute()
+        patient = patient_response.data
+        if not patient:
+            flash("Patient not found.", "danger")
+            return redirect(url_for("index"))
     
-    providers = user_provider_manager.get_providers()
-    # Ensure appointment_types and appointment_types_data are available for the form
-    appointment_types = current_user.appointment_types or []
-    appointment_types_data = current_user.appointment_types_data or []
+        providers_response = supabase.table("providers").select("*").eq("user_id", current_user.id).execute()
+        providers = providers_response.data or []
+        
+        appointment_types = current_user.appointment_types or []
+        appointment_types_data = current_user.appointment_types_data or []
 
-    return render_template("edit_patient.html",
-                           patient=patient,
-                           providers=providers,
-                           has_providers=len(providers) > 0,
-                           appointment_types=appointment_types,
-                           appointment_types_data=appointment_types_data)
+        return render_template("edit_patient.html",
+                               patient=patient,
+                               providers=providers,
+                               has_providers=len(providers) > 0,
+                               appointment_types=appointment_types,
+                               appointment_types_data=appointment_types_data)
+    except Exception as e:
+        logger.error(f"Error loading edit patient page for {patient_id}: {e}", exc_info=True)
+        flash("Could not load patient data for editing.", "danger")
+        return redirect(url_for("index"))
 
 
 @app.route("/debug/session")
@@ -1264,6 +1217,93 @@ def debug_list_user_files(username):
 def debug_show_profile(username):
     return jsonify({"error": "This endpoint is deprecated"}), 410
 
+@app.route("/setup/database", methods=["GET", "POST"])
+@login_required
+def setup_database():
+    """Database setup and debugging route"""
+    if request.method == "POST":
+        action = request.form.get("action")
+        
+        if action == "check_tables":
+            tables_status = {}
+            required_tables = ["users", "providers", "patients", "cancelled_slots"]
+            
+            for table in required_tables:
+                try:
+                    response = supabase.table(table).select("count", count="exact").limit(1).execute()
+                    tables_status[table] = {"exists": True, "count": response.count}
+                except Exception as e:
+                    tables_status[table] = {"exists": False, "error": str(e)}
+            
+            return jsonify({"tables": tables_status})
+        
+        elif action == "create_tables":
+            # This would require admin privileges in Supabase
+            # For now, just return instructions
+            return jsonify({
+                "message": "Table creation requires admin access to Supabase. Please create tables manually.",
+                "instructions": [
+                    "1. Go to your Supabase dashboard",
+                    "2. Navigate to SQL Editor",
+                    "3. Run the following SQL commands:",
+                    "",
+                    "CREATE TABLE users (",
+                    "  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),",
+                    "  username TEXT UNIQUE NOT NULL,",
+                    "  clinic_name TEXT,",
+                    "  user_name_for_message TEXT,",
+                    "  appointment_types JSONB DEFAULT '[]',",
+                    "  appointment_types_data JSONB DEFAULT '[]',",
+                    "  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()",
+                    ");",
+                    "",
+                    "CREATE TABLE providers (",
+                    "  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),",
+                    "  user_id UUID REFERENCES users(id) ON DELETE CASCADE,",
+                    "  first_name TEXT NOT NULL,",
+                    "  last_initial TEXT,",
+                    "  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()",
+                    ");",
+                    "",
+                    "CREATE TABLE patients (",
+                    "  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),",
+                    "  user_id UUID REFERENCES users(id) ON DELETE CASCADE,",
+                    "  name TEXT NOT NULL,",
+                    "  phone TEXT NOT NULL,",
+                    "  email TEXT,",
+                    "  reason TEXT,",
+                    "  urgency TEXT DEFAULT 'medium',",
+                    "  appointment_type TEXT,",
+                    "  duration INTEGER DEFAULT 30,",
+                    "  provider TEXT,",
+                    "  availability JSONB DEFAULT '{}',",
+                    "  availability_mode TEXT DEFAULT 'available',",
+                    "  status TEXT DEFAULT 'waiting',",
+                    "  proposed_slot_id UUID,",
+                    "  wait_time TEXT DEFAULT '0 minutes',",
+                    "  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),",
+                    "  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()",
+                    ");",
+                    "",
+                    "CREATE TABLE cancelled_slots (",
+                    "  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),",
+                    "  user_id UUID REFERENCES users(id) ON DELETE CASCADE,",
+                    "  provider TEXT NOT NULL,",
+                    "  date DATE NOT NULL,",
+                    "  time TIME NOT NULL,",
+                    "  duration INTEGER NOT NULL,",
+                    "  slot_period TEXT,",
+                    "  notes TEXT,",
+                    "  status TEXT DEFAULT 'available',",
+                    "  proposed_patient_id UUID,",
+                    "  proposed_patient_name TEXT,",
+                    "  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()",
+                    ");"
+                ]
+            })
+    
+    return render_template("setup_database.html")
+
 # Add before_request handler for security headers
 @app.before_request
 def add_security_headers():
@@ -1279,7 +1319,7 @@ def add_security_headers_after(response):
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;"
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data:;"
     return response
 
 # Add after_request handler for CORS
@@ -1309,13 +1349,9 @@ def log_response_info(response):
 if __name__ == "__main__":
     # Create session directory if it doesn't exist
     session_dir = os.path.join(DATA_DIR, "flask_sessions")
-    try:
-        os.makedirs(session_dir, exist_ok=True)
-        logger.info(f"Created session directory at: {session_dir}")
-    except Exception as e:
-        logger.error(f"Error creating session directory: {e}")
-        raise
-          
+    os.makedirs(session_dir, exist_ok=True)
+    logger.info(f"Created session directory at: {session_dir}")
+    
     logger.info("Session configuration:")
     logger.info("SECRET_KEY is set: %s", bool(app.secret_key))
     logger.info("SESSION_TYPE: %s", app.config.get("SESSION_TYPE"))

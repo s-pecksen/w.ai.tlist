@@ -23,8 +23,9 @@
                 {% endwith %}
                 <form method="post" id="registrationForm"> {# Added ID to form #}
                     <div class="mb-3">
-                        <label for="username" class="form-label">Username*</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
+                        <label for="email" class="form-label">Email Address*</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                        <small class="form-text text-muted">This will be your login username.</small>
                     </div>
                     <div class="mb-3">
                         <label for="password" class="form-label">Password*</label>

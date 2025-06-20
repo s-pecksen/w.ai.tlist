@@ -16,7 +16,7 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary py-3">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('index') }}">Waitlist Manager</a>
+            <a class="navbar-brand" href="{{ url_for('index') }}">Patient Manager</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -24,7 +24,7 @@
                 <ul class="navbar-nav w-100">
                     {% if current_user.is_authenticated %} {# Show links only if logged in #}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">Waitlist</a> {# Home goes to waitlist now #}
+                        <a class="nav-link" href="{{ url_for('index') }}">Dashboard</a> {# Home goes to waitlist now #}
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('slots') }}">Open Slots</a>
@@ -63,7 +63,7 @@
     <!-- Footer -->
     <footer class="mt-5 py-3 bg-light text-center">
         <div class="container">
-            <p class="mb-0">Waitlist Manager © 2025</p>
+            <p class="mb-0">Patient Manager © 2025</p>
         </div>
     </footer>
 
