@@ -83,7 +83,7 @@ logger.info(f"Setting up persistent storage at: {DATA_DIR}")
 
 # Configure Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SESSION_SECRET_KEY', 'dev')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.environ.get('FLASK_SESSION_SECRET_KEY', 'dev'))
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 app.config['SESSION_COOKIE_SECURE'] = False  # Set to False for development
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -1358,4 +1358,7 @@ if __name__ == "__main__":
     logger.info("SESSION_FILE_DIR: %s", app.config.get("SESSION_FILE_DIR"))
     logger.info("SESSION_PERMANENT: %s", app.config.get("SESSION_PERMANENT"))
     
-    app.run(host='0.0.0.0', port=7860, debug=True)  # Enable debug mode temporarily
+    # Hugging Face Spaces expects the app to run on port 7860
+    port = int(os.environ.get('PORT', 7860))
+    # Bind to all interfaces (0.0.0.0) for Docker
+    app.run(host='0.0.0.0', port=port, debug=False)
