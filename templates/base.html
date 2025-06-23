@@ -16,7 +16,7 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary py-3">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('index') }}">Patient Manager</a>
+            <a class="navbar-brand" href="{{ url_for('main.index') }}">Patient Manager</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -24,7 +24,7 @@
                 <ul class="navbar-nav w-100">
                     {% if current_user.is_authenticated %} {# Show links only if logged in #}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">Dashboard</a> {# Home goes to waitlist now #}
+                        <a class="nav-link" href="{{ url_for('main.index') }}">Dashboard</a> {# Home goes to waitlist now #}
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('slots') }}">Open Slots</a>
@@ -39,14 +39,14 @@
                          <span class="navbar-text me-3">
                            Welcome, {{ current_user.username }}!
                          </span>
-                         <a class="btn btn-outline-light" href="{{ url_for('logout') }}">Logout</a>
+                         <a class="btn btn-outline-light" href="{{ url_for('auth.logout') }}">Logout</a>
                     </li>
                     {% else %} {# Show login/register if not logged in #}
                      <li class="nav-item ms-auto">
-                        <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+                        <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
                     </li>
                      <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('register') }}">Register</a>
+                        <a class="nav-link" href="{{ url_for('auth.register') }}">Register</a>
                     </li>
                     {% endif %}
                 </ul>

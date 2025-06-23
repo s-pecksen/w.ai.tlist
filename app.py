@@ -1,8 +1,11 @@
-from flask import Flask, session
+from flask import Flask, session, request
 from flask_login import LoginManager
 from src.config import Config
 from src.models.user import User
 from src.database import get_supabase_client
+from src.models.provider import db, Provider
+from src.models.patient import Patient
+from src.models.slot import Slot
 from src.routes.auth import auth_bp
 from src.routes.patients import patients_bp
 from src.routes.slots import slots_bp
@@ -39,6 +42,17 @@ app.config["SESSION_FILE_MODE"] = Config.SESSION_FILE_MODE
 app.config["SESSION_USE_SIGNER"] = Config.SESSION_USE_SIGNER
 app.config["PERSISTENT_STORAGE_PATH"] = Config.DATA_DIR
 app.config["USERS_DIR"] = Config.USERS_DIR
+
+# Database configuration
+if Config.USE_LOCAL_DB:
+    app.config['SQLALCHEMY_DATABASE_URI'] = Config.LOCAL_DATABASE_URL
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    db.init_app(app)
+    
+    # Create tables
+    with app.app_context():
+        db.create_all()
+        logger.info("Local database tables created")
 
 # Initialize Flask-Login
 login_manager = LoginManager()

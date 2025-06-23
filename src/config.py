@@ -34,6 +34,10 @@ class Config:
     # Database Configuration
     DATABASE_URL = os.environ.get("DATABASE_URL")
     
+    # Local Database Configuration
+    USE_LOCAL_DB = os.environ.get("USE_LOCAL_DB", "false").lower() == "true"
+    LOCAL_DATABASE_URL = os.environ.get("LOCAL_DATABASE_URL", "sqlite:///waitlist.db")
+    
     # File Storage
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
@@ -44,13 +48,15 @@ class Config:
     @classmethod
     def validate_env_vars(cls):
         """Validate that required environment variables are set."""
-        required_vars = ["SUPABASE_URL", "SUPABASE_KEY"]
-        missing_vars = [var for var in required_vars if not os.getenv(var)]
-        
-        if missing_vars:
-            raise EnvironmentError(
-                f"Missing required environment variables: {', '.join(missing_vars)}"
-            )
+        if not cls.USE_LOCAL_DB:
+            # Only validate Supabase vars if not using local DB
+            required_vars = ["SUPABASE_URL", "SUPABASE_KEY"]
+            missing_vars = [var for var in required_vars if not os.getenv(var)]
+            
+            if missing_vars:
+                raise EnvironmentError(
+                    f"Missing required environment variables: {', '.join(missing_vars)}"
+                )
     
     @classmethod
     def setup_directories(cls):
