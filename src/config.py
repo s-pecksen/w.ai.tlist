@@ -27,19 +27,13 @@ class Config:
     # Encryption
     ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
     
-    # Supabase Configuration
-    SUPABASE_URL = os.environ.get("SUPABASE_URL")
-    SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-    
-    # Database Configuration
-    DATABASE_URL = os.environ.get("DATABASE_URL")
-    
-    # Local Database Configuration
-    USE_LOCAL_DB = os.environ.get("USE_LOCAL_DB", "false").lower() == "true"
-    LOCAL_DATABASE_URL = os.environ.get("LOCAL_DATABASE_URL", "sqlite:///waitlist.db")
-    
     # File Storage
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Database Configuration - SQLite Only
+    LOCAL_DATABASE_URL = os.environ.get("LOCAL_DATABASE_URL", f"sqlite:///{os.path.join(PROJECT_ROOT, 'instance', 'waitlist.db')}")
+    
+    # File Storage
     DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
     USERS_DIR = os.path.join(DATA_DIR, 'users')
     SESSIONS_DIR = os.path.join(DATA_DIR, 'flask_sessions')
@@ -48,20 +42,15 @@ class Config:
     @classmethod
     def validate_env_vars(cls):
         """Validate that required environment variables are set."""
-        if not cls.USE_LOCAL_DB:
-            # Only validate Supabase vars if not using local DB
-            required_vars = ["SUPABASE_URL", "SUPABASE_KEY"]
-            missing_vars = [var for var in required_vars if not os.getenv(var)]
-            
-            if missing_vars:
-                raise EnvironmentError(
-                    f"Missing required environment variables: {', '.join(missing_vars)}"
-                )
+        # No Supabase validation needed - SQLite only
+        pass
     
     @classmethod
     def setup_directories(cls):
         """Create necessary directories if they don't exist."""
-        directories = [cls.DATA_DIR, cls.USERS_DIR, cls.SESSIONS_DIR, cls.DIFF_STORE_DIR]
+        # Add instance directory for SQLite database
+        instance_dir = os.path.join(cls.PROJECT_ROOT, 'instance')
+        directories = [cls.DATA_DIR, cls.USERS_DIR, cls.SESSIONS_DIR, cls.DIFF_STORE_DIR, instance_dir]
         for directory in directories:
             os.makedirs(directory, exist_ok=True)
         
@@ -72,6 +61,7 @@ class Config:
         os.remove(test_file)
         
         logging.info(f"Session directory verified at: {cls.SESSIONS_DIR}")
+        logging.info(f"Instance directory created at: {instance_dir}")
     
     @classmethod
     def get_cipher_suite(cls):

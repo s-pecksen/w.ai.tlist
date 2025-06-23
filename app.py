@@ -2,7 +2,6 @@ from flask import Flask, session, request
 from flask_login import LoginManager
 from src.config import Config
 from src.models.user import User
-from src.database import get_supabase_client
 from src.models.provider import db, Provider
 from src.models.patient import Patient
 from src.models.slot import Slot
@@ -43,16 +42,16 @@ app.config["SESSION_USE_SIGNER"] = Config.SESSION_USE_SIGNER
 app.config["PERSISTENT_STORAGE_PATH"] = Config.DATA_DIR
 app.config["USERS_DIR"] = Config.USERS_DIR
 
-# Database configuration
-if Config.USE_LOCAL_DB:
-    app.config['SQLALCHEMY_DATABASE_URI'] = Config.LOCAL_DATABASE_URL
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    db.init_app(app)
-    
-    # Create tables
-    with app.app_context():
-        db.create_all()
-        logger.info("Local database tables created")
+# Database configuration - SQLite only
+app.config['SQLALCHEMY_DATABASE_URI'] = Config.LOCAL_DATABASE_URL
+logger.info(f"Using local SQLite database: {Config.LOCAL_DATABASE_URL}")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
+
+# Create tables
+with app.app_context():
+    db.create_all()
+    logger.info("SQLite database tables created")
 
 # Initialize Flask-Login
 login_manager = LoginManager()
@@ -61,26 +60,17 @@ login_manager.login_view = "auth.login"
 login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "error"
 
-# Get Supabase client
-supabase = get_supabase_client()
-
 # Flask-Login user loader callback
 @login_manager.user_loader
 def load_user(user_id):
-    """Load user by ID from Supabase, ensuring profile exists."""
+    """Load user by ID from SQLite database."""
     try:
-        # The .single() method throws an error if no rows are found, which is what we're seeing.
-        # We will handle this case gracefully.
-        response = supabase.table("users").select("*").eq("id", user_id).single().execute()
-        user_data = response.data
-        if user_data:
-            return User.from_dict(user_data)
+        user = User.query.get(user_id)
+        if user:
+            return user
     except Exception as e:
-        # This will catch the 'PGRST116' error when no user is found.
-        logger.warning(f"Could not load user {user_id}. Profile may be missing. Error: {e}")
+        logger.warning(f"Could not load user {user_id}. Error: {e}")
     
-    # If no user profile is found in our public.users table, it's an inconsistent state.
-    # Returning None is the safest option, as it will invalidate the session and prompt a re-login.
     return None
 
 # Register blueprints

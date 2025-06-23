@@ -1,8 +1,6 @@
-from flask_sqlalchemy import SQLAlchemy
+from src.models.provider import db
 from datetime import datetime
 import uuid
-
-db = SQLAlchemy()
 
 class Patient(db.Model):
     """SQLAlchemy model for patients table."""

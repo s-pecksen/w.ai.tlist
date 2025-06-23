@@ -1,54 +1,48 @@
 import json
 from flask_login import UserMixin
+from src.models.provider import db
+from datetime import datetime
+import uuid
 
-class User(UserMixin):
-    """User model for authentication and user data."""
+class User(UserMixin, db.Model):
+    """SQLAlchemy User model for authentication and user data."""
     
-    def __init__(
-        self,
-        user_id,
-        username,
-        clinic_name=None,
-        user_name_for_message=None,
-        appointment_types=None,
-        appointment_types_data=None,
-    ):
-        self.id = user_id
-        self.username = username
-        self.clinic_name = clinic_name or ""
-        self.user_name_for_message = user_name_for_message or ""
-        self.appointment_types = appointment_types or []
-        self.appointment_types_data = appointment_types_data or []
+    __tablename__ = 'users'
+    
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = db.Column(db.String(200), unique=True, nullable=False)
+    email = db.Column(db.String(200), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255))  # For local auth if needed
+    clinic_name = db.Column(db.String(200))
+    user_name_for_message = db.Column(db.String(200))
+    appointment_types = db.Column(db.Text)  # JSON string
+    appointment_types_data = db.Column(db.Text)  # JSON string
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
         """Convert user object to dictionary for storage."""
         return {
             "id": self.id,
             "username": self.username,
+            "email": self.email,
             "clinic_name": self.clinic_name,
             "user_name_for_message": self.user_name_for_message,
             "appointment_types": self.appointment_types,
-            "appointment_types_data": self.appointment_types_data
+            "appointment_types_data": self.appointment_types_data,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
     @classmethod
     def from_dict(cls, data):
         """Create user object from dictionary."""
-        # Parse JSON strings back to lists if needed
-        appointment_types = data.get("appointment_types", [])
-        appointment_types_data = data.get("appointment_types_data", [])
-        
-        if isinstance(appointment_types, str):
-            appointment_types = json.loads(appointment_types)
-        
-        if isinstance(appointment_types_data, str):
-            appointment_types_data = json.loads(appointment_types_data)
-        
         return cls(
-            user_id=data.get("id"),
+            id=data.get("id"),
             username=data.get("username"),
+            email=data.get("email"),
             clinic_name=data.get("clinic_name"),
             user_name_for_message=data.get("user_name_for_message"),
-            appointment_types=appointment_types,
-            appointment_types_data=appointment_types_data
+            appointment_types=data.get("appointment_types"),
+            appointment_types_data=data.get("appointment_types_data")
         ) 
