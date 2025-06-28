@@ -49,6 +49,7 @@ def slots():
             "slots.html",
             slots=all_slots,
             providers=providers,
+            has_providers=len(providers) > 0,
             provider_map=provider_map,
             eligible_patients=eligible_patients,
             ineligible_patients=ineligible_patients,

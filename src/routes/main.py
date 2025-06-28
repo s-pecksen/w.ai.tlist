@@ -47,6 +47,7 @@ def index():
             "index.html",
             waitlist=waitlist,
             providers=providers,
+            has_providers=len(providers) > 0,
             appointment_types_data=appointment_types_data,
             current_user_name=current_user.user_name_for_message or "the scheduling team"
         )

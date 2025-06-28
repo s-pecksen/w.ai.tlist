@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_user, logout_user, login_required
 from src.models.user import User
 from src.repositories.user_repository import UserRepository
+from src.repositories.provider_repository import ProviderRepository
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
 import re
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__)
 user_repo = UserRepository()
+provider_repo = ProviderRepository()
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
@@ -85,7 +87,23 @@ def register():
                 raise Exception("Failed to create user in database.")
 
             logger.info(f"Successfully created user with ID: {user.id}")
-            # TODO: Insert initial providers from the registration form
+            
+            # Insert initial providers from the registration form
+            if providers_data:
+                for provider_data in providers_data:
+                    if provider_data.get("first_name"):
+                        provider_to_insert = {
+                            "user_id": user.id,
+                            "first_name": provider_data.get("first_name"),
+                            "last_initial": provider_data.get("last_initial", "")
+                        }
+                        result = provider_repo.create(provider_to_insert)
+                        if result:
+                            logger.debug(f"Created provider: {provider_data.get('first_name')}")
+                        else:
+                            logger.warning(f"Failed to create provider: {provider_data.get('first_name')}")
+                
+                logger.info(f"Processed {len(providers_data)} providers from registration form")
         except Exception as e:
             logger.error(f"Failed to create user {email}. Error: {e}", exc_info=True)
             flash("Error creating user. Please try again.", "error")

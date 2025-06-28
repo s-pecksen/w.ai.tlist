@@ -162,7 +162,11 @@ def edit_patient(patient_id):
             logger.error(f"Error parsing appointment_types_data for user {current_user.id}: {e}")
             appointment_types_data = []
     
-    return render_template("edit_patient.html", patient=patient, providers=providers, appointment_types_data=appointment_types_data)
+    return render_template("edit_patient.html", 
+                         patient=patient, 
+                         providers=providers, 
+                         has_providers=len(providers) > 0,
+                         appointment_types_data=appointment_types_data)
 
 @patients_bp.route("/upload_csv", methods=["GET", "POST"])
 @login_required
