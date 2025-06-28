@@ -4,6 +4,7 @@ from src.repositories.patient_repository import PatientRepository
 from src.repositories.provider_repository import ProviderRepository
 from src.utils.helpers import wait_time_to_days
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,18 @@ def index():
         waitlist = patient_repo.get_waitlist(current_user.id)
         providers = provider_repo.get_providers(current_user.id)
         
+        # Parse appointment types data from user
+        appointment_types_data = []
+        if current_user.appointment_types_data:
+            try:
+                appointment_types_data = json.loads(current_user.appointment_types_data)
+                logger.debug(f"Successfully parsed appointment_types_data for user {current_user.id}: {appointment_types_data}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing appointment_types_data for user {current_user.id}: {e}")
+                appointment_types_data = []
+        else:
+            logger.debug(f"No appointment_types_data found for user {current_user.id}")
+        
         # Sort waitlist by wait time and urgency
         def sort_key_waitlist(p):
             urgency_order = {'high': 0, 'medium': 1, 'low': 2}
@@ -34,6 +47,7 @@ def index():
             "index.html",
             waitlist=waitlist,
             providers=providers,
+            appointment_types_data=appointment_types_data,
             current_user_name=current_user.user_name_for_message or "the scheduling team"
         )
     except Exception as e:

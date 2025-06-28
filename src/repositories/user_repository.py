@@ -10,7 +10,7 @@ class UserRepository:
     def get_by_id(self, user_id):
         """Get user by ID."""
         try:
-            return User.query.get(user_id)
+            return db.session.get(User, user_id)
         except Exception as e:
             logger.error(f"Error getting user by ID {user_id}: {e}")
         return None
@@ -46,7 +46,7 @@ class UserRepository:
     def update(self, user_id, user_data):
         """Update user data."""
         try:
-            user = User.query.get(user_id)
+            user = db.session.get(User, user_id)
             if user:
                 for key, value in user_data.items():
                     if hasattr(user, key):
@@ -61,7 +61,7 @@ class UserRepository:
     def delete(self, user_id):
         """Delete user."""
         try:
-            user = User.query.get(user_id)
+            user = db.session.get(User, user_id)
             if user:
                 db.session.delete(user)
                 db.session.commit()

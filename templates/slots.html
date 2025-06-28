@@ -70,10 +70,10 @@
                     <h5 class="card-title">Add Open Slot</h5>
                     {% if not has_providers %}
                     <div class="alert alert-warning" role="alert">
-                        Please add providers first via the <a href="{{ url_for('list_providers') }}">Manage Providers</a> page.
+                        Please add providers first via the <a href="{{ url_for('providers.list_providers') }}">Manage Providers</a> page.
                     </div>
                     {% else %}
-                    <form action="{{ url_for('add_cancelled_appointment') }}" method="post">
+                    <form action="{{ url_for('slots.add_cancelled_appointment') }}" method="post">
                         <div class="mb-3">
                             <label for="slot_provider" class="form-label">Provider</label>
                             <select class="form-select" id="slot_provider" name="provider" required>
@@ -149,12 +149,12 @@
                                         {% if appointment.status == 'pending' and appointment.proposed_patient_id %}
                                             {# Pending State Actions #}
                                             <div class="btn-group-vertical btn-group-sm" role="group" aria-label="Pending Actions">
-                                                <form action="{{ url_for('confirm_booking', slot_id=appointment.id, patient_id=appointment.proposed_patient_id) }}" method="post" class="d-inline">
+                                                <form action="{{ url_for('slots.confirm_booking', slot_id=appointment.id, patient_id=appointment.proposed_patient_id) }}" method="post" class="d-inline">
                                                     <button type="submit" class="btn btn-success w-100" title="Confirm Booking">
                                                         <i class="bi bi-check-circle"></i> Confirm
                                                     </button>
                                                 </form>
-                                                <form action="{{ url_for('cancel_proposal', slot_id=appointment.id, patient_id=appointment.proposed_patient_id) }}" method="post" class="d-inline">
+                                                <form action="{{ url_for('slots.cancel_proposal', slot_id=appointment.id, patient_id=appointment.proposed_patient_id) }}" method="post" class="d-inline">
                                                     <button type="submit" class="btn btn-warning w-100" title="Cancel Proposal">
                                                         <i class="bi bi-x-circle"></i> Cancel Prop.
                                                     </button>
@@ -162,7 +162,7 @@
                                             </div>
                                         {% elif appointment.status == 'available' or not appointment.status %} {# Available State Actions #}
                                             {# Find Matches Form #}
-                                            <form action="{{ url_for('find_matches_for_appointment', appointment_id=appointment.id) }}" method="post">
+                                            <form action="{{ url_for('slots.find_matches_for_appointment', appointment_id=appointment.id) }}" method="post">
                                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="Find Matches">
                                                     <i class="bi bi-search"></i> Find Matches
                                                 </button>
@@ -181,7 +181,7 @@
                                                  <i class="bi bi-pencil"></i> Edit
                                             </button>
                                             {# Remove Form #}
-                                            <form action="{{ url_for('remove_cancelled_slot', appointment_id=appointment.id) }}" method="post" onsubmit="return confirm('Remove this open slot?');">
+                                            <form action="{{ url_for('slots.remove_cancelled_slot', appointment_id=appointment.id) }}" method="post" onsubmit="return confirm('Remove this open slot?');">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Slot">
                                                     <i class="bi bi-trash"></i> Remove
                                                 </button>
@@ -317,7 +317,7 @@
                             <i class="bi bi-send"></i> Propose
                           </button>
                           {# Mark as Proposed Button (Submits Form) #}
-                           <form action="{{ url_for('propose_slot', slot_id=current_appointment.id, patient_id=patient.id) }}" method="post" class="d-inline" onsubmit="return confirm('Mark this slot as proposed to {{ patient.name }}?');">
+                           <form action="{{ url_for('slots.propose_slot', slot_id=current_appointment.id, patient_id=patient.id) }}" method="post" class="d-inline" onsubmit="return confirm('Mark this slot as proposed to {{ patient.name }}?');">
                                 <button type="submit" class="btn btn-sm btn-outline-warning" title="Mark as Proposed">
                                      <i class="bi bi-bookmark-check"></i> Mark Proposed
                                 </button>
@@ -357,7 +357,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <form id="edit-slot-form" action="{{ url_for('update_cancelled_slot', appointment_id='SLOT_ID_PLACEHOLDER') }}" method="post">
+        <form id="edit-slot-form" action="{{ url_for('slots.update_cancelled_slot', appointment_id='SLOT_ID_PLACEHOLDER') }}" method="post">
           <div class="mb-3">
             <label for="edit_slot_provider" class="form-label">Provider</label>
             <select class="form-select" id="edit_slot_provider" name="provider" required>
@@ -464,7 +464,7 @@
                 const form = document.getElementById('edit-slot-form');
 
                 // Update the form action URL
-                let actionUrl = "{{ url_for('update_cancelled_slot', appointment_id='SLOT_ID_PLACEHOLDER') }}";
+                let actionUrl = "{{ url_for('slots.update_cancelled_slot', appointment_id='SLOT_ID_PLACEHOLDER') }}";
                 if (actionUrl.includes('SLOT_ID_PLACEHOLDER')) {
                     form.action = actionUrl.replace('SLOT_ID_PLACEHOLDER', slotId);
                 }
@@ -533,7 +533,7 @@
                 // Update hidden form action and button
                 if (patientId && appointmentId) {
                     // Construct the correct URL for the propose action
-                    let proposeUrl = "{{ url_for('propose_slot', slot_id='SLOT_ID_PLACEHOLDER', patient_id='PATIENT_ID_PLACEHOLDER') }}";
+                    let proposeUrl = "{{ url_for('slots.propose_slot', slot_id='SLOT_ID_PLACEHOLDER', patient_id='PATIENT_ID_PLACEHOLDER') }}";
                     proposeUrl = proposeUrl.replace('SLOT_ID_PLACEHOLDER', appointmentId);
                     proposeUrl = proposeUrl.replace('PATIENT_ID_PLACEHOLDER', patientId);
                     modalProposeForm.action = proposeUrl;

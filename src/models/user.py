@@ -37,7 +37,7 @@ class User(UserMixin, db.Model):
     @classmethod
     def from_dict(cls, data):
         """Create user object from dictionary."""
-        return cls(
+        user = cls(
             id=data.get("id"),
             username=data.get("username"),
             email=data.get("email"),
@@ -45,4 +45,8 @@ class User(UserMixin, db.Model):
             user_name_for_message=data.get("user_name_for_message"),
             appointment_types=data.get("appointment_types"),
             appointment_types_data=data.get("appointment_types_data")
-        ) 
+        )
+        # Handle password_hash separately since it's not in the constructor
+        if "password_hash" in data:
+            user.password_hash = data["password_hash"]
+        return user 

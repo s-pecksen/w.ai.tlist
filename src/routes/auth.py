@@ -15,31 +15,40 @@ user_repo = UserRepository()
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
+    logger.debug("Entered /register route")
     if request.method == "POST":
+        logger.debug("POST request received on /register")
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
         clinic_name = request.form.get("clinic_name", "").strip()
         user_name_for_message = request.form.get("user_name_for_message", "").strip()
 
+        logger.debug(f"Form data: email={email}, clinic_name={clinic_name}, user_name_for_message={user_name_for_message}")
+
         # Get JSON data from hidden fields
         appointment_types_json = request.form.get("appointment_types_json", "[]")
         providers_json = request.form.get("providers_json", "[]")
+        logger.debug(f"appointment_types_json={appointment_types_json}, providers_json={providers_json}")
         
         logger.info(f"Registration attempt for email: {email}")
 
         # --- Input Validation ---
         if not email or not password:
+            logger.debug("Missing email or password")
             flash("Email and password are required", "error")
             return render_template("register.html")
         
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, email):
+            logger.debug("Invalid email format")
             flash("Please enter a valid email address", "error")
             return render_template("register.html")
 
         # Check if user already exists
         existing_user = user_repo.get_by_email(email)
+        logger.debug(f"Existing user: {existing_user}")
         if existing_user:
+            logger.debug("User already exists")
             flash("An account with this email already exists.", "error")
             return render_template("register.html")
 
@@ -47,9 +56,11 @@ def register():
         try:
             appointment_types_data = json.loads(appointment_types_json)
             providers_data = json.loads(providers_json)
-            # Extract just the names for the simple list in the 'users' table
             appointment_types_list = [item.get('appointment_type', '') for item in appointment_types_data if item.get('appointment_type')]
-        except json.JSONDecodeError:
+            logger.debug(f"Parsed appointment_types_data: {appointment_types_data}")
+            logger.debug(f"Parsed providers_data: {providers_data}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
             flash("There was an error processing the form data.", "error")
             return render_template("register.html")
 
@@ -65,27 +76,29 @@ def register():
                 "appointment_types": json.dumps(appointment_types_list),
                 "appointment_types_data": json.dumps(appointment_types_data)
             }
+            logger.debug(f"User data to create: {user_data}")
             
             user = user_repo.create(user_data)
+            logger.debug(f"User created: {user}")
             if not user:
+                logger.error("Failed to create user in database.")
                 raise Exception("Failed to create user in database.")
 
             logger.info(f"Successfully created user with ID: {user.id}")
-            
             # TODO: Insert initial providers from the registration form
-            # This would require the ProviderRepository to be updated similarly
-            
         except Exception as e:
             logger.error(f"Failed to create user {email}. Error: {e}", exc_info=True)
             flash("Error creating user. Please try again.", "error")
             return render_template("register.html")
 
         # --- Login User and Redirect ---
+        logger.debug("Logging in new user")
         login_user(user)
         logger.info(f"User {email} registered and logged in successfully")
         flash("Registration successful!", "success")
         return redirect(url_for("main.index"))
 
+    logger.debug("GET request to /register, rendering form")
     return render_template("register.html")
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -106,6 +119,10 @@ def login():
             return render_template("login.html")
 
         # Check password
+        if not user.password_hash:
+            flash("Invalid email or password", "error")
+            return render_template("login.html")
+            
         if not check_password_hash(user.password_hash, password):
             flash("Invalid email or password", "error")
             return render_template("login.html")

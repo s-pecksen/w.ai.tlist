@@ -21,7 +21,7 @@ def slots():
     """Display slots page with available slots and matching functionality."""
     try:
         # Get all slots for the user
-        all_slots = slot_repo.get_by_user_id(current_user.id)
+        all_slots = slot_repo.get_all_slots(current_user.id)
         
         # Get providers for display
         providers = provider_repo.get_providers(current_user.id)
@@ -36,7 +36,7 @@ def slots():
         current_slot = None
         
         if current_appointment_id:
-            current_slot = slot_repo.get_by_id(current_appointment_id, current_user.id)
+            current_slot = slot_repo.get_by_id(current_appointment_id)
             if current_slot:
                 eligible_patients, ineligible_patients = matching_service.find_matches_for_slot(
                     current_appointment_id, current_user.id
@@ -59,7 +59,7 @@ def slots():
     except Exception as e:
         logger.error(f"A critical error occurred in the slots route: {e}", exc_info=True)
         flash("A critical error occurred. Please try again.", "danger")
-        return redirect(url_for('index'))
+        return redirect(url_for('main.index'))
 
 @slots_bp.route("/add_cancelled_appointment", methods=["POST"])
 @login_required
@@ -73,7 +73,7 @@ def add_cancelled_appointment():
 
     if not all([provider, slot_date, slot_time_str, duration]):
         flash("All required fields must be filled", "danger")
-        return redirect(url_for("slots"))
+        return redirect(url_for("slots.slots"))
 
     # Determine AM/PM from time for efficient filtering
     try:
@@ -81,7 +81,7 @@ def add_cancelled_appointment():
         slot_period = "PM" if time_obj.hour >= 12 else "AM"
     except ValueError:
         flash("Invalid time format. Please use HH:MM.", "danger")
-        return redirect(url_for("slots"))
+        return redirect(url_for("slots.slots"))
     
     try:
         # Include user_id with the insert for RLS
@@ -104,7 +104,7 @@ def add_cancelled_appointment():
     except Exception as e:
         flash(f"An error occurred: {e}", "danger")
 
-    return redirect(url_for("slots"))
+    return redirect(url_for("slots.slots"))
 
 @slots_bp.route("/remove_cancelled_slot/<appointment_id>", methods=["POST"])
 @login_required
@@ -119,7 +119,7 @@ def remove_cancelled_slot(appointment_id):
     except Exception as e:
         logger.error(f"Error removing slot {appointment_id}: {e}", exc_info=True)
         flash("An error occurred while removing the slot.", "danger")
-    return redirect(url_for("slots"))
+    return redirect(url_for("slots.slots"))
 
 @slots_bp.route("/update_cancelled_slot/<appointment_id>", methods=["POST"])
 @login_required
@@ -133,7 +133,7 @@ def update_cancelled_slot(appointment_id):
 
     if not all([provider, slot_date, slot_time_str, duration]):
         flash("All required fields must be filled", "danger")
-        return redirect(url_for("slots"))
+        return redirect(url_for("slots.slots"))
 
     # Determine AM/PM from time for efficient filtering
     try:
@@ -141,7 +141,7 @@ def update_cancelled_slot(appointment_id):
         slot_period = "PM" if time_obj.hour >= 12 else "AM"
     except ValueError:
         flash("Invalid time format. Please use HH:MM.", "danger")
-        return redirect(url_for("slots"))
+        return redirect(url_for("slots.slots"))
     
     try:
         update_data = {
@@ -162,14 +162,14 @@ def update_cancelled_slot(appointment_id):
     except Exception as e:
         flash(f"An error occurred: {e}", "danger")
 
-    return redirect(url_for("slots"))
+    return redirect(url_for("slots.slots"))
 
 @slots_bp.route("/find_matches_for_appointment/<appointment_id>", methods=["POST"])
 @login_required
 def find_matches_for_appointment(appointment_id):
     """Find matching patients for a cancelled appointment"""
     session["current_appointment_id"] = appointment_id
-    return redirect(url_for("slots") + "#eligible-patients-section")
+    return redirect(url_for("slots.slots") + "#eligible-patients-section")
 
 @slots_bp.route("/propose_slot/<slot_id>/<patient_id>", methods=["POST"])
 @login_required
@@ -202,7 +202,7 @@ def propose_slot(slot_id, patient_id):
         slot_repo.update_status(slot_id, current_user.id, "available")
         patient_repo.update_status(patient_id, current_user.id, "waiting")
 
-    return redirect(request.referrer or url_for('index'))
+    return redirect(request.referrer or url_for('main.index'))
 
 @slots_bp.route("/confirm_booking/<slot_id>/<patient_id>", methods=["POST"])
 @login_required
@@ -210,7 +210,7 @@ def confirm_booking(slot_id, patient_id):
     """Confirms the booking, removing the patient and the slot."""
     try:
         # For safety, ensure the slot and patient are in the correct pending state before deleting.
-        slot = slot_repo.get_by_id(slot_id, current_user.id)
+        slot = slot_repo.get_by_id(slot_id)
         patient = patient_repo.get_by_id(patient_id, current_user.id)
 
         if not slot or not patient:
@@ -228,7 +228,7 @@ def confirm_booking(slot_id, patient_id):
         logger.error(f"Error confirming booking: {e}", exc_info=True)
         flash("Error confirming booking. The slot or patient may have been modified.", "danger")
 
-    return redirect(url_for("index"))
+    return redirect(url_for("main.index"))
 
 @slots_bp.route("/cancel_proposal/<slot_id>/<patient_id>", methods=["POST"])
 @login_required
@@ -247,4 +247,4 @@ def cancel_proposal(slot_id, patient_id):
         logger.error(f"Error cancelling proposal: {e}", exc_info=True)
         flash("Error cancelling proposal. Please check the data and try again.", "danger")
 
-    return redirect(request.referrer or url_for('index')) 
+    return redirect(request.referrer or url_for('main.index')) 

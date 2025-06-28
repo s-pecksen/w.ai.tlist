@@ -6,6 +6,7 @@ from src.services.matching_service import MatchingService
 import csv
 from io import StringIO
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def add_patient():
     # --- Basic Validation ---
     if not name or not phone:
         flash("Name and Phone are required.", "warning")
-        return redirect(url_for("index") + "#add-patient-form")
+        return redirect(url_for("main.index") + "#add-patient-form")
 
     # --- Add Patient ---
     patient_data = {
@@ -80,7 +81,7 @@ def add_patient():
     else:
         flash("Error adding patient.", "danger")
 
-    return redirect(url_for("index") + "#add-patient-form")
+    return redirect(url_for("main.index") + "#add-patient-form")
 
 @patients_bp.route("/remove_patient/<patient_id>", methods=["POST"])
 @login_required
@@ -91,7 +92,7 @@ def remove_patient(patient_id):
         flash("Patient removed successfully", "success")
     else:
         flash("Error removing patient", "danger")
-    return redirect(url_for("index") + "#waitlist-table")
+    return redirect(url_for("main.index") + "#waitlist-table")
 
 @patients_bp.route("/update_patient/<patient_id>", methods=["POST"])
 @login_required
@@ -100,7 +101,7 @@ def update_patient(patient_id):
     patient = patient_repo.get_by_id(patient_id, current_user.id)
     if not patient:
         flash("Patient not found", "danger")
-        return redirect(url_for("index"))
+        return redirect(url_for("main.index"))
     
     name = request.form.get("name")
     phone = request.form.get("phone")
@@ -139,7 +140,7 @@ def update_patient(patient_id):
         flash("Patient updated successfully", "success")
     else:
         flash("Error updating patient", "danger")
-    return redirect(url_for("index"))
+    return redirect(url_for("main.index"))
 
 @patients_bp.route("/edit_patient/<patient_id>", methods=["GET"])
 @login_required
@@ -148,10 +149,20 @@ def edit_patient(patient_id):
     patient = patient_repo.get_by_id(patient_id, current_user.id)
     if not patient:
         flash("Patient not found", "danger")
-        return redirect(url_for("index"))
+        return redirect(url_for("main.index"))
     
     providers = provider_repo.get_providers(current_user.id)
-    return render_template("edit_patient.html", patient=patient, providers=providers)
+    
+    # Parse appointment types data from user
+    appointment_types_data = []
+    if current_user.appointment_types_data:
+        try:
+            appointment_types_data = json.loads(current_user.appointment_types_data)
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing appointment_types_data for user {current_user.id}: {e}")
+            appointment_types_data = []
+    
+    return render_template("edit_patient.html", patient=patient, providers=providers, appointment_types_data=appointment_types_data)
 
 @patients_bp.route("/upload_csv", methods=["GET", "POST"])
 @login_required
@@ -175,7 +186,7 @@ def upload_csv():
                 if not all(rf in header for rf in required_fields):
                     missing = ", ".join([rf for rf in required_fields if rf not in header])
                     flash(f"CSV missing required columns: {missing}.", "danger")
-                    return redirect(url_for("index") + "#waitlist-table")
+                    return redirect(url_for("main.index") + "#waitlist-table")
 
                 patients_to_add = []
                 
@@ -228,9 +239,9 @@ def upload_csv():
         else:
             flash("Invalid file format. Please upload a .csv file.", "danger")
         
-        return redirect(url_for("index") + "#waitlist-table")
+        return redirect(url_for("main.index") + "#waitlist-table")
     
-    return redirect(url_for("index") + "#csv-upload-section")
+    return redirect(url_for("main.index") + "#csv-upload-section")
 
 @patients_bp.route("/api/find_matches_for_patient/<patient_id>")
 @login_required

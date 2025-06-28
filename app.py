@@ -52,7 +52,7 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
     logger.info("SQLite database tables created")
-
+    logging.debug("hey I'm an api and I work")
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -65,7 +65,7 @@ login_manager.login_message_category = "error"
 def load_user(user_id):
     """Load user by ID from SQLite database."""
     try:
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if user:
             return user
     except Exception as e:

@@ -94,7 +94,7 @@ class SlotRepository:
     def get_by_id(self, slot_id: str) -> Optional[Dict[str, Any]]:
         """Get slot by ID."""
         try:
-            slot = Slot.query.get(slot_id)
+            slot = db.session.get(Slot, slot_id)
             return slot.to_dict() if slot else None
         except Exception as e:
             logger.error(f"Error getting slot {slot_id}: {e}")

@@ -51,11 +51,11 @@
             <h4 class="alert-heading">No Providers Found</h4>
             <p>Cannot edit patient preference without available providers.</p>
             <hr>
-            <p class="mb-0">Please visit the <a href="{{ url_for('list_providers') }}">Manage Providers</a> page to add providers first.</p>
+            <p class="mb-0">Please visit the <a href="{{ url_for('providers.list_providers') }}">Manage Providers</a> page to add providers first.</p>
         </div>
     {% else %}
         {# Use the patient.id in the action URL #}
-        <form action="{{ url_for('update_patient', patient_id=patient.id) }}" method="post" id="edit-patient-form">
+        <form action="{{ url_for('patients.update_patient', patient_id=patient.id) }}" method="post" id="edit-patient-form">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="name" class="form-label">Name*</label>

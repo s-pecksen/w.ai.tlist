@@ -93,10 +93,10 @@
                     <div class="form-section" id="add-patient-form">
                         {% if not has_providers %}
                         <div class="alert alert-warning" role="alert">
-                            <p class="mb-0">Please visit the <a href="{{ url_for('list_providers') }}">Manage Providers</a> page to add providers before adding patients.</p>
+                            <p class="mb-0">Please visit the <a href="{{ url_for('providers.list_providers') }}">Manage Providers</a> page to add providers before adding patients.</p>
                         </div>
                         {% else %}
-                        <form action="/add_patient" method="post">
+                        <form action="{{ url_for('patients.add_patient') }}" method="post">
                             {# --- Add Patient Form Fields --- #}
                             <div class="row">
                                 <div class="col-md-6 mb-3">
@@ -288,7 +288,7 @@
                                                 <i class="bi bi-search"></i> Find Slots
                                             </button>
                                             {# Edit Button (goes to edit page) #}
-                                            <a href="{{ url_for('edit_patient', patient_id=patient.id) }}" class="btn btn-sm btn-secondary">
+                                            <a href="{{ url_for('patients.edit_patient', patient_id=patient.id) }}" class="btn btn-sm btn-secondary">
                                                 <i class="bi bi-pencil"></i> Edit
                                             </a>
                                             {# Remove Button (form submitted via JS) #}
@@ -299,10 +299,10 @@
                                             </button>
                                         {% elif patient.status == 'pending' and patient.proposed_slot_id %}
                                             <div class="btn-group" role="group">
-                                                <form action="{{ url_for('confirm_booking', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
+                                                <form action="{{ url_for('slots.confirm_booking', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
                                                     <button type="submit" class="btn btn-sm btn-success" title="Confirm Booking"><i class="bi bi-check-circle"></i> Confirm</button>
                                                 </form>
-                                                <form action="{{ url_for('cancel_proposal', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
+                                                <form action="{{ url_for('slots.cancel_proposal', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
                                                     <button type="submit" class="btn btn-sm btn-warning" title="Cancel Proposal"><i class="bi bi-x-circle"></i> Cancel</button>
                                                 </form>
                                             </div>

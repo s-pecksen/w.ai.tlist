@@ -95,11 +95,11 @@ class PatientRepository:
             db.session.rollback()
         return False
     
-    def get_by_id(self, patient_id: str) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, patient_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         """Get patient by ID."""
         try:
-            patient = Patient.query.get(patient_id)
-            return patient.to_dict() if patient else None
+            patient = db.session.get(Patient, patient_id)
+            return patient.to_dict() if patient and patient.user_id == user_id else None
         except Exception as e:
             logger.error(f"Error getting patient {patient_id}: {e}")
             return None 

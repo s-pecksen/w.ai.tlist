@@ -74,6 +74,6 @@ class Config:
     def setup_logging(cls):
         """Configure logging."""
         logging.basicConfig(
-            level=logging.INFO,
+            level=logging.DEBUG,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         ) 

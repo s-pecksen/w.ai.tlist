@@ -54,23 +54,23 @@ class ProviderRepository:
     def get_by_id(self, provider_id: str) -> Optional[Dict[str, Any]]:
         """Get provider by ID."""
         try:
-            provider = Provider.query.get(provider_id)
+            provider = db.session.get(Provider, provider_id)
             return provider.to_dict() if provider else None
         except Exception as e:
             logger.error(f"Error getting provider {provider_id}: {e}")
             return None
     
-    def update(self, provider_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update(self, provider_id: str, user_id: str, data: Dict[str, Any]) -> bool:
         """Update a provider."""
         try:
-            provider = Provider.query.get(provider_id)
-            if provider:
+            provider = db.session.get(Provider, provider_id)
+            if provider and provider.user_id == user_id:
                 for key, value in data.items():
                     if hasattr(provider, key):
                         setattr(provider, key, value)
                 db.session.commit()
-                return provider.to_dict()
+                return True
         except Exception as e:
             logger.error(f"Error updating provider {provider_id}: {e}")
             db.session.rollback()
-        return None 
+        return False 

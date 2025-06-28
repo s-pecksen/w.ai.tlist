@@ -27,7 +27,7 @@
             <div class="card" id="add-provider-form">
                 <div class="card-body">
                     <h5 class="card-title">Add Provider</h5>
-                    <form action="{{ url_for('add_provider') }}" method="post">
+                    <form action="{{ url_for('providers.add_provider') }}" method="post">
                         <div class="mb-3">
                             <label for="first_name" class="form-label">First Name</label>
                             <input type="text" class="form-control" id="first_name" name="first_name" required>
@@ -53,7 +53,7 @@
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}
                                 <div>
-                                    <form action="{{ url_for('remove_provider') }}" method="post" class="d-inline" onsubmit="return confirm('Are you sure you want to remove provider {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}?');">
+                                    <form action="{{ url_for('providers.remove_provider') }}" method="post" class="d-inline" onsubmit="return confirm('Are you sure you want to remove provider {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}?');">
                                         <input type="hidden" name="first_name" value="{{ provider.first_name }}">
                                         <input type="hidden" name="last_initial" value="{{ provider.last_initial or '' }}">
                                         <button type="submit" class="btn btn-sm btn-danger">Remove</button>
