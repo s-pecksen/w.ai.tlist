@@ -106,8 +106,8 @@
                     <h5 class="mb-0">Current Open Slots</h5>
                 </div>
                  <div class="list-group list-group-flush" style="max-height: 400px; overflow-y: auto;"> {# Added scroll for long lists #}
-                    {% if cancelled_appointments %}
-                        {% for appointment in cancelled_appointments %}
+                    {% if slots %}
+                        {% for appointment in slots %}
                             {# Add slot-pending class if status is pending #}
                             <div class="list-group-item {% if appointment.status == 'pending' %}slot-pending{% endif %}" id="slot-{{ appointment.id }}">
                                 <div class="d-flex justify-content-between align-items-start">

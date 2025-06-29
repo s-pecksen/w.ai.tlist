@@ -257,6 +257,10 @@ def api_find_matches_for_patient(patient_id):
         # Get provider names for display
         provider_map = provider_repo.get_provider_map(current_user.id)
         
+        # Get patient name for display
+        patient = patient_repo.get_by_id(patient_id, current_user.id)
+        patient_name = patient['name'] if patient else ''
+        
         # Format slots for JSON response
         formatted_slots = []
         for slot in matching_slots:
@@ -265,14 +269,15 @@ def api_find_matches_for_patient(patient_id):
                 'date': slot['date'],
                 'time': slot['time'],
                 'duration': slot['duration'],
-                'provider_name': provider_map.get(str(slot.get('provider')), 'Unknown'),
+                'provider_name': slot.get('provider_name', provider_map.get(str(slot.get('provider')), 'Unknown')),
                 'notes': slot.get('notes', '')
             }
             formatted_slots.append(formatted_slot)
         
         return jsonify({
             'slots': formatted_slots,
-            'count': len(formatted_slots)
+            'count': len(formatted_slots),
+            'patient_name': patient_name
         })
         
     except Exception as e:

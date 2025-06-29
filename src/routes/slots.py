@@ -4,7 +4,7 @@ from src.repositories.slot_repository import SlotRepository
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.provider_repository import ProviderRepository
 from src.services.matching_service import MatchingService
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,33 +18,43 @@ matching_service = MatchingService()
 @slots_bp.route("/slots", methods=["GET"])
 @login_required
 def slots():
+    logger.info(f"\n\n\n\n\nSLOTS REQUEST SENT!\n\n\n\n\n")
     """Display slots page with available slots and matching functionality."""
     try:
+        logger.info("1")
         # Get all slots for the user
         all_slots = slot_repo.get_all_slots(current_user.id)
-        
+        logger.info("2")
         # Get providers for display
         providers = provider_repo.get_providers(current_user.id)
+        logger.info("3")
         provider_map = provider_repo.get_provider_map(current_user.id)
+        logger.info("4")
         
         # Get current appointment ID from session for matching
         current_appointment_id = session.get("current_appointment_id")
-        
+        logger.info("5")
         # If we have a current appointment, find matches
         eligible_patients = []
         ineligible_patients = []
         current_slot = None
-        
+        logger.info("6")
         if current_appointment_id:
             current_slot = slot_repo.get_by_id(current_appointment_id)
             if current_slot:
                 eligible_patients, ineligible_patients = matching_service.find_matches_for_slot(
                     current_appointment_id, current_user.id
                 )
-        
+        logger.info("7")
         # Get all waiting patients for the general list
         waiting_patients = patient_repo.get_by_status(current_user.id, "waiting")
-        
+        logger.info("8")
+        logger.info(f"SLOTS TO DISPLAY: {all_slots}")
+
+        # Enrich slots with provider_name for display
+        for slot in all_slots:
+            slot['provider_name'] = provider_map.get(str(slot['provider']), 'Unknown Provider')
+
         return render_template(
             "slots.html",
             slots=all_slots,
@@ -58,7 +68,7 @@ def slots():
             current_user_name=current_user.user_name_for_message or "the scheduling team"
         )
     except Exception as e:
-        logger.error(f"A critical error occurred in the slots route: {e}", exc_info=True)
+        logger.error(f"\n\n\n\n\nA critical error occurred in the slots route: {e}", exc_info=True)
         flash("A critical error occurred. Please try again.", "danger")
         return redirect(url_for('main.index'))
 
@@ -84,12 +94,23 @@ def add_cancelled_appointment():
         flash("Invalid time format. Please use HH:MM.", "danger")
         return redirect(url_for("slots.slots"))
     
+    # Calculate start_time and end_time
+    try:
+        start_dt = datetime.strptime(slot_time_str, "%H:%M")
+        end_dt = start_dt + timedelta(minutes=int(duration))
+        start_time = start_dt.strftime("%H:%M")
+        end_time = end_dt.strftime("%H:%M")
+    except Exception as e:
+        flash(f"Error calculating end time: {e}", "danger")
+        return redirect(url_for("slots.slots"))
+
     try:
         # Include user_id with the insert for RLS
         slot_data = {
             "provider": provider,
             "date": slot_date,
-            "time": slot_time_str,
+            "start_time": start_time,
+            "end_time": end_time,
             "duration": duration,
             "notes": notes,
             "slot_period": slot_period,

@@ -1,3 +1,4 @@
+import json
 from src.models.provider import db
 from datetime import datetime
 import uuid
@@ -37,7 +38,7 @@ class Patient(db.Model):
             'provider': self.provider,
             'urgency': self.urgency,
             'status': self.status,
-            'availability': self.availability,
+            'availability': json.loads(self.availability) if self.availability else {},
             'availability_mode': self.availability_mode,
             'reason': self.reason,
             'proposed_slot_id': self.proposed_slot_id,
@@ -48,6 +49,9 @@ class Patient(db.Model):
     @classmethod
     def from_dict(cls, data):
         """Create model from dictionary."""
+        availability = data.get('availability')
+        if isinstance(availability, dict):
+            availability = json.dumps(availability)
         return cls(
             id=data.get('id'),
             user_id=data.get('user_id'),
@@ -59,7 +63,7 @@ class Patient(db.Model):
             provider=data.get('provider'),
             urgency=data.get('urgency'),
             status=data.get('status'),
-            availability=data.get('availability'),
+            availability=availability,
             availability_mode=data.get('availability_mode'),
             reason=data.get('reason'),
             proposed_slot_id=data.get('proposed_slot_id')

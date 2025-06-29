@@ -4,6 +4,7 @@ from src.repositories.slot_repository import SlotRepository
 from src.repositories.provider_repository import ProviderRepository
 from src.utils.helpers import wait_time_to_days, wait_time_to_minutes
 import logging
+from datetime import datetime, time
 
 logger = logging.getLogger(__name__)
 
@@ -50,25 +51,110 @@ class MatchingService:
     def find_matches_for_patient(self, patient_id: str, user_id: str) -> List[Dict[str, Any]]:
         """Find available slots for a specific patient."""
         try:
+            logger.info(f"\n\n\n\n\nFINDING MATCHES FOR PATIENT {patient_id}\n\n\n\n\n")
             # Get the patient details
             patient = self.patient_repo.get_by_id(patient_id, user_id)
             if not patient:
                 return []
-            
+
+            # Log patient's availabilities
+            # logger.info(f"[MATCHING] Patient {patient.get('name')} ({patient_id}) availability: {patient.get('availability')}")
+
             # Get all available slots
             slots = self.slot_repo.get_available_slots(user_id)
-            
-            # Filter slots based on patient requirements
-            matching_slots = []
+
+            # Get provider map for UUID<->name mapping
+            provider_map = self.provider_repo.get_provider_map(user_id)
+            provider_repo = self.provider_repo
+
+            # Log all provider availabilities
+            # provider_availabilities = {}
+            # for slot in slots:
+            #     provider_id = str(slot.get('provider'))
+            #     provider = provider_repo.get_by_id(provider_id)
+            #     if provider:
+            #         provider_availabilities[provider_id] = provider.get('availability', None)
+            # logger.info(f"[MATCHING] Provider availabilities: {provider_availabilities}")
+
+            # Debug: Print each open slot's day/time and the patient's availabilities
+            logger.info("\n\n\n\n ALL SLOTS + PATIENT AVAILABILITIES (with times)\n\n\n\n")
+            # Print open slots with start and end times
+            slot_structs = []
             for slot in slots:
-                if self._is_slot_suitable_for_patient(slot, patient):
-                    matching_slots.append(slot)
-            
-            # Sort by date and time
-            matching_slots.sort(key=lambda s: (s['date'], s['time']))
-            
+                slot_day = slot.get('date')
+                slot_start = slot.get('start_time') or slot.get('time')
+                slot_end = slot.get('end_time')
+                logger.info(f"[DEBUG] Open slot: {slot_day} {slot_start} - {slot_end}")
+                slot_structs.append({'date': slot_day, 'start': slot_start, 'end': slot_end, 'slot': slot})
+
+            # Print patient availabilities with time ranges
+            patient_avail = patient.get('availability', {})
+            am_range = (time(0, 0, 0), time(11, 59, 59))
+            pm_range = (time(12, 0, 0), time(23, 59, 59))
+            patient_structs = []
+            for day, periods in patient_avail.items():
+                for period in periods:
+                    if period == 'AM':
+                        logger.info(f"[DEBUG] Patient available: {day} AM (12:00:00am to 11:59:59am)")
+                        patient_structs.append({'day': day, 'range': am_range, 'period': 'AM'})
+                    elif period == 'PM':
+                        logger.info(f"[DEBUG] Patient available: {day} PM (12:00:00pm to 11:59:59pm)")
+                        patient_structs.append({'day': day, 'range': pm_range, 'period': 'PM'})
+            logger.info(f"[DEBUG] Patient desired appointment duration: {patient.get('duration')}")
+
+            # Log patient's preferred provider (name)
+            preferred_provider_uuid = patient.get('provider')
+            if preferred_provider_uuid == 'no preference':
+                preferred_provider_name = 'No preference'
+            else:
+                preferred_provider_name = provider_map.get(str(preferred_provider_uuid), 'Unknown')
+            logger.info(f"[DEBUG] Patient preferred provider: {preferred_provider_name}")
+
+            # Find and log all potential matches
+            logger.info("[DEBUG] Potential matches:")
+            desired_duration = int(patient.get('duration', 0))
+            matching_slots = []
+            for slot_struct in slot_structs:
+                slot_day = slot_struct['date']
+                slot_start = slot_struct['start']
+                slot_end = slot_struct['end']
+                slot_obj = slot_struct['slot']
+                slot_provider_uuid = str(slot_obj.get('provider'))
+                slot_provider_name = provider_map.get(slot_provider_uuid, 'Unknown')
+                # Parse slot times
+                try:
+                    slot_start_time = datetime.strptime(slot_start, '%H:%M').time() if slot_start else None
+                    slot_end_time = datetime.strptime(slot_end, '%H:%M').time() if slot_end else None
+                except Exception as e:
+                    logger.info(f"[DEBUG] Could not parse slot times: {slot_start}, {slot_end}")
+                    continue
+                # Get day name
+                try:
+                    slot_day_name = datetime.strptime(slot_day, '%Y-%m-%d').strftime('%A')
+                except Exception as e:
+                    logger.info(f"[DEBUG] Could not parse slot date: {slot_day}")
+                    continue
+                slot_duration = None
+                if slot_start_time and slot_end_time:
+                    slot_duration = (datetime.combine(datetime.today(), slot_end_time) - datetime.combine(datetime.today(), slot_start_time)).seconds // 60
+                for avail in patient_structs:
+                    if avail['day'] == slot_day_name:
+                        # Check overlap
+                        avail_start, avail_end = avail['range']
+                        if slot_start_time and slot_end_time:
+                            overlap = (slot_start_time < avail_end and slot_end_time > avail_start)
+                            duration_ok = slot_duration is not None and slot_duration >= desired_duration
+                            if overlap and duration_ok:
+                                logger.info(f"[MATCH] Slot {slot_day} {slot_start}-{slot_end} ({slot_duration} min) with provider {slot_provider_name} matches patient {avail['day']} {avail['period']} and duration {desired_duration} min (Patient preferred provider: {preferred_provider_name})")
+                                # Add provider_name for frontend
+                                slot_copy = slot_obj.copy()
+                                slot_copy['provider_name'] = slot_provider_name
+                                matching_slots.append(slot_copy)
+
+            # Sort by date and time, handling missing 'time' fields gracefully
+            matching_slots.sort(key=lambda s: (s['date'], s.get('time', '') or s.get('start_time', '')))
+
             return matching_slots
-            
         except Exception as e:
             logger.error(f"Error finding matches for patient {patient_id}: {e}")
             return []
@@ -123,7 +209,6 @@ class MatchingService:
             return True
         
         # Convert date to day name
-        from datetime import datetime
         try:
             slot_datetime = datetime.strptime(slot_date, '%Y-%m-%d')
             day_name = slot_datetime.strftime('%A')  # Monday, Tuesday, etc.

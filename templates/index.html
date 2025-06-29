@@ -128,7 +128,7 @@
                                     <select class="form-select form-select-sm" id="provider" name="provider" required>
                                         <option value="no preference">No Preference</option>
                                         {% for provider in providers %}
-                                            <option value="{{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}">
+                                            <option value="{{ provider.id }}">
                                                 {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}
                                             </option>
                                         {% endfor %}
@@ -172,8 +172,8 @@
                                 </div>
                             </div>
                             <div class="mb-3">
-                                <label for="reason" class="form-label">Additional Notes:</label>
-                                <textarea class="form-control form-control-sm" id="reason" name="reason" rows="2"></textarea>
+                                <label for="notes" class="form-label">Additional Notes:</label>
+                                <textarea class="form-control form-control-sm" id="notes" name="notes" rows="2"></textarea>
                             </div>
                             <button type="submit" class="btn btn-primary w-100">Add to Waitlist</button>
                         </form>
@@ -409,8 +409,8 @@
         // --- Add Patient Form Logic (Dynamic Duration/Reason) ---
         const addAppointmentTypeSelect = document.getElementById('appointment_type');
         const addDurationSelect = document.getElementById('duration');
-        const addReasonLabel = document.querySelector('label[for="reason"]');
-        const addReasonField = document.getElementById('reason');
+        const addReasonLabel = document.querySelector('label[for="notes"]');
+        const addReasonField = document.getElementById('notes');
         const appointmentTypesData = JSON.parse('{{ appointment_types_data|tojson|safe }}'); // Load data passed from Flask
 
         function updateAddDurationOptions() {
@@ -520,7 +520,15 @@
                         const errorData = await response.json().catch(() => ({error: `HTTP error! status: ${response.status}`}));
                         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
                     }
-                    const data = await response.json(); // Expect { patient: {...}, matching_slots: [...] }
+                    const data = await response.json(); // Expect { patient_name: ..., slots: [...] }
+
+                    // Update patient name in modal with value from API response
+                    if (patientNameSpan && data.patient_name) {
+                        patientNameSpan.textContent = escapeHTML(data.patient_name);
+                    }
+                    if (modalTitle && data.patient_name) {
+                        modalTitle.textContent = `Matching Slots for ${escapeHTML(data.patient_name)}`;
+                    }
 
                     if (data.matching_slots && data.matching_slots.length > 0) {
                         slotListDiv.innerHTML = ''; // Clear spinner
@@ -565,7 +573,8 @@
                             slotListDiv.appendChild(card);
                         });
                     } else {
-                         slotListDiv.innerHTML = `<div class="alert alert-info mb-0">No available slots found matching ${escapeHTML(patientName)}'s requirements.</div>`;
+                        const displayName = data.patient_name || patientName;
+                        slotListDiv.innerHTML = `<div class="alert alert-info mb-0">No available slots found matching ${escapeHTML(displayName)}'s requirements.</div>`;
                     }
                 } catch (error) {
                     console.error('Error fetching matching slots:', error);
