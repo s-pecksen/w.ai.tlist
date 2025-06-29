@@ -530,43 +530,43 @@
                         modalTitle.textContent = `Matching Slots for ${escapeHTML(data.patient_name)}`;
                     }
 
-                    if (data.matching_slots && data.matching_slots.length > 0) {
-                        slotListDiv.innerHTML = ''; // Clear spinner
-                        data.matching_slots.forEach(slot => {
+                    const patientName = data.patient_name || '';
+                    const patientFirstName = patientName.split(' ')[0];
+                    // const patientApptType = ''; // Not present in backend response
+
+                    const slots = data.slots || data.matching_slots || [];
+                    if (slots.length > 0) {
+                        slotListDiv.innerHTML = '';
+                        slots.forEach(slot => {
                             const card = document.createElement('div');
                             card.className = 'card mb-3 shadow-sm'; // Add shadow
 
                             const displayDate = formatDisplayDate(slot.date);
-                            let timeDisplay = slot.time ? ` at ${slot.time}` : (slot.slot_period ? ` (${slot.slot_period})` : '');
+                            let timeDisplay = (slot.start_time && slot.end_time) ? ` at ${slot.start_time}-${slot.end_time}` : '';
                             let dateTimeStr = `${displayDate}${timeDisplay}`;
 
-                            let notesHtml = slot.notes ? `<br><small class="text-muted"><i class="bi bi-journal-text"></i> ${escapeHTML(slot.notes)}</small>` : '';
-
-                            // Find patient details (needed for proposal modal) - use data.patient from response
-                            const patientFirstName = data.patient.name.split(' ')[0];
-                            const patientApptType = data.patient.appointment_type; // Already formatted potentially? Need backend consistency or format here.
+                            let notesHtml = slot.notes ? `<br><small class=\"text-muted\"><i class=\"bi bi-journal-text\"></i> ${escapeHTML(slot.notes)}</small>` : '';
 
                             card.innerHTML = `
-                                <div class="card-body">
-                                    <div class="d-flex justify-content-between align-items-start">
+                                <div class=\"card-body\">
+                                    <div class=\"d-flex justify-content-between align-items-start\">
                                         <div>
-                                            <h6 class="card-title mb-1">${escapeHTML(slot.provider_name)}</h6>
-                                            <div class="slot-details">
-                                                <i class="bi bi-calendar-event"></i> ${dateTimeStr}<br>
-                                                <i class="bi bi-clock-history"></i> ${escapeHTML(slot.duration)} min
+                                            <h6 class=\"card-title mb-1\">${escapeHTML(slot.provider_name)}</h6>
+                                            <div class=\"slot-details\">
+                                                <i class=\"bi bi-calendar-event\"></i> ${dateTimeStr}<br>
+                                                <i class=\"bi bi-clock-history\"></i> ${escapeHTML(slot.duration)} min
                                         ${notesHtml}
                                     </div>
                                         </div>
-                                        <button type="button" class="btn btn-sm btn-info propose-slot-btn"
-                                                data-bs-toggle="modal" data-bs-target="#proposeSlotModal"
-                                                data-patient-id="${escapeHTML(patientId)}"
-                                                data-patient-name="${escapeHTML(data.patient.name)}"
-                                                data-patient-first-name="${escapeHTML(patientFirstName)}"
-                                                data-slot-id="${escapeHTML(slot.id)}"
-                                                data-slot-details="${escapeHTML(dateTimeStr)} w/ ${escapeHTML(slot.provider_name)}"
-                                                data-appointment-type="${escapeHTML(patientApptType)}" {# Pass raw type #}
-                                                title="Prepare Proposal Message">
-                                            <i class="bi bi-send"></i> Propose
+                                        <button type=\"button\" class=\"btn btn-sm btn-info propose-slot-btn\"
+                                                data-bs-toggle=\"modal\" data-bs-target=\"#proposeSlotModal\"
+                                                data-patient-id=\"${escapeHTML(patientId)}\"
+                                                data-patient-name=\"${escapeHTML(patientName)}\"
+                                                data-patient-first-name=\"${escapeHTML(patientFirstName)}\"
+                                                data-slot-id=\"${escapeHTML(slot.id)}\"
+                                                data-slot-details=\"${escapeHTML(dateTimeStr)} w/ ${escapeHTML(slot.provider_name)}\"
+                                                title=\"Prepare Proposal Message\">
+                                            <i class=\"bi bi-send\"></i> Propose
                                         </button>
                                     </div>
                                 </div>`;

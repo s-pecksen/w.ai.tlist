@@ -82,7 +82,7 @@ class MatchingService:
             slot_structs = []
             for slot in slots:
                 slot_day = slot.get('date')
-                slot_start = slot.get('start_time') or slot.get('time')
+                slot_start = slot.get('start_time')
                 slot_end = slot.get('end_time')
                 logger.info(f"[DEBUG] Open slot: {slot_day} {slot_start} - {slot_end}")
                 slot_structs.append({'date': slot_day, 'start': slot_start, 'end': slot_end, 'slot': slot})
@@ -151,8 +151,8 @@ class MatchingService:
                                 slot_copy['provider_name'] = slot_provider_name
                                 matching_slots.append(slot_copy)
 
-            # Sort by date and time, handling missing 'time' fields gracefully
-            matching_slots.sort(key=lambda s: (s['date'], s.get('time', '') or s.get('start_time', '')))
+            # Sort by date and time, handling missing 'start_time' fields gracefully
+            matching_slots.sort(key=lambda s: (s.get('date', ''), s.get('start_time', '')))
 
             return matching_slots
         except Exception as e:

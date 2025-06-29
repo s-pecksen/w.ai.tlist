@@ -54,7 +54,7 @@ def slots():
         # Enrich slots with provider_name for display
         for slot in all_slots:
             slot['provider_name'] = provider_map.get(str(slot['provider']), 'Unknown Provider')
-
+        
         return render_template(
             "slots.html",
             slots=all_slots,
@@ -103,7 +103,7 @@ def add_cancelled_appointment():
     except Exception as e:
         flash(f"Error calculating end time: {e}", "danger")
         return redirect(url_for("slots.slots"))
-
+    
     try:
         # Include user_id with the insert for RLS
         slot_data = {
