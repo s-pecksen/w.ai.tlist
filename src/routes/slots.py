@@ -86,22 +86,12 @@ def add_cancelled_appointment():
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots.slots"))
 
-    # Determine AM/PM from time for efficient filtering
+    # Validate time format (24-hour)
     try:
         time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
-        slot_period = "PM" if time_obj.hour >= 12 else "AM"
+        start_time = time_obj.strftime("%H:%M")
     except ValueError:
-        flash("Invalid time format. Please use HH:MM.", "danger")
-        return redirect(url_for("slots.slots"))
-    
-    # Calculate start_time and end_time
-    try:
-        start_dt = datetime.strptime(slot_time_str, "%H:%M")
-        end_dt = start_dt + timedelta(minutes=int(duration))
-        start_time = start_dt.strftime("%H:%M")
-        end_time = end_dt.strftime("%H:%M")
-    except Exception as e:
-        flash(f"Error calculating end time: {e}", "danger")
+        flash("Invalid time format. Please use HH:MM (24-hour format).", "danger")
         return redirect(url_for("slots.slots"))
     
     try:
@@ -110,10 +100,8 @@ def add_cancelled_appointment():
             "provider": provider,
             "date": slot_date,
             "start_time": start_time,
-            "end_time": end_time,
             "duration": duration,
             "notes": notes,
-            "slot_period": slot_period,
             "user_id": current_user.id
         }
         
@@ -157,22 +145,21 @@ def update_cancelled_slot(appointment_id):
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots.slots"))
 
-    # Determine AM/PM from time for efficient filtering
+    # Validate time format (24-hour)
     try:
         time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
-        slot_period = "PM" if time_obj.hour >= 12 else "AM"
+        start_time = time_obj.strftime("%H:%M")
     except ValueError:
-        flash("Invalid time format. Please use HH:MM.", "danger")
+        flash("Invalid time format. Please use HH:MM (24-hour format).", "danger")
         return redirect(url_for("slots.slots"))
     
     try:
         update_data = {
             "provider": provider,
             "date": slot_date,
-            "time": slot_time_str,
+            "start_time": start_time,
             "duration": duration,
-            "notes": notes,
-            "slot_period": slot_period
+            "notes": notes
         }
         
         success = slot_repo.update(appointment_id, current_user.id, update_data)

@@ -268,7 +268,6 @@ def api_find_matches_for_patient(patient_id):
                 'id': slot['id'],
                 'date': slot['date'],
                 'start_time': slot.get('start_time', ''),
-                'end_time': slot.get('end_time', ''),
                 'duration': slot['duration'],
                 'provider_name': slot.get('provider_name', provider_map.get(str(slot.get('provider')), 'Unknown')),
                 'notes': slot.get('notes', '')

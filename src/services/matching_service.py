@@ -4,7 +4,7 @@ from src.repositories.slot_repository import SlotRepository
 from src.repositories.provider_repository import ProviderRepository
 from src.utils.helpers import wait_time_to_days, wait_time_to_minutes
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +78,14 @@ class MatchingService:
 
             # Debug: Print each open slot's day/time and the patient's availabilities
             logger.info("\n\n\n\n ALL SLOTS + PATIENT AVAILABILITIES (with times)\n\n\n\n")
-            # Print open slots with start and end times
+            # Print open slots with start times
             slot_structs = []
             for slot in slots:
                 slot_day = slot.get('date')
                 slot_start = slot.get('start_time')
-                slot_end = slot.get('end_time')
-                logger.info(f"[DEBUG] Open slot: {slot_day} {slot_start} - {slot_end}")
-                slot_structs.append({'date': slot_day, 'start': slot_start, 'end': slot_end, 'slot': slot})
+                slot_duration = slot.get('duration', 0)
+                logger.info(f"[DEBUG] Open slot: {slot_day} {slot_start} ({slot_duration} min)")
+                slot_structs.append({'date': slot_day, 'start': slot_start, 'duration': slot_duration, 'slot': slot})
 
             # Print patient availabilities with time ranges
             patient_avail = patient.get('availability', {})
@@ -95,10 +95,10 @@ class MatchingService:
             for day, periods in patient_avail.items():
                 for period in periods:
                     if period == 'AM':
-                        logger.info(f"[DEBUG] Patient available: {day} AM (12:00:00am to 11:59:59am)")
+                        logger.info(f"[DEBUG] Patient available: {day} AM (00:00 to 11:59)")
                         patient_structs.append({'day': day, 'range': am_range, 'period': 'AM'})
                     elif period == 'PM':
-                        logger.info(f"[DEBUG] Patient available: {day} PM (12:00:00pm to 11:59:59pm)")
+                        logger.info(f"[DEBUG] Patient available: {day} PM (12:00 to 23:59)")
                         patient_structs.append({'day': day, 'range': pm_range, 'period': 'PM'})
             logger.info(f"[DEBUG] Patient desired appointment duration: {patient.get('duration')}")
 
@@ -117,16 +117,15 @@ class MatchingService:
             for slot_struct in slot_structs:
                 slot_day = slot_struct['date']
                 slot_start = slot_struct['start']
-                slot_end = slot_struct['end']
+                slot_duration = slot_struct['duration']
                 slot_obj = slot_struct['slot']
                 slot_provider_uuid = str(slot_obj.get('provider'))
                 slot_provider_name = provider_map.get(slot_provider_uuid, 'Unknown')
-                # Parse slot times
+                # Parse slot start time
                 try:
                     slot_start_time = datetime.strptime(slot_start, '%H:%M').time() if slot_start else None
-                    slot_end_time = datetime.strptime(slot_end, '%H:%M').time() if slot_end else None
                 except Exception as e:
-                    logger.info(f"[DEBUG] Could not parse slot times: {slot_start}, {slot_end}")
+                    logger.info(f"[DEBUG] Could not parse slot start time: {slot_start}")
                     continue
                 # Get day name
                 try:
@@ -134,18 +133,23 @@ class MatchingService:
                 except Exception as e:
                     logger.info(f"[DEBUG] Could not parse slot date: {slot_day}")
                     continue
-                slot_duration = None
-                if slot_start_time and slot_end_time:
-                    slot_duration = (datetime.combine(datetime.today(), slot_end_time) - datetime.combine(datetime.today(), slot_start_time)).seconds // 60
+                # Calculate end time from start time and duration
+                if slot_start_time and slot_duration:
+                    start_dt = datetime.combine(datetime.today(), slot_start_time)
+                    end_dt = start_dt + timedelta(minutes=slot_duration)
+                    slot_end_time = end_dt.time()
+                else:
+                    slot_end_time = None
+                
                 for avail in patient_structs:
                     if avail['day'] == slot_day_name:
                         # Check overlap
                         avail_start, avail_end = avail['range']
                         if slot_start_time and slot_end_time:
                             overlap = (slot_start_time < avail_end and slot_end_time > avail_start)
-                            duration_ok = slot_duration is not None and slot_duration >= desired_duration
+                            duration_ok = slot_duration >= desired_duration
                             if overlap and duration_ok:
-                                logger.info(f"[MATCH] Slot {slot_day} {slot_start}-{slot_end} ({slot_duration} min) with provider {slot_provider_name} matches patient {avail['day']} {avail['period']} and duration {desired_duration} min (Patient preferred provider: {preferred_provider_name})")
+                                logger.info(f"[MATCH] Slot {slot_day} {slot_start} ({slot_duration} min) with provider {slot_provider_name} matches patient {avail['day']} {avail['period']} and duration {desired_duration} min (Patient preferred provider: {preferred_provider_name})")
                                 # Add provider_name for frontend
                                 slot_copy = slot_obj.copy()
                                 slot_copy['provider_name'] = slot_provider_name
@@ -201,17 +205,24 @@ class MatchingService:
         if not patient_availability:
             return True  # No restrictions
         
-        # Get slot day and period
+        # Get slot day and start time
         slot_date = slot.get('date')
-        slot_period = slot.get('slot_period')
+        slot_start_time = slot.get('start_time')
         
-        if not slot_date or not slot_period:
+        if not slot_date or not slot_start_time:
             return True
         
         # Convert date to day name
         try:
             slot_datetime = datetime.strptime(slot_date, '%Y-%m-%d')
             day_name = slot_datetime.strftime('%A')  # Monday, Tuesday, etc.
+        except:
+            return True
+        
+        # Parse slot start time to determine AM/PM
+        try:
+            time_obj = datetime.strptime(slot_start_time, '%H:%M').time()
+            slot_period = "PM" if time_obj.hour >= 12 else "AM"
         except:
             return True
         

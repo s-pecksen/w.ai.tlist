@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Home - Waitlist Manager{% endblock %}
+{% block title %}Home - Waitlyst{% endblock %}
 
 {% block head %}
 {{ super() }}
@@ -62,7 +62,7 @@
 {% endmacro %}
 
 {# Removed logo to save space #}
-<img src="{{ url_for('static', filename='waitlist-logo.png') }}" alt="Waitlist Manager Logo" class="header-logo">
+<img src="{{ url_for('static', filename='waitlist-logo.png') }}" alt="Waitlyst Logo" class="header-logo">
 
 <div class="container-fluid mt-3"> {# Use container-fluid for more width #}
 
@@ -542,7 +542,7 @@
                             card.className = 'card mb-3 shadow-sm'; // Add shadow
 
                             const displayDate = formatDisplayDate(slot.date);
-                            let timeDisplay = (slot.start_time && slot.end_time) ? ` at ${slot.start_time}-${slot.end_time}` : '';
+                            let timeDisplay = slot.start_time ? ` at ${slot.start_time}` : '';
                             let dateTimeStr = `${displayDate}${timeDisplay}`;
 
                             let notesHtml = slot.notes ? `<br><small class=\"text-muted\"><i class=\"bi bi-journal-text\"></i> ${escapeHTML(slot.notes)}</small>` : '';
