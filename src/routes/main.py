@@ -49,7 +49,8 @@ def index():
             providers=providers,
             has_providers=len(providers) > 0,
             appointment_types_data=appointment_types_data,
-            current_user_name=current_user.user_name_for_message or "the scheduling team"
+            current_user_name=current_user.user_name_for_message or "the scheduling team",
+            current_clinic_name=current_user.clinic_name or "our clinic"
         )
     except Exception as e:
         # This is a fallback for unexpected errors.

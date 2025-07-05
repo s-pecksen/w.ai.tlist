@@ -58,7 +58,7 @@ def slots():
             slot['provider_name'] = provider_map.get(str(slot['provider']), 'Unknown Provider')
             # Add time field for template compatibility (using start_time in 24-hour format)
             slot['time'] = slot.get('start_time', '')
-
+        
         return render_template(
             "slots.html",
             slots=all_slots,
@@ -90,34 +90,22 @@ def add_cancelled_appointment():
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots.slots"))
 
-    # Determine AM/PM from time for efficient filtering
+    # Validate time format (24-hour)
     try:
         time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
-        slot_period = "PM" if time_obj.hour >= 12 else "AM"
+        start_time = time_obj.strftime("%H:%M")
     except ValueError:
-        flash("Invalid time format. Please use HH:MM.", "danger")
+        flash("Invalid time format. Please use HH:MM (24-hour format).", "danger")
         return redirect(url_for("slots.slots"))
     
-    # Calculate start_time and end_time
-    try:
-        start_dt = datetime.strptime(slot_time_str, "%H:%M")
-        end_dt = start_dt + timedelta(minutes=int(duration))
-        start_time = start_dt.strftime("%H:%M")
-        end_time = end_dt.strftime("%H:%M")
-    except Exception as e:
-        flash(f"Error calculating end time: {e}", "danger")
-        return redirect(url_for("slots.slots"))
-
     try:
         # Include user_id with the insert for RLS
         slot_data = {
             "provider": provider,
             "date": slot_date,
             "start_time": start_time,
-            "end_time": end_time,
             "duration": duration,
             "notes": notes,
-            "slot_period": slot_period,
             "user_id": current_user.id
         }
         
@@ -161,12 +149,12 @@ def update_cancelled_slot(appointment_id):
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots.slots"))
 
-    # Determine AM/PM from time for efficient filtering
+    # Validate time format (24-hour)
     try:
         time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
-        slot_period = "PM" if time_obj.hour >= 12 else "AM"
+        start_time = time_obj.strftime("%H:%M")
     except ValueError:
-        flash("Invalid time format. Please use HH:MM.", "danger")
+        flash("Invalid time format. Please use HH:MM (24-hour format).", "danger")
         return redirect(url_for("slots.slots"))
     
     # Calculate start_time and end_time
@@ -183,11 +171,9 @@ def update_cancelled_slot(appointment_id):
         update_data = {
             "provider": provider,
             "date": slot_date,
-            "start_time": start_time,
-            "end_time": end_time,
+            "time": slot_time_str,
             "duration": duration,
-            "notes": notes,
-            "slot_period": slot_period
+            "notes": notes
         }
         
         success = slot_repo.update(appointment_id, current_user.id, update_data)

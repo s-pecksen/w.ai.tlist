@@ -12,7 +12,6 @@ class Slot(db.Model):
     provider = db.Column(db.String(100), nullable=False)
     date = db.Column(db.Date, nullable=False)
     start_time = db.Column(db.String(10), nullable=False)  # e.g., "09:00"
-    end_time = db.Column(db.String(10), nullable=False)    # e.g., "10:00"
     duration = db.Column(db.Integer, nullable=False)       # minutes
     status = db.Column(db.String(50), default='available')
     proposed_patient_id = db.Column(db.String(36))
@@ -29,7 +28,6 @@ class Slot(db.Model):
             'provider': self.provider,
             'date': self.date.isoformat() if self.date else None,
             'start_time': self.start_time,
-            'end_time': self.end_time,
             'duration': self.duration,
             'status': self.status,
             'proposed_patient_id': self.proposed_patient_id,
@@ -48,7 +46,6 @@ class Slot(db.Model):
             provider=data.get('provider'),
             date=datetime.fromisoformat(data['date']) if data.get('date') else None,
             start_time=data.get('start_time'),
-            end_time=data.get('end_time'),
             duration=data.get('duration'),
             status=data.get('status'),
             proposed_patient_id=data.get('proposed_patient_id'),
