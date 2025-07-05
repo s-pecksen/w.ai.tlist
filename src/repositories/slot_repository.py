@@ -70,6 +70,13 @@ class SlotRepository:
             if slot:
                 for key, value in data.items():
                     if hasattr(slot, key):
+                        # Handle date conversion for SQLite
+                        if key == 'date' and isinstance(value, str):
+                            from datetime import datetime
+                            value = datetime.strptime(value, '%Y-%m-%d').date()
+                        # Handle duration conversion to integer
+                        elif key == 'duration' and isinstance(value, str):
+                            value = int(value)
                         setattr(slot, key, value)
                 db.session.commit()
                 return True

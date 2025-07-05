@@ -20,7 +20,7 @@ class MatchingService:
         """Find eligible and ineligible patients for a specific slot."""
         try:
             # Get the slot details
-            slot = self.slot_repo.get_by_id(slot_id, user_id)
+            slot = self.slot_repo.get_by_id(slot_id)
             if not slot:
                 return [], []
             

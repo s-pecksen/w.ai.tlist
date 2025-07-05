@@ -42,6 +42,8 @@ def slots():
         if current_appointment_id:
             current_slot = slot_repo.get_by_id(current_appointment_id)
             if current_slot:
+                # Add time field for template compatibility
+                current_slot['time'] = current_slot.get('start_time', '')
                 eligible_patients, ineligible_patients = matching_service.find_matches_for_slot(
                     current_appointment_id, current_user.id
                 )
@@ -51,9 +53,11 @@ def slots():
         logger.info("8")
         logger.info(f"SLOTS TO DISPLAY: {all_slots}")
 
-        # Enrich slots with provider_name for display
+        # Enrich slots with provider_name for display and add time field for template compatibility
         for slot in all_slots:
             slot['provider_name'] = provider_map.get(str(slot['provider']), 'Unknown Provider')
+            # Add time field for template compatibility (using start_time in 24-hour format)
+            slot['time'] = slot.get('start_time', '')
 
         return render_template(
             "slots.html",
@@ -64,7 +68,7 @@ def slots():
             eligible_patients=eligible_patients,
             ineligible_patients=ineligible_patients,
             waiting_patients=waiting_patients,
-            current_slot=current_slot,
+            current_appointment=current_slot,  # Template expects current_appointment
             current_user_name=current_user.user_name_for_message or "the scheduling team"
         )
     except Exception as e:
@@ -165,11 +169,22 @@ def update_cancelled_slot(appointment_id):
         flash("Invalid time format. Please use HH:MM.", "danger")
         return redirect(url_for("slots.slots"))
     
+    # Calculate start_time and end_time
+    try:
+        start_dt = datetime.strptime(slot_time_str, "%H:%M")
+        end_dt = start_dt + timedelta(minutes=int(duration))
+        start_time = start_dt.strftime("%H:%M")
+        end_time = end_dt.strftime("%H:%M")
+    except Exception as e:
+        flash(f"Error calculating end time: {e}", "danger")
+        return redirect(url_for("slots.slots"))
+
     try:
         update_data = {
             "provider": provider,
             "date": slot_date,
-            "time": slot_time_str,
+            "start_time": start_time,
+            "end_time": end_time,
             "duration": duration,
             "notes": notes,
             "slot_period": slot_period
