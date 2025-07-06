@@ -112,7 +112,7 @@
                             <div class="list-group-item {% if appointment.status == 'pending' %}slot-pending{% endif %}" id="slot-{{ appointment.id }}">
                                 <div class="d-flex justify-content-between align-items-start">
                                     <div>
-                                        <strong>{{ appointment.provider_name | default('Unknown Provider') }}</strong><br>
+                                        <strong>{{ appointment.provider | default('Unknown Provider') }}</strong><br>
                                         <div class="slot-details">
                                             {% if appointment.date %}
                                                 {{ appointment.date }}
@@ -156,7 +156,7 @@
                                                     data-bs-toggle="modal"
                                                     data-bs-target="#editSlotModal"
                                                     data-slot-id="{{ appointment.id }}"
-                                                    data-provider-id="{{ appointment.provider }}"
+                                                    data-provider-name="{{ appointment.provider_name }}"
                                                     data-duration="{{ appointment.duration }}"
                                                     data-slot-date="{{ appointment.date }}"
                                                     data-slot-time="{{ appointment.start_time }}"
@@ -454,7 +454,15 @@
                 }
 
                 // Populate form fields from data attributes
-                document.getElementById('edit_slot_provider').value = button.getAttribute('data-provider-id');
+                // Find the provider option that matches the provider name
+                const providerName = button.getAttribute('data-provider-name');
+                const providerSelect = document.getElementById('edit_slot_provider');
+                for (let option of providerSelect.options) {
+                    if (option.text === providerName) {
+                        providerSelect.value = option.value;
+                        break;
+                    }
+                }
                 document.getElementById('edit_slot_date').value = button.getAttribute('data-slot-date');
                 
                 // Format time value to ensure HH:MM format

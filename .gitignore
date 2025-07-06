@@ -196,3 +196,11 @@ ENV/
 data/
 flask_sessions/
 users/
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+instance/
+*.sqlite3
+instance/

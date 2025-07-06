@@ -60,6 +60,15 @@ def add_patient():
         flash("Name and Phone are required.", "warning")
         return redirect(url_for("main.index") + "#add-patient-form")
 
+    # Convert provider ID to provider name if it's not "no preference"
+    provider_name = provider
+    if provider and provider != "no preference":
+        provider_obj = provider_repo.get_by_id(provider)
+        if provider_obj:
+            provider_name = f"{provider_obj['first_name']} {provider_obj['last_initial'] or ''}".strip()
+        else:
+            provider_name = "no preference"
+    
     # --- Add Patient ---
     patient_data = {
         "name": name,
@@ -69,7 +78,7 @@ def add_patient():
         "urgency": urgency,
         "appointment_type": appointment_type,
         "duration": duration,
-        "provider": provider,
+        "provider": provider_name,
         "availability": availability_prefs,
         "availability_mode": availability_mode,
         "user_id": current_user.id
@@ -122,6 +131,15 @@ def update_patient(patient_id):
         if pm_key in request.form: periods.append("PM")
         if periods: availability[day.capitalize()] = periods
     
+    # Convert provider ID to provider name if it's not "no preference"
+    provider_name = provider
+    if provider and provider != "no preference":
+        provider_obj = provider_repo.get_by_id(provider)
+        if provider_obj:
+            provider_name = f"{provider_obj['first_name']} {provider_obj['last_initial'] or ''}".strip()
+        else:
+            provider_name = "no preference"
+    
     update_data = {
         "name": name,
         "phone": phone,
@@ -130,7 +148,7 @@ def update_patient(patient_id):
         "urgency": urgency,
         "appointment_type": appointment_type,
         "duration": duration,
-        "provider": provider,
+        "provider": provider_name,
         "availability": availability,
         "availability_mode": availability_mode
     }

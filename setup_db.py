@@ -58,9 +58,9 @@ CREATE TABLE IF NOT EXISTS public.patients (
 CREATE TABLE IF NOT EXISTS public.cancelled_slots (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     user_id uuid NULL,
-    provider uuid NOT NULL,
+    provider text NOT NULL,
     date date NOT NULL,
-    "time" time NOT NULL,
+    start_time text NOT NULL,
     duration int4 NOT NULL,
     slot_period text NULL,
     notes text NULL,
@@ -69,7 +69,6 @@ CREATE TABLE IF NOT EXISTS public.cancelled_slots (
     proposed_patient_name text NULL,
     created_at timestamptz NULL DEFAULT now(),
     CONSTRAINT cancelled_slots_pkey PRIMARY KEY (id),
-    CONSTRAINT cancelled_slots_provider_fkey FOREIGN KEY (provider) REFERENCES public.providers(id) ON DELETE CASCADE,
     CONSTRAINT cancelled_slots_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
 );
 """

@@ -28,8 +28,6 @@ def slots():
         # Get providers for display
         providers = provider_repo.get_providers(current_user.id)
         logger.info("3")
-        provider_map = provider_repo.get_provider_map(current_user.id)
-        logger.info("4")
         
         # Get current appointment ID from session for matching
         current_appointment_id = session.get("current_appointment_id")
@@ -55,16 +53,19 @@ def slots():
 
         # Enrich slots with provider_name for display and add time field for template compatibility
         for slot in all_slots:
-            slot['provider_name'] = provider_map.get(str(slot['provider']), 'Unknown Provider')
+            # Since we now store provider names directly, just use the stored name
+            slot['provider_name'] = slot.get('provider', 'Unknown Provider')
             # Add time field for template compatibility (using start_time in 24-hour format)
             slot['time'] = slot.get('start_time', '')
+            # Ensure start_time is also available for consistency
+            if 'start_time' not in slot:
+                slot['start_time'] = slot.get('time', '')
         
         return render_template(
             "slots.html",
             slots=all_slots,
             providers=providers,
             has_providers=len(providers) > 0,
-            provider_map=provider_map,
             eligible_patients=eligible_patients,
             ineligible_patients=ineligible_patients,
             waiting_patients=waiting_patients,
@@ -80,15 +81,23 @@ def slots():
 @login_required
 def add_cancelled_appointment():
     """Add a new cancelled appointment (open slot)"""
-    provider = request.form.get("provider")
+    provider_id = request.form.get("provider")
     slot_date = request.form.get("date")
     slot_time_str = request.form.get("time")
     duration = request.form.get("duration")
     notes = request.form.get("notes", "")
 
-    if not all([provider, slot_date, slot_time_str, duration]):
+    if not all([provider_id, slot_date, slot_time_str, duration]):
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots.slots"))
+
+    # Convert provider ID to provider name
+    provider = provider_repo.get_by_id(provider_id)
+    if not provider:
+        flash("Invalid provider selected", "danger")
+        return redirect(url_for("slots.slots"))
+    
+    provider_name = f"{provider['first_name']} {provider['last_initial'] or ''}".strip()
 
     # Validate time format (24-hour)
     try:
@@ -99,11 +108,10 @@ def add_cancelled_appointment():
         return redirect(url_for("slots.slots"))
     
     try:
-        # Include user_id with the insert for RLS
         slot_data = {
-            "provider": provider,
-            "date": slot_date,
+            "provider": provider_name,
             "start_time": start_time,
+            "date": slot_date,
             "duration": duration,
             "notes": notes,
             "user_id": current_user.id
@@ -139,15 +147,23 @@ def remove_cancelled_slot(appointment_id):
 @login_required
 def update_cancelled_slot(appointment_id):
     """Update a cancelled appointment (open slot)"""
-    provider = request.form.get("provider")
+    provider_id = request.form.get("provider")
     slot_date = request.form.get("date")
     slot_time_str = request.form.get("time")
     duration = request.form.get("duration")
     notes = request.form.get("notes", "")
 
-    if not all([provider, slot_date, slot_time_str, duration]):
+    if not all([provider_id, slot_date, slot_time_str, duration]):
         flash("All required fields must be filled", "danger")
         return redirect(url_for("slots.slots"))
+
+    # Convert provider ID to provider name
+    provider = provider_repo.get_by_id(provider_id)
+    if not provider:
+        flash("Invalid provider selected", "danger")
+        return redirect(url_for("slots.slots"))
+    
+    provider_name = f"{provider['first_name']} {provider['last_initial'] or ''}".strip()
 
     # Validate time format (24-hour)
     try:
@@ -169,9 +185,9 @@ def update_cancelled_slot(appointment_id):
 
     try:
         update_data = {
-            "provider": provider,
+            "provider": provider_name,
             "date": slot_date,
-            "time": slot_time_str,
+            "start_time": start_time,
             "duration": duration,
             "notes": notes
         }
