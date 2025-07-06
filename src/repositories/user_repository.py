@@ -52,11 +52,11 @@ class UserRepository:
                     if hasattr(user, key):
                         setattr(user, key, value)
                 db.session.commit()
-                return user
+                return True
         except Exception as e:
             logger.error(f"Error updating user {user_id}: {e}")
             db.session.rollback()
-        return None
+        return False
     
     def delete(self, user_id):
         """Delete user."""

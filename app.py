@@ -9,6 +9,7 @@ from src.routes.auth import auth_bp
 from src.routes.patients import patients_bp
 from src.routes.slots import slots_bp
 from src.routes.providers import providers_bp
+from src.routes.appointment_types import appointment_types_bp
 from src.routes.main import main_bp
 import logging
 
@@ -78,6 +79,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(patients_bp)
 app.register_blueprint(slots_bp)
 app.register_blueprint(providers_bp)
+app.register_blueprint(appointment_types_bp)
 app.register_blueprint(main_bp)
 
 # Security headers
