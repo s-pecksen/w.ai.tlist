@@ -63,19 +63,6 @@ class MatchingService:
             # Get all available slots
             slots = self.slot_repo.get_available_slots(user_id)
 
-            # Get provider map for UUID<->name mapping
-            provider_map = self.provider_repo.get_provider_map(user_id)
-            provider_repo = self.provider_repo
-
-            # Log all provider availabilities
-            # provider_availabilities = {}
-            # for slot in slots:
-            #     provider_id = str(slot.get('provider'))
-            #     provider = provider_repo.get_by_id(provider_id)
-            #     if provider:
-            #         provider_availabilities[provider_id] = provider.get('availability', None)
-            # logger.info(f"[MATCHING] Provider availabilities: {provider_availabilities}")
-
             # Debug: Print each open slot's day/time and the patient's availabilities
             logger.info("\n\n\n\n ALL SLOTS + PATIENT AVAILABILITIES (with times)\n\n\n\n")
             # Print open slots with start times
@@ -103,11 +90,9 @@ class MatchingService:
             logger.info(f"[DEBUG] Patient desired appointment duration: {patient.get('duration')}")
 
             # Log patient's preferred provider (name)
-            preferred_provider_uuid = patient.get('provider')
-            if preferred_provider_uuid == 'no preference':
+            preferred_provider_name = patient.get('provider', 'no preference')
+            if preferred_provider_name == 'no preference':
                 preferred_provider_name = 'No preference'
-            else:
-                preferred_provider_name = provider_map.get(str(preferred_provider_uuid), 'Unknown')
             logger.info(f"[DEBUG] Patient preferred provider: {preferred_provider_name}")
 
             # Find and log all potential matches
@@ -119,8 +104,8 @@ class MatchingService:
                 slot_start = slot_struct['start']
                 slot_duration = slot_struct['duration']
                 slot_obj = slot_struct['slot']
-                slot_provider_uuid = str(slot_obj.get('provider'))
-                slot_provider_name = provider_map.get(slot_provider_uuid, 'Unknown')
+                # Provider is now stored as name directly, not UUID
+                slot_provider_name = slot_obj.get('provider', 'Unknown Provider')
                 # Parse slot start time
                 try:
                     slot_start_time = datetime.strptime(slot_start, '%H:%M').time() if slot_start else None
@@ -141,19 +126,44 @@ class MatchingService:
                 else:
                     slot_end_time = None
                 
-                for avail in patient_structs:
-                    if avail['day'] == slot_day_name:
-                        # Check overlap
-                        avail_start, avail_end = avail['range']
-                        if slot_start_time and slot_end_time:
-                            overlap = (slot_start_time < avail_end and slot_end_time > avail_start)
-                            duration_ok = slot_duration >= desired_duration
-                            if overlap and duration_ok:
-                                logger.info(f"[MATCH] Slot {slot_day} {slot_start} ({slot_duration} min) with provider {slot_provider_name} matches patient {avail['day']} {avail['period']} and duration {desired_duration} min (Patient preferred provider: {preferred_provider_name})")
-                                # Add provider_name for frontend
-                                slot_copy = slot_obj.copy()
-                                slot_copy['provider_name'] = slot_provider_name
-                                matching_slots.append(slot_copy)
+                # Check if patient has no availability restrictions (flexible)
+                if not patient_structs:
+                    # Patient is flexible - check duration and provider preference only
+                    duration_ok = slot_duration >= desired_duration
+                    
+                    # Check provider preference match
+                    provider_match = True
+                    if preferred_provider_name != 'No preference':
+                        provider_match = (slot_provider_name == preferred_provider_name)
+                    
+                    if duration_ok and provider_match:
+                        logger.info(f"[MATCH] Slot {slot_day} {slot_start} ({slot_duration} min) with provider {slot_provider_name} matches flexible patient duration {desired_duration} min (Patient preferred provider: {preferred_provider_name})")
+                        # Add provider_name for frontend
+                        slot_copy = slot_obj.copy()
+                        slot_copy['provider_name'] = slot_provider_name
+                        matching_slots.append(slot_copy)
+                else:
+                    # Patient has specific availability - check overlap
+                    for avail in patient_structs:
+                        if avail['day'] == slot_day_name:
+                            # Check overlap
+                            avail_start, avail_end = avail['range']
+                            if slot_start_time and slot_end_time:
+                                overlap = (slot_start_time < avail_end and slot_end_time > avail_start)
+                                duration_ok = slot_duration >= desired_duration
+                                
+                                # Check provider preference match
+                                provider_match = True
+                                if preferred_provider_name != 'No preference':
+                                    provider_match = (slot_provider_name == preferred_provider_name)
+                                
+                                if overlap and duration_ok and provider_match:
+                                    logger.info(f"[MATCH] Slot {slot_day} {slot_start} ({slot_duration} min) with provider {slot_provider_name} matches patient {avail['day']} {avail['period']} and duration {desired_duration} min (Patient preferred provider: {preferred_provider_name})")
+                                    # Add provider_name for frontend
+                                    slot_copy = slot_obj.copy()
+                                    slot_copy['provider_name'] = slot_provider_name
+                                    matching_slots.append(slot_copy)
+                            break  # Only process first matching availability for this slot
 
             # Sort by date and time, handling missing 'start_time' fields gracefully
             matching_slots.sort(key=lambda s: (s.get('date', ''), s.get('start_time', '')))

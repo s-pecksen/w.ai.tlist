@@ -42,6 +42,8 @@ def slots():
             if current_slot:
                 # Add time field for template compatibility
                 current_slot['time'] = current_slot.get('start_time', '')
+                # Enrich current_slot with provider_name for display
+                current_slot['provider_name'] = current_slot.get('provider', 'Unknown Provider')
                 eligible_patients, ineligible_patients = matching_service.find_matches_for_slot(
                     current_appointment_id, current_user.id
                 )
