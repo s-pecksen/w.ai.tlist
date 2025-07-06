@@ -24,14 +24,6 @@
         text-align: center;
         font-weight: bold;
     }
-    .availability-label-available {
-        color: #198754; /* Green */
-        font-weight: bold;
-    }
-    .availability-label-unavailable {
-        color: #dc3545; /* Red */
-        font-weight: bold;
-    }
 </style>
 {% endblock %}
 
@@ -111,27 +103,14 @@
                 </div>
             </div>
 
-            {# --- Availability Section with Mode Toggle --- #}
+            {# --- Availability Section --- #}
             <div class="mb-3 border p-3 rounded bg-light">
                 <label class="form-label d-block mb-2">Patient Availability:</label>
-                {# Pre-check the correct radio button #}
-                <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="radio" name="availability_mode" id="mode_available" value="available" {% if patient.availability_mode == 'available' %}checked{% endif %}>
-                    <label class="form-check-label availability-label-available" for="mode_available">
-                        Specify AVAILABLE Times
-                    </label>
-                </div>
-                <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="radio" name="availability_mode" id="mode_unavailable" value="unavailable" {% if patient.availability_mode == 'unavailable' %}checked{% endif %}>
-                    <label class="form-check-label availability-label-unavailable" for="mode_unavailable">
-                        Specify NOT Available Times
-                    </label>
-                </div>
-                <small class="form-text text-muted d-block mt-1">
-                    Select the days/times the patient IS available OR IS NOT available. Leave blank if fully flexible.
+                <small class="form-text text-muted d-block mb-3">
+                    Select the days/times the patient is available for appointments. Leave blank if fully flexible.
                 </small>
 
-                <div class="availability-grid mt-3">
+                <div class="availability-grid">
                     {% set days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] %}
                     {# Get the patient's availability dictionary, default to empty if missing #}
                     {% set patient_avail = patient.get('availability', {}) %}

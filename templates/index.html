@@ -24,14 +24,6 @@
         text-align: center;
         font-weight: bold;
     }
-    .availability-label-available {
-        color: #198754;
-        font-weight: bold;
-    }
-    .availability-label-unavailable {
-        color: #dc3545;
-        font-weight: bold;
-    }
     .urgency-high { background-color: #f8d7da; }
     .urgency-medium { background-color: #fff3cd; }
     .urgency-low { background-color: #cfe2ff; }
@@ -145,16 +137,8 @@
                             </div>
                             <div class="mb-3 border p-3 rounded bg-light">
                                 <label class="form-label d-block mb-2 fw-bold">Patient Availability:</label>
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="radio" name="availability_mode" id="mode_available" value="available" checked>
-                                    <label class="form-check-label availability-label-available" for="mode_available">Specify AVAILABLE Times</label>
-                                </div>
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="radio" name="availability_mode" id="mode_unavailable" value="unavailable">
-                                    <label class="form-check-label availability-label-unavailable" for="mode_unavailable">Specify NOT Available Times</label>
-                                </div>
-                                <small class="form-text text-muted d-block mt-1">Select days/times the patient IS available (default) OR IS NOT available. Leave blank if flexible.</small>
-                                <div class="availability-grid mt-3">
+                                <small class="form-text text-muted d-block mb-3">Select days/times the patient is available for appointments. Leave blank if flexible.</small>
+                                <div class="availability-grid">
                                     {% set days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] %}
                                     {% for day in days %}
                                     <div class="day-column">
@@ -245,13 +229,11 @@
                                     </td>
                                     <td>
                                         {% set availability = patient.get('availability', {}) %}
-                                        {% set mode = patient.get('availability_mode', 'available') %}
                                         {% if not availability %}
                                             <span class="text-muted">Any Day/Time</span>
                                         {% else %}
                                             <span class="patient-availability">
-                                            {% if mode == 'available' %}<strong class="text-success">Avail:</strong>
-                                            {% else %}<strong class="text-danger">NOT Avail:</strong>{% endif %}
+                                            <strong class="text-success">Available:</strong>
                                             {# Use capitalize for display consistency #}
                                             {% for day, periods in availability.items()|sort %}
                                                 {{ day[:3].capitalize() }}({{ periods|join('/') }}){% if not loop.last %}; {% endif %}

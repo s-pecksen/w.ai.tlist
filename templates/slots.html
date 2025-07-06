@@ -245,15 +245,13 @@
                         {{ patient.phone }}<br>
                         <small>{{ patient.email or "No email" }}</small>
                       </td>
-                      <td> {# Availability Display - Unchanged #}
+                      <td> {# Availability Display #}
                         {% set availability = patient.get('availability', {}) %}
-                        {% set mode = patient.get('availability_mode', 'available') %}
                         {% if not availability %}
                           <span class="text-muted">Any Day/Time</span>
                         {% else %}
                           <span class="patient-availability">
-                          {% if mode == 'available' %}<strong class="text-success">Available:</strong>
-                          {% else %}<strong class="text-danger">NOT Avail:</strong>{% endif %}
+                          <strong class="text-success">Available:</strong>
                           {# Use capitalize for display consistency #}
                           {% for day, periods in availability.items()|sort %}
                             {{ day[:3].capitalize() }}({{ periods|join('/') }}){% if not loop.last %}; {% endif %}

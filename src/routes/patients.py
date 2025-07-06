@@ -27,7 +27,6 @@ def add_patient():
     appointment_type = request.form.get("appointment_type")
     duration = request.form.get("duration")
     provider = request.form.get("provider")
-    availability_mode = request.form.get("availability_mode", "available")
 
     # --- Process Availability ---
     availability_prefs = {}
@@ -53,7 +52,6 @@ def add_patient():
             availability_prefs[day] = periods
 
     logging.debug(f"Received availability days/times: {availability_prefs}")
-    logging.debug(f"Received availability mode: {availability_mode}")
 
     # --- Basic Validation ---
     if not name or not phone:
@@ -80,7 +78,7 @@ def add_patient():
         "duration": duration,
         "provider": provider_name,
         "availability": availability_prefs,
-        "availability_mode": availability_mode,
+        "availability_mode": "available",  # Always set to available
         "user_id": current_user.id
     }
     
@@ -120,7 +118,6 @@ def update_patient(patient_id):
     duration = request.form.get("duration")
     urgency = request.form.get("urgency")
     reason = request.form.get("reason", "")
-    availability_mode = request.form.get("availability_mode", "available")
     availability = {}
     days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
     for day in days:
@@ -150,7 +147,7 @@ def update_patient(patient_id):
         "duration": duration,
         "provider": provider_name,
         "availability": availability,
-        "availability_mode": availability_mode
+        "availability_mode": "available"  # Always set to available
     }
     
     success = patient_repo.update(patient_id, current_user.id, update_data)
