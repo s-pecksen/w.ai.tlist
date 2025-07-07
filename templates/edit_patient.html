@@ -67,10 +67,18 @@
                     <label for="appointment_type" class="form-label">Appointment Type*</label>
                     <select class="form-select" id="appointment_type" name="appointment_type" required>
                         <option value="" disabled {% if not patient.appointment_type %}selected{% endif %}>Select Type</option>
-                        {% for type in appointment_types %}
-                            {% set type_value = type|lower|replace(' ', '_') %}
-                            <option value="{{ type_value }}" {% if patient.appointment_type == type_value %}selected{% endif %}>{{ type }}</option>
-                        {% endfor %}
+                        {% if appointment_types_data %} {# Use data with durations #}
+                            {% for type_data in appointment_types_data %}
+                                {% set type_value = type_data.appointment_type|lower|replace(' ', '_') %}
+                                <option value="{{ type_value }}" {% if patient.appointment_type == type_value %}selected{% endif %}>{{ type_data.appointment_type }}</option>
+                            {% endfor %}
+                            <option value="custom" {% if patient.appointment_type == 'custom' %}selected{% endif %}>Custom...</option> {# Add custom option #}
+                        {% else %}
+                            <option value="hygiene" {% if patient.appointment_type == 'hygiene' %}selected{% endif %}>Hygiene</option> {# Fallback defaults #}
+                            <option value="recall" {% if patient.appointment_type == 'recall' %}selected{% endif %}>Recall</option>
+                            <option value="resto" {% if patient.appointment_type == 'resto' %}selected{% endif %}>Resto</option>
+                            <option value="custom" {% if patient.appointment_type == 'custom' %}selected{% endif %}>Custom...</option>
+                        {% endif %}
                     </select>
                 </div>
                 <div class="col-md-6 mb-3">
@@ -87,8 +95,9 @@
                      {# Pre-select the correct option #}
                     <select class="form-select" id="provider" name="provider" required>
                         <option value="no preference" {% if patient.provider == 'no preference' %}selected{% endif %}>No Preference</option>
-                        {% for provider_dict in providers %}
-                            <option value="{{ provider_dict.name }}" {% if patient.provider == provider_dict.name %}selected{% endif %}>{{ provider_dict.name }}</option>
+                        {% for provider in providers %}
+                            {% set provider_name = provider.first_name + (' ' + provider.last_initial if provider.last_initial else '') %}
+                            <option value="{{ provider.id }}" {% if patient.provider == provider_name %}selected{% endif %}>{{ provider_name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -163,8 +172,8 @@
         
         // Function to update duration options based on selected appointment type
         function updateDurationOptions() {
-            // Store the currently selected duration if any
-            const currentDuration = durationSelect.value;
+            // Store the currently selected duration if any, or get from patient data
+            const currentDuration = durationSelect.value || '{{ patient.duration }}';
             
             // Clear existing options except the first one
             while (durationSelect.options.length > 1) {
@@ -176,7 +185,7 @@
             
             // Find the matching appointment type data
             const typeData = appointmentTypesData.find(item => 
-                item.appointment_type.toLowerCase().replace(' ', '_') === selectedType
+                item.appointment_type.toLowerCase().replace(/ /g, '_') === selectedType
             );
             
             if (typeData && typeData.durations && typeData.durations.length > 0) {
@@ -198,7 +207,7 @@
                         option.text = `${duration} minutes`;
                     }
                     
-                    // Check if this was the previously selected duration
+                    // Check if this was the patient's current duration
                     if (duration === currentDuration) {
                         option.selected = true;
                     }
@@ -208,8 +217,21 @@
                 
                 // Enable the duration select
                 durationSelect.disabled = false;
-                durationSelect.classList.remove('bg-light');
-                durationSelect.style.pointerEvents = 'auto';
+            } else if (selectedType === 'custom') {
+                // For custom, add common options
+                const customDurations = ['30', '60', '90'];
+                customDurations.forEach(duration => {
+                    const option = document.createElement('option');
+                    option.value = duration;
+                    option.text = `${duration} minutes`;
+                    
+                    if (duration === currentDuration) {
+                        option.selected = true;
+                    }
+                    
+                    durationSelect.add(option);
+                });
+                durationSelect.disabled = false;
             } else {
                 // If no durations found, add default options
                 const defaultDurations = ['30', '60', '70', '90', '120'];
@@ -230,13 +252,14 @@
                         option.text = '2 hours';
                     }
                     
-                    // Check if this was the previously selected duration
+                    // Check if this was the patient's current duration
                     if (duration === currentDuration) {
                         option.selected = true;
                     }
                     
                     durationSelect.add(option);
                 });
+                durationSelect.disabled = false;
             }
         }
 

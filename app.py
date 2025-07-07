@@ -68,7 +68,10 @@ def load_user(user_id):
     try:
         user = db.session.get(User, user_id)
         if user:
+            logger.debug(f"Loaded user {user_id} - clinic_name: '{user.clinic_name}', user_name_for_message: '{user.user_name_for_message}'")
             return user
+        else:
+            logger.debug(f"User {user_id} not found in database")
     except Exception as e:
         logger.warning(f"Could not load user {user_id}. Error: {e}")
     

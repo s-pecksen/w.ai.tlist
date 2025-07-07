@@ -17,6 +17,11 @@ provider_repo = ProviderRepository()
 def index():
     """Main dashboard page."""
     try:
+        # Debug current_user attributes
+        logger.debug(f"Current user ID: {current_user.id}")
+        logger.debug(f"Current user clinic_name: '{current_user.clinic_name}'")
+        logger.debug(f"Current user user_name_for_message: '{current_user.user_name_for_message}'")
+        
         # Get user-specific data
         waitlist = patient_repo.get_waitlist(current_user.id)
         providers = provider_repo.get_providers(current_user.id)

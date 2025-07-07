@@ -18,7 +18,7 @@ matching_service = MatchingService()
 @slots_bp.route("/slots", methods=["GET"])
 @login_required
 def slots():
-    logger.info(f"\n\n\n\n\nSLOTS REQUEST SENT!\n\n\n\n\n")
+    logger.info(f"\n\n\nSLOTS REQUEST SENT!\n\n\n")
     """Display slots page with available slots and matching functionality."""
     try:
         logger.info("1")
@@ -72,10 +72,11 @@ def slots():
             ineligible_patients=ineligible_patients,
             waiting_patients=waiting_patients,
             current_appointment=current_slot,  # Template expects current_appointment
-            current_user_name=current_user.user_name_for_message or "the scheduling team"
+            current_user_name=current_user.user_name_for_message or "the scheduling team",
+            current_clinic_name=current_user.clinic_name or "our clinic"
         )
     except Exception as e:
-        logger.error(f"\n\n\n\n\nA critical error occurred in the slots route: {e}", exc_info=True)
+        logger.error(f"\n\n\nA critical error occurred in the slots route: {e}", exc_info=True)
         flash("A critical error occurred. Please try again.", "danger")
         return redirect(url_for('main.index'))
 

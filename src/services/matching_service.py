@@ -51,7 +51,7 @@ class MatchingService:
     def find_matches_for_patient(self, patient_id: str, user_id: str) -> List[Dict[str, Any]]:
         """Find available slots for a specific patient."""
         try:
-            logger.info(f"\n\n\n\n\nFINDING MATCHES FOR PATIENT {patient_id}\n\n\n\n\n")
+            logger.info(f"\n\n\nFINDING MATCHES FOR PATIENT {patient_id}\n\n\n")
             # Get the patient details
             patient = self.patient_repo.get_by_id(patient_id, user_id)
             if not patient:
@@ -64,7 +64,7 @@ class MatchingService:
             slots = self.slot_repo.get_available_slots(user_id)
 
             # Debug: Print each open slot's day/time and the patient's availabilities
-            logger.info("\n\n\n\n ALL SLOTS + PATIENT AVAILABILITIES (with times)\n\n\n\n")
+            logger.info("\n\n ALL SLOTS + PATIENT AVAILABILITIES (with times)\n\n")
             # Print open slots with start times
             slot_structs = []
             for slot in slots:

@@ -524,7 +524,7 @@
                             card.className = 'card mb-3 shadow-sm'; // Add shadow
 
                             const displayDate = formatDisplayDate(slot.date);
-                            let timeDisplay = slot.start_time ? ` at ${slot.start_time}` : '';
+                            let timeDisplay = slot.time ? ` at ${slot.time}` : '';
                             let dateTimeStr = `${displayDate}${timeDisplay}`;
 
                             let notesHtml = slot.notes ? `<br><small class=\"text-muted\"><i class=\"bi bi-journal-text\"></i> ${escapeHTML(slot.notes)}</small>` : '';
@@ -606,7 +606,7 @@
                 const senderInfo = `${userName} from ${clinicName}`; // Construct sender string
 
                 // Construct email body
-                const emailBody = `Hi ${escapeHTML(patientFirstName)},\n\nThis is ${senderInfo}. We have an opening on ${escapeHTML(slotDetails)}, and would love to know if you could make it in for your ${escapeHTML(appointmentType)}?\n\nPlease let us know as soon as possible if this time works for you.\n\nThanks!`;
+                const emailBody = `Subject: Available Appointment: ${escapeHTML(slotDetails)}\n\nHi ${escapeHTML(patientFirstName)},\n\nThis is ${senderInfo}. We have an opening on ${escapeHTML(slotDetails)}, and would love to know if you could make it in for your ${escapeHTML(appointmentType)}?\n\nPlease let us know as soon as possible if this time works for you.\n\nThanks!`;
                 modalBodyTextarea.value = emailBody;
 
                 // Set up the Mark Proposed form action

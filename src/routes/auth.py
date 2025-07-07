@@ -82,6 +82,8 @@ def register():
             
             user = user_repo.create(user_data)
             logger.debug(f"User created: {user}")
+            logger.debug(f"Created user clinic_name: '{user.clinic_name if user else 'None'}'")
+            logger.debug(f"Created user user_name_for_message: '{user.user_name_for_message if user else 'None'}'")
             if not user:
                 logger.error("Failed to create user in database.")
                 raise Exception("Failed to create user in database.")

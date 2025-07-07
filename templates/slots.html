@@ -290,8 +290,8 @@
                                   data-patient-name="{{ patient.name }}"
                                   data-patient-first-name="{{ patient.name.split()[0] }}"
                                   data-appointment-id="{{ current_appointment.id }}"
-                                  data-slot-weekday="{{ current_appointment.date.strftime('%A') if current_appointment.date is not string else 'Unknown' }}"
-                                  data-slot-date-str="{{ current_appointment.date.strftime('%B %d, %Y') if current_appointment.date is not string else 'Unknown' }}"
+                                  data-slot-weekday="{% if current_appointment.date %}{{ current_appointment.date }}{% else %}Unknown{% endif %}"
+                                  data-slot-date-str="{% if current_appointment.date %}{{ current_appointment.date }}{% else %}Unknown{% endif %}"
                                   data-slot-time="{{ current_appointment.start_time }}"
                                   data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}"
                                   data-provider-name="{{ current_appointment.provider_name | default('the provider') }}"
@@ -490,8 +490,7 @@
                 const appointmentId = button.getAttribute('data-appointment-id'); // Get slot ID
                 const patientName = button.getAttribute('data-patient-name');
                 const patientFirstName = button.getAttribute('data-patient-first-name') || patientName.split(' ')[0]; // Fallback
-                const slotWeekday = button.getAttribute('data-slot-weekday');
-                const slotDateStr = button.getAttribute('data-slot-date-str');
+                const slotDateRaw = button.getAttribute('data-slot-weekday'); // This now contains the date string
                 const slotTime = button.getAttribute('data-slot-time');
                 const appointmentType = button.getAttribute('data-appointment-type');
                 const providerName = button.getAttribute('data-provider-name');
@@ -504,17 +503,24 @@
                 const clinicName = modalBodyTextarea.getAttribute('data-clinic-name');
                 const senderInfo = `${userName} from ${clinicName}`; // Construct sender string
 
-
                 modalTitle.textContent = `Proposal Message for ${patientName}`;
 
-                let timeString = slotTime ? ` at ${slotTime}` : '';
-                 // Use 'Unknown' if date parts are missing
-                let dateTimeString = (slotWeekday !== 'Unknown' && slotDateStr !== 'Unknown')
-                                     ? `${slotWeekday}, ${slotDateStr}${timeString}`
-                                     : 'an upcoming opening';
+                // Format the date properly using JavaScript
+                let dateTimeString = 'an upcoming opening';
+                if (slotDateRaw && slotDateRaw !== 'Unknown') {
+                    try {
+                        const dateObj = new Date(slotDateRaw + 'T00:00:00');
+                        const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                        const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                        let timeString = slotTime ? ` at ${slotTime}` : '';
+                        dateTimeString = `${weekday}, ${dateStr}${timeString}`;
+                    } catch (e) {
+                        console.error('Error formatting date:', e);
+                        dateTimeString = slotDateRaw + (slotTime ? ` at ${slotTime}` : '');
+                    }
+                }
 
-                // ADDED ' appointment' before the question mark
-                const emailBody = `Hi ${patientFirstName},\n\nThis is ${senderInfo}. We have an opening on ${dateTimeString} with ${providerName}, and would love to know if you could make it in for your ${appointmentType} appointment?\n\nIf you could confirm with us as soon as you get this, we'll get you booked in and see you then!\n\nThanks so much!`;
+                const emailBody = `Subject: Available Appointment: ${dateTimeString} with ${providerName}\n\nHi ${patientFirstName},\n\nThis is ${senderInfo}. We have an opening on ${dateTimeString} with ${providerName}, and would love to know if you could make it in for your ${appointmentType}?\n\nPlease let us know as soon as possible if this time works for you.\n\nThanks!`;
 
                 modalBodyTextarea.value = emailBody;
                 copyButton.textContent = 'Copy Message';

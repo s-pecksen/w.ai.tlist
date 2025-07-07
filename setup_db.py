@@ -14,11 +14,14 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS public.users (
     id uuid NOT NULL,
     username text NOT NULL,
+    email text UNIQUE,
+    password_hash text,
     clinic_name text NULL,
     user_name_for_message text NULL,
     appointment_types jsonb NULL DEFAULT '[]'::jsonb,
     appointment_types_data jsonb NULL DEFAULT '[]'::jsonb,
     created_at timestamptz NULL DEFAULT now(),
+    updated_at timestamptz NULL DEFAULT now(),
     CONSTRAINT users_pkey PRIMARY KEY (id),
     CONSTRAINT users_username_key UNIQUE (username)
 );
