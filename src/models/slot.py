@@ -17,7 +17,6 @@ class Slot(db.Model):
     proposed_patient_id = db.Column(db.String(36))
     proposed_patient_name = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     notes = db.Column(db.Text)
     
     def to_dict(self):
@@ -33,7 +32,6 @@ class Slot(db.Model):
             'proposed_patient_id': self.proposed_patient_id,
             'proposed_patient_name': self.proposed_patient_name,
             'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'notes': self.notes,
         }
     

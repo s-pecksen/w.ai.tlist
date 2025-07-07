@@ -18,7 +18,6 @@ class User(UserMixin, db.Model):
     appointment_types = db.Column(db.Text)  # JSON string
     appointment_types_data = db.Column(db.Text)  # JSON string
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
         """Convert user object to dictionary for storage."""
@@ -30,23 +29,19 @@ class User(UserMixin, db.Model):
             "user_name_for_message": self.user_name_for_message,
             "appointment_types": self.appointment_types,
             "appointment_types_data": self.appointment_types_data,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+            "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
     @classmethod
     def from_dict(cls, data):
         """Create user object from dictionary."""
-        user = cls(
+        return cls(
             id=data.get("id"),
             username=data.get("username"),
             email=data.get("email"),
+            password_hash=data.get("password_hash"),
             clinic_name=data.get("clinic_name"),
             user_name_for_message=data.get("user_name_for_message"),
             appointment_types=data.get("appointment_types"),
             appointment_types_data=data.get("appointment_types_data")
-        )
-        # Handle password_hash separately since it's not in the constructor
-        if "password_hash" in data:
-            user.password_hash = data["password_hash"]
-        return user 
+        ) 

@@ -406,16 +406,18 @@
         </form>
          {# --- END ADDED --- #}
       </div>
-      <div class="modal-footer">
-         {# --- ADDED: Mark as Proposed Button linked to the hidden form --- #}
+      <div class="modal-footer justify-content-between">
+        {# Left side: Mark Proposed button #}
         <button type="submit" form="modal-propose-form" class="btn btn-warning" id="modalMarkProposedButton" title="Mark slot and patient as pending">
             <i class="bi bi-bookmark-check"></i> Mark Proposed
         </button>
-         {# --- END ADDED --- #}
-        <button type="button" class="btn-primary" id="copyTemplateButton">
-          <i class="bi bi-clipboard"></i> Copy Message
-        </button>
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        {# Right side: Copy and Close buttons #}
+        <div>
+            <button type="button" class="btn btn-primary" id="copyTemplateButton">
+              <i class="bi bi-clipboard"></i> Copy Message
+            </button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
       </div>
     </div>
   </div>
