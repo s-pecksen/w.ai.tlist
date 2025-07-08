@@ -33,7 +33,7 @@ Designed specifically for dental office front desk staff and practice managers w
 
 - **Frontend**: Flask with Jinja2 templating
 - **Backend**: Python with Flask
-- **Database**: SQLite (local development) / Supabase (production)
+- **Database**: SQLite
 - **Session Management**: Flask-Session with filesystem storage
 - **Authentication**: Flask-Login
 - **ORM**: SQLAlchemy
@@ -41,31 +41,27 @@ Designed specifically for dental office front desk staff and practice managers w
 ## Features
 
 - User authentication and session management
-- Supabase database integration
+- SQLite database integration
 - Secure encrypted sessions
 - SQLAlchemy ORM integration
 
 ## Configuration
 
-This application requires the following environment variables to be set in your Hugging Face Space secrets:
+This application requires the following environment variables:
 
 - `FLASK_APP_ENCRYPTION_KEY`: Encryption key for Flask application data
 - `FLASK_SESSION_SECRET_KEY`: Secret key for Flask session management
 - `LOCAL_DATABASE_URL`: SQLite database URL (optional, defaults to local instance)
 
-For production deployment, you'll also need:
-- `SUPABASE_URL`: Your Supabase project URL
-- `SUPABASE_KEY`: Your Supabase anon/public API key
-
 ### Database Setup
 
-This application uses Supabase as the backend database. The app connects to Supabase using the Python client library and handles:
+This application uses SQLite as the backend database. The app uses SQLAlchemy ORM for database operations and handles:
 
 - User data storage and retrieval
 - Session persistence
-- Real-time database operations
+- Local database operations
 
-Make sure your Supabase project is configured with the appropriate tables and RLS (Row Level Security) policies for your application.
+The database file is automatically created in the `instance` directory when the application starts.
 
 ## Local Development
 

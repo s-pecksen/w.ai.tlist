@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Quick test script for provider endpoints.
-Tests both Supabase and SQLite implementations.
+Tests SQLite implementation.
 """
 
 import os
@@ -61,34 +61,7 @@ def test_provider_endpoints():
         print(f"❌ Error testing endpoints: {e}")
         return False
 
-def test_database_switch():
-    """Test switching between Supabase and SQLite."""
-    print("\n🔄 Testing Database Switch...")
-    
-    # Check current .env setting
-    with open('.env', 'r') as f:
-        env_content = f.read()
-    
-    current_setting = "local" if "USE_LOCAL_DB=true" in env_content else "supabase"
-    print(f"   Current database: {current_setting}")
-    
-    # Switch to the other database
-    if current_setting == "supabase":
-        print("   Switching to SQLite...")
-        env_content = env_content.replace('USE_LOCAL_DB=false', 'USE_LOCAL_DB=true')
-        new_setting = "local"
-    else:
-        print("   Switching to Supabase...")
-        env_content = env_content.replace('USE_LOCAL_DB=true', 'USE_LOCAL_DB=false')
-        new_setting = "supabase"
-    
-    with open('.env', 'w') as f:
-        f.write(env_content)
-    
-    print(f"   Switched to: {new_setting}")
-    print("   ⚠️  Please restart the app to test the new database")
-    
-    return True
+
 
 def main():
     """Run tests."""
@@ -97,10 +70,6 @@ def main():
     
     # Test current endpoints
     success = test_provider_endpoints()
-    
-    if success:
-        # Test database switching
-        test_database_switch()
     
     print("\n" + "=" * 30)
     if success:

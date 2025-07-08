@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Comprehensive test script for all repositories.
-Tests providers, patients, and slots with both Supabase and SQLite.
+Tests providers, patients, and slots with SQLite.
 """
 
 import os
@@ -128,51 +128,20 @@ def test_sqlite_database():
             conn.close()
         return False
 
-def test_database_switch():
-    """Test switching between databases."""
-    print("\n🔄 Testing Database Switch...")
-    
-    # Check current .env setting
-    with open('../.env', 'r') as f:
-        env_content = f.read()
-    
-    current_setting = "local" if "USE_LOCAL_DB=true" in env_content else "supabase"
-    print(f"   Current database: {current_setting}")
-    
-    # Switch to the other database
-    if current_setting == "supabase":
-        print("   Switching to SQLite...")
-        env_content = env_content.replace('USE_LOCAL_DB=false', 'USE_LOCAL_DB=true')
-        new_setting = "local"
-    else:
-        print("   Switching to Supabase...")
-        env_content = env_content.replace('USE_LOCAL_DB=true', 'USE_LOCAL_DB=false')
-        new_setting = "supabase"
-    
-    with open('../.env', 'w') as f:
-        f.write(env_content)
-    
-    print(f"   Switched to: {new_setting}")
-    print("   ⚠️  Please restart the app to test the new database")
-    
-    return True
+
 
 def main():
     """Run all tests."""
-    print("🚀 All Repositories Migration Test Suite")
+    print("🚀 All Repositories Test Suite")
     print("=" * 50)
     
     # Test SQLite database
     sqlite_success = test_sqlite_database()
     
-    if sqlite_success:
-        # Test database switching
-        test_database_switch()
-    
     print("\n" + "=" * 50)
     if sqlite_success:
         print("✅ All tests completed successfully!")
-        print("🎉 All repositories are now migrated to support both Supabase and SQLite!")
+        print("🎉 All repositories are working correctly with SQLite!")
     else:
         print("❌ Some tests failed. Check the output above for details.")
 

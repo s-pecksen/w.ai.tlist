@@ -53,8 +53,6 @@ a = Analysis(
         'more_itertools',
         'typing_extensions',
         'dotenv',
-        'supabase',
-        'psycopg2',
         'pywin32',
     ],
     hookspath=[],

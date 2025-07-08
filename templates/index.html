@@ -28,7 +28,19 @@
     .urgency-medium { background-color: #fff3cd; }
     .urgency-low { background-color: #cfe2ff; }
     .waitlist-availability { font-size: 0.85em; color: #6c757d; }
-    .pending-details { font-size: 0.9em; font-style: italic; color: #6c757d;}
+    .pending-details { 
+        font-size: 0.75em; 
+        color: #856404; 
+        background-color: #fff3cd; 
+        border: 1px solid #ffeaa7; 
+        border-radius: 3px; 
+        padding: 4px 6px; 
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
     .slot-details { font-size: 0.9rem; color: #6c757d; }
     .action-buttons form, .action-buttons button { display: inline-block; margin-right: 3px; margin-bottom: 5px; }
     .action-buttons .btn-group { width: 100%; }
@@ -221,11 +233,7 @@
                                     <td>
                                         {{ format_appointment_type(patient) }} ({{ patient.duration }} min)<br>
                                         <small>Pref: {{ patient.provider }}</small>
-                                        {% if patient.status == 'pending' and patient.proposed_slot_details %}
-                                          <div class="pending-details">
-                                            <i class="bi bi-arrow-right-short"></i> Pending: {{ patient.proposed_slot_details }}
-                                          </div>
-                                        {% endif %}
+
                                     </td>
                                     <td>
                                         {% set availability = patient.get('availability', {}) %}
@@ -264,6 +272,11 @@
                                                 <i class="bi bi-trash"></i> Remove
                                             </button>
                                         {% elif patient.status == 'pending' and patient.proposed_slot_id %}
+                                            {% if patient.proposed_slot_details %}
+                                                <div class="pending-details mb-2">
+                                                    <i class="bi bi-clock"></i> {{ patient.proposed_slot_details }}
+                                                </div>
+                                            {% endif %}
                                             <div class="btn-group" role="group">
                                                 <form action="{{ url_for('slots.confirm_booking', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
                                                     <button type="submit" class="btn btn-sm btn-success" title="Confirm Booking"><i class="bi bi-check-circle"></i> Confirm</button>
