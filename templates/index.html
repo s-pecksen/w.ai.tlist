@@ -168,8 +168,8 @@
                                 </div>
                             </div>
                             <div class="mb-3">
-                                <label for="notes" class="form-label">Additional Notes:</label>
-                                <textarea class="form-control form-control-sm" id="notes" name="notes" rows="2"></textarea>
+                                <label for="reason" class="form-label">Additional Notes:</label>
+                                <textarea class="form-control form-control-sm" id="reason" name="reason" rows="2"></textarea>
                             </div>
                             <button type="submit" class="btn btn-primary w-100">Add to Waitlist</button>
                         </form>
@@ -233,7 +233,9 @@
                                     <td>
                                         {{ format_appointment_type(patient) }} ({{ patient.duration }} min)<br>
                                         <small>Pref: {{ patient.provider }}</small>
-
+                                        {% if patient.reason %}
+                                            <br><small class="text-muted"><strong>Notes:</strong> {{ patient.reason }}</small>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         {% set availability = patient.get('availability', {}) %}
@@ -404,8 +406,8 @@
         // --- Add Patient Form Logic (Dynamic Duration/Reason) ---
         const addAppointmentTypeSelect = document.getElementById('appointment_type');
         const addDurationSelect = document.getElementById('duration');
-        const addReasonLabel = document.querySelector('label[for="notes"]');
-        const addReasonField = document.getElementById('notes');
+        const addReasonLabel = document.querySelector('label[for="reason"]');
+        const addReasonField = document.getElementById('reason');
         const appointmentTypesData = JSON.parse('{{ appointment_types_data|tojson|safe }}'); // Load data passed from Flask
 
         function updateAddDurationOptions() {
@@ -470,7 +472,7 @@
             // Reason Logic
             if (addReasonLabel && addReasonField) {
                 if (selectedType === 'custom') {
-                    addReasonLabel.innerHTML = 'Custom Appointment Notes:*'; // Indicate required
+                    addReasonLabel.innerHTML = 'Custom Appointment Type:*'; // Indicate required
                     addReasonField.required = true;
                     addReasonField.placeholder = 'Enter details for the custom appointment type';
                 } else {

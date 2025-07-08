@@ -276,7 +276,7 @@
                               <span class="text-danger">{{ patient.provider }}</span> {# Should not be eligible based on backend filter, but good UI check #}
                             {% endif %}
                           </div>
-                          {% if patient.reason and patient.appointment_type.lower() != 'custom' %}
+                          {% if patient.reason %}
                             <div><strong>Notes:</strong> {{ patient.reason }}</div>
                           {% endif %}
                         </div>
