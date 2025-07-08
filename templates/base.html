@@ -16,43 +16,47 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary py-3">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('main.index') }}">Patient Manager</a>
+            <a class="navbar-brand" href="{{ url_for('main.index') }}">Waitlyst</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav w-100">
-                    {% if current_user.is_authenticated %} {# Show links only if logged in #}
+                {% if current_user.is_authenticated %}
+                    <!-- Center navigation links -->
+                    <ul class="navbar-nav mx-auto">
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('main.index') }}">Dashboard</a> {# Home goes to waitlist now #}
+                            <a class="nav-link" href="{{ url_for('main.index') }}">Dashboard</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('slots.slots') }}">Open Slots</a>
                         </li>
-                        {# Add Settings link later #}
-                        {# <li class="nav-item"> <a class="nav-link" href="{{ url_for('settings') }}">Settings</a> </li> #}
                         <li class="nav-item">
-                            {# Adjust provider management link later if needed #}
                             <a class="nav-link" href="{{ url_for('providers.list_providers') }}">Manage Providers</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('appointment_types.list_appointment_types') }}">Manage Appt Types</a>
                         </li>
-                        <li class="nav-item ms-auto"> {# Aligns items to the right #}
+                    </ul>
+                    <!-- Right side user info -->
+                    <ul class="navbar-nav">
+                        <li class="nav-item d-flex align-items-center">
                             <span class="navbar-text me-3">
-                                Welcome, {{ current_user.username }}!
+                                Welcome, {{ current_user.user_name_for_message or current_user.username }}!
                             </span>
                             <a class="btn btn-outline-light" href="{{ url_for('auth.logout') }}">Logout</a>
                         </li>
-                    {% else %} {# Show login/register if not logged in #}
-                        <li class="nav-item ms-auto">
+                    </ul>
+                {% else %}
+                    <!-- Right side login/register when not authenticated -->
+                    <ul class="navbar-nav ms-auto">
+                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('auth.register') }}">Register</a>
                         </li>
-                    {% endif %}
-                </ul>
+                    </ul>
+                {% endif %}
             </div>
         </div>
     </nav>
@@ -76,7 +80,7 @@
     <!-- Footer -->
     <footer class="mt-5 py-3 bg-light text-center">
         <div class="container">
-            <p class="mb-0">Patient Manager © 2025</p>
+            <p class="mb-0">Waitlyst © 2025</p>
         </div>
     </footer>
 

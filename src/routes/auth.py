@@ -23,7 +23,7 @@ def register():
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
         clinic_name = request.form.get("clinic_name", "").strip()
-        user_name_for_message = request.form.get("user_name_for_message", "").strip()
+        user_name_for_message = request.form.get("user_name", "").strip()
 
         logger.debug(f"Form data: email={email}, clinic_name={clinic_name}, user_name_for_message={user_name_for_message}")
 
