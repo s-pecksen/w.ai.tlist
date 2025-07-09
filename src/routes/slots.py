@@ -104,7 +104,7 @@ def add_cancelled_appointment():
 
     # Validate time format (24-hour)
     try:
-        time_obj = datetime.strptime(slot_time_str, "%H:%M").time()
+        time_obj = datetime.strptime(_str, "%H:%M").time()
         start_time = time_obj.strftime("%H:%M")
     except ValueError:
         flash("Invalid time format. Please use HH:MM (24-hour format).", "danger")
