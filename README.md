@@ -1,5 +1,5 @@
 ---
-title: W.AI.TLIST - Dental Clinic Management
+title: WAITLYST - Dental Clinic Management
 emoji: 🦷
 colorFrom: blue
 colorTo: green
@@ -8,13 +8,13 @@ app_port: 7860
 pinned: false
 ---
 
-# W.AI.TLIST - Dental Appointment Optimization
+# WAITLYST - Dental Appointment Optimization
 
 An intelligent dental clinic management system that helps front desk staff maximize appointment utilization by automatically matching patients with cancellation slots.
 
 ## Purpose
 
-W.AI.TLIST transforms how dental offices handle appointment cancellations by:
+WAITLYST transforms how dental offices handle appointment cancellations by:
 
 - **Intelligent Patient Matching**: Automatically identifies and matches suitable patients with available appointment slots
 - **Revenue Recovery**: Helps dental offices recover thousands in revenue from what would otherwise be empty appointment slots

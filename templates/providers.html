@@ -38,8 +38,7 @@
                                 {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}
                                 <div>
                                     <form action="{{ url_for('providers.remove_provider') }}" method="post" class="d-inline" onsubmit="return confirm('Are you sure you want to remove provider {{ provider.first_name }}{% if provider.last_initial %} {{ provider.last_initial }}{% endif %}?');">
-                                        <input type="hidden" name="first_name" value="{{ provider.first_name }}">
-                                        <input type="hidden" name="last_initial" value="{{ provider.last_initial or '' }}">
+                                        <input type="hidden" name="provider_id" value="{{ provider.id }}">
                                         <button type="submit" class="btn btn-sm btn-danger">Remove</button>
                                     </form>
                                 </div>
@@ -52,11 +51,5 @@
             </div>
         </div>
     </div>
-
-    {# Removed provider CSV upload form as it wasn't fully updated and might need rework #}
-    {# Consider adding a simple CSV upload for just names later if needed #}
-
-    {# Removed eligible patients section - this seems out of place on providers page #}
-    {# {% if eligible_patients and current_appointment %} ... {% endif %} #}
 </div>
 {% endblock %}

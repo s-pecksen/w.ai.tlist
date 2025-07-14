@@ -15,7 +15,7 @@ sys.path.insert(0, project_root)
 def update_user_created_at():
     """Update the created_at date for poop@gmail.com to 2024."""
     
-    db_path = '/home/eric/Code/conscious_business_coaching/steven/w.ai.tlist/instance/waitlist.db'
+    db_path = '/home/eric/Code/conscious_business_coaching/steven/WAITLYST/instance/waitlist.db'
     
     if not os.path.exists(db_path):
         print("❌ Database file not found. Please start the app first.")

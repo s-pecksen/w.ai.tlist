@@ -1,6 +1,6 @@
-# W.AI.TLIST - Build Instructions
+# WAITLYST - Build Instructions
 
-This guide explains how to build cross-platform executables for the W.AI.TLIST dental appointment management system.
+This guide explains how to build cross-platform executables for the WAITLYST dental appointment management system.
 
 ## Overview
 

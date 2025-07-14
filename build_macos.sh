@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# W.AI.TLIST macOS Build Script
-# This script builds the macOS executable for W.AI.TLIST
+# WAITLYST macOS Build Script
+# This script builds the macOS executable for WAITLYST
 
 echo "==============================================="
-echo "    W.AI.TLIST macOS Build Script"
+echo "    WAITLYST macOS Build Script"
 echo "==============================================="
 echo
 

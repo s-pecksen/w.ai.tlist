@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# W.AI.TLIST Linux Build Script
-# This script builds the Linux executable for W.AI.TLIST
+# WAITLYST Linux Build Script
+# This script builds the Linux executable for WAITLYST
 
 echo "==============================================="
-echo "    W.AI.TLIST Linux Build Script"
+echo "    WAITLYST Linux Build Script"
 echo "==============================================="
 echo
 

@@ -1,9 +1,9 @@
 @echo off
-REM W.AI.TLIST Windows Build Script
-REM This script builds the Windows executable for W.AI.TLIST
+REM WAITLYST Windows Build Script
+REM This script builds the Windows executable for WAITLYST
 
 echo ===============================================
-echo    W.AI.TLIST Windows Build Script
+echo    WAITLYST Windows Build Script
 echo ===============================================
 echo.
 
