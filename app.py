@@ -11,6 +11,7 @@ from src.routes.slots import slots_bp
 from src.routes.providers import providers_bp
 from src.routes.appointment_types import appointment_types_bp
 from src.routes.main import main_bp
+from src.routes.settings import settings_bp
 import logging
 
 # Configure logging
@@ -84,6 +85,7 @@ app.register_blueprint(slots_bp)
 app.register_blueprint(providers_bp)
 app.register_blueprint(appointment_types_bp)
 app.register_blueprint(main_bp)
+app.register_blueprint(settings_bp)
 
 # Security headers
 @app.before_request
