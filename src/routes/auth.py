@@ -4,10 +4,12 @@ from src.models.user import User
 from src.repositories.user_repository import UserRepository
 from src.repositories.provider_repository import ProviderRepository
 from werkzeug.security import generate_password_hash, check_password_hash
+from src.utils.stripe_checker import has_active_subscription
 import json
 import re
 import logging
 import uuid
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -147,9 +149,30 @@ def login():
             flash("Invalid email or password", "error")
             return render_template("login.html")
 
+        # --- Check subscription/30-day requirement ---
+        # Check if user is within 30 days of account creation
+        days_since_creation = (datetime.utcnow() - user.created_at).days
+        within_30_days = days_since_creation < 30
+        days_left = 30 - days_since_creation
+        
+        # Check if user is a paying subscriber
+        is_subscriber = has_active_subscription(email)
+        
+        logger.info(f"Login check for {email}: {days_since_creation} days since creation, within_30_days={within_30_days}, is_subscriber={is_subscriber}")
+        
+        # Allow login if either condition is met
+        if not within_30_days and not is_subscriber:
+            logger.warning(f"Login denied for {email}: trial expired and no active subscription")
+            flash("You do not currently have an active subscription. Please subscribe to continue using the service. <a href='https://buy.stripe.com/8x2dR8auRf1JaJSfJodby02' target='_blank'>Subscribe here</a>", "error")
+            return render_template("login.html")
+
         # --- Proceed with login ---
         login_user(user, remember=remember)
         session.permanent = remember
+        
+        # Show warning if user has less than 3 days left in trial and is not a subscriber
+        if within_30_days and days_left <= 3 and not is_subscriber:
+            flash(f"Only {days_left} days left in your trial - to keep access, sign up for a subscription here: <a href='https://buy.stripe.com/8x2dR8auRf1JaJSfJodby02' target='_blank'>Subscribe here</a>", "warning")
         
         logger.info(f"User {email} logged in successfully")
         flash("Login successful!", "success")
