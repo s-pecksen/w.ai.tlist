@@ -54,7 +54,6 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
     logger.info("SQLite database tables created")
-    logging.debug("hey I'm an api and I work")
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
