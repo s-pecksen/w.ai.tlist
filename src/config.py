@@ -30,8 +30,16 @@ class Config:
     # File Storage
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
-    # Database Configuration - SQLite Only
-    LOCAL_DATABASE_URL = os.environ.get("LOCAL_DATABASE_URL", f"sqlite:///{os.path.join(PROJECT_ROOT, 'instance', 'waitlist.db')}")
+    # PostgreSQL Configuration
+    DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    if not DATABASE_URL:
+        # Fallback to individual components
+        DB_HOST = os.environ.get("DB_HOST", "localhost")
+        DB_PORT = os.environ.get("DB_PORT", "5432")
+        DB_NAME = os.environ.get("DB_NAME", "waitlyst")
+        DB_USER = os.environ.get("DB_USER", "postgres")
+        DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+        DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     
     # File Storage
     DATA_DIR = os.path.join(PROJECT_ROOT, 'data')

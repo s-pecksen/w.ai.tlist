@@ -45,8 +45,8 @@ app.config["PERSISTENT_STORAGE_PATH"] = Config.DATA_DIR
 app.config["USERS_DIR"] = Config.USERS_DIR
 
 # Database configuration - SQLite only
-app.config['SQLALCHEMY_DATABASE_URI'] = Config.LOCAL_DATABASE_URL
-logger.info(f"Using local SQLite database: {Config.LOCAL_DATABASE_URL}")
+app.config['SQLALCHEMY_DATABASE_URI'] = Config.DATABASE_URL
+logger.info(f"Using PostgreSQL database: {Config.DATABASE_URL}")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
