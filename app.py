@@ -12,6 +12,7 @@ from src.routes.providers import providers_bp
 from src.routes.appointment_types import appointment_types_bp
 from src.routes.main import main_bp
 from src.routes.settings import settings_bp
+from src.routes.payments import payments_bp
 import logging
 
 # Configure logging
@@ -45,9 +46,20 @@ app.config["PERSISTENT_STORAGE_PATH"] = Config.DATA_DIR
 app.config["USERS_DIR"] = Config.USERS_DIR
 
 # Database configuration - SQLite only
-app.config['SQLALCHEMY_DATABASE_URI'] = Config.DATABASE_URL
-logger.info(f"Using PostgreSQL database: {Config.DATABASE_URL}")
+app.config['SQLALCHEMY_DATABASE_URI'] = Config.LOCAL_DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Add connection timeout and pool settings for PostgreSQL
+if 'postgresql://' in Config.LOCAL_DATABASE_URL:
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_timeout': 10,
+        'pool_recycle': 300,
+        'connect_args': {
+            'connect_timeout': 10
+        }
+    }
+
+logger.info(f"Using database: {Config.LOCAL_DATABASE_URL}")
 db.init_app(app)
 
 # Create tables
@@ -85,6 +97,7 @@ app.register_blueprint(providers_bp)
 app.register_blueprint(appointment_types_bp)
 app.register_blueprint(main_bp)
 app.register_blueprint(settings_bp)
+app.register_blueprint(payments_bp)
 
 # Security headers
 @app.before_request

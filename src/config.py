@@ -27,11 +27,25 @@ class Config:
     # Encryption
     ENCRYPTION_KEY = os.environ.get("FLASK_APP_ENCRYPTION_KEY")
     
+    # Stripe Configuration
+    STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
+    STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY") 
+    STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID")  # For subscription price
+    STRIPE_PAYMENT_LINK = os.environ.get("STRIPE_PAYMENT_LINK", "https://buy.stripe.com/6oU28qfPb06P5pygNsdby03")
+    STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")  # For webhook validation
+    
     # File Storage
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     # PostgreSQL Configuration
     DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+
+    # Fix for Supabase: Use connection pooling port and add timeout settings
+    if DATABASE_URL and "supabase.co:5432" in DATABASE_URL:
+        # Replace direct port 5432 with pooling port 6543
+        DATABASE_URL = DATABASE_URL.replace(":5432/", ":6543/")
+        print(f"Updated DATABASE_URL to use pooling port: {DATABASE_URL}")
+
     if not DATABASE_URL:
         # Fallback to individual components
         DB_HOST = os.environ.get("DB_HOST", "localhost")
@@ -40,6 +54,13 @@ class Config:
         DB_USER = os.environ.get("DB_USER", "postgres")
         DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
         DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+    # SQLite fallback for local development
+    USE_LOCAL_DB = os.environ.get("USE_LOCAL_DB", "false").lower() == "true"
+    if USE_LOCAL_DB:
+        LOCAL_DATABASE_URL = f"sqlite:///{os.path.join(PROJECT_ROOT, 'instance', 'waitlist.db')}"
+    else:
+        LOCAL_DATABASE_URL = DATABASE_URL
     
     # File Storage
     DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
@@ -50,8 +71,18 @@ class Config:
     @classmethod
     def validate_env_vars(cls):
         """Validate that required environment variables are set."""
-        # No Supabase validation needed - SQLite only
-        pass
+        required_vars = []
+        
+        # Check Stripe configuration
+        if not cls.STRIPE_SECRET_KEY:
+            required_vars.append("STRIPE_SECRET_KEY")
+        
+        if required_vars:
+            missing_vars = ", ".join(required_vars)
+            logging.warning(f"Missing environment variables: {missing_vars}")
+            logging.warning("Some Stripe features may not work properly.")
+        
+        logging.info("Environment validation completed.")
     
     @classmethod
     def setup_directories(cls):

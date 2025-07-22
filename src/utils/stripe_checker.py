@@ -1,32 +1,25 @@
-import stripe
-import os
-from dotenv import load_dotenv
+"""
+Stripe Subscription Checker - Updated to use PaymentService
+Maintains backward compatibility while using the new centralized payment service.
+"""
 
-# Load environment variables from .env file
-load_dotenv()
+import logging
+from src.services.payment_service import payment_service
 
-# Get Stripe API key from environment variable
-stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+logger = logging.getLogger(__name__)
 
 def has_active_subscription(customer_email):
-    # 1. Search for customer by email
-    customers = stripe.Customer.search(
-        query=f'email:"{customer_email}"'
-    )
-
-    if not customers.data:
-        return None  # No customer found
-
-    customer_id = customers.data[0].id
-
-    # 2. List subscriptions for this customer, check for active one (including free subscriptions)
-    subscriptions = stripe.Subscription.list(customer=customer_id, status="all")
-    for sub in subscriptions.auto_paging_iter():
-        # Check if subscription is active (including free subscriptions)
-        if sub.status == "active":
-            return True
-        # Also check for trialing subscriptions which are considered active
-        elif sub.status == "trialing":
-            return True
-
-    return False
+    """
+    Check if customer has an active Stripe subscription.
+    
+    Args:
+        customer_email: Customer's email address
+        
+    Returns:
+        bool: True if customer has active subscription, False otherwise
+    """
+    try:
+        return payment_service.has_active_subscription(customer_email)
+    except Exception as e:
+        logger.error(f"Error checking subscription for {customer_email}: {e}")
+        return False

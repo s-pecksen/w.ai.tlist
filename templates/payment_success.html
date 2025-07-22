@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Successful - Waitlyst{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-lg">
+                <div class="card-body text-center p-5">
+                    <!-- Success Icon -->
+                    <div class="mb-4">
+                        <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+                    </div>
+                    
+                    <!-- Success Message -->
+                    <h1 class="h2 mb-3 text-success">Payment Successful!</h1>
+                    <p class="lead mb-4">
+                        Thank you for subscribing to Waitlyst! Your subscription is now active.
+                    </p>
+                    
+                    <!-- Subscription Details -->
+                    <div class="alert alert-success mb-4">
+                        <h5 class="alert-heading">
+                            <i class="bi bi-shield-check me-2"></i>Subscription Active
+                        </h5>
+                        <p class="mb-0">
+                            You now have unlimited access to all Waitlyst features.
+                            {% if trial_status %}
+                                {% if trial_status.access_type == 'subscription' %}
+                                    Your trial period concerns are now behind you!
+                                {% endif %}
+                            {% endif %}
+                        </p>
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                        <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg me-md-2">
+                            <i class="bi bi-house-door-fill me-2"></i>Go to Dashboard
+                        </a>
+                        <a href="{{ url_for('payments.billing_portal') }}" class="btn btn-outline-secondary btn-lg">
+                            <i class="bi bi-credit-card-2-front me-2"></i>Manage Subscription
+                        </a>
+                    </div>
+                    
+                    <!-- Help Text -->
+                    <div class="mt-4 pt-4 border-top">
+                        <p class="text-muted small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            You can manage your subscription, update payment methods, or view invoices anytime 
+                            by clicking "Manage Subscription" above.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

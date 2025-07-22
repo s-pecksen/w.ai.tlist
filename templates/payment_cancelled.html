@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Cancelled - Waitlyst{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-lg">
+                <div class="card-body text-center p-5">
+                    <!-- Warning Icon -->
+                    <div class="mb-4">
+                        <i class="bi bi-x-circle-fill text-warning" style="font-size: 4rem;"></i>
+                    </div>
+                    
+                    <!-- Cancelled Message -->
+                    <h1 class="h2 mb-3 text-warning">Payment Cancelled</h1>
+                    <p class="lead mb-4">
+                        No worries! Your payment was cancelled and no charges were made.
+                    </p>
+                    
+                    <!-- Trial Status Info -->
+                    {% if trial_status %}
+                        <div class="alert {% if trial_status.has_access %}alert-info{% else %}alert-warning{% endif %} mb-4">
+                            <h5 class="alert-heading">
+                                <i class="bi bi-info-circle me-2"></i>Your Account Status
+                            </h5>
+                            {% if trial_status.has_access %}
+                                {% if trial_status.access_type == 'trial' %}
+                                    <p class="mb-0">
+                                        You still have <strong>{{ trial_status.days_remaining }} days</strong> 
+                                        remaining in your free trial. You can subscribe anytime before 
+                                        {{ trial_status.trial_expires_on.strftime('%B %d, %Y') }}.
+                                    </p>
+                                {% elif trial_status.access_type == 'subscription' %}
+                                    <p class="mb-0">
+                                        You already have an active subscription and full access to Waitlyst.
+                                    </p>
+                                {% endif %}
+                            {% else %}
+                                <p class="mb-0">
+                                    Your free trial has expired. To continue using Waitlyst, 
+                                    you'll need to subscribe.
+                                </p>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Action Buttons -->
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                        {% if trial_status and trial_status.has_access %}
+                            <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg me-md-2">
+                                <i class="bi bi-house-door-fill me-2"></i>Back to Dashboard
+                            </a>
+                            <a href="{{ url_for('payments.subscribe') }}" class="btn btn-outline-primary btn-lg">
+                                <i class="bi bi-credit-card me-2"></i>Try Again
+                            </a>
+                        {% else %}
+                            <a href="{{ url_for('payments.subscribe') }}" class="btn btn-primary btn-lg me-md-2">
+                                <i class="bi bi-credit-card me-2"></i>Subscribe Now
+                            </a>
+                            <a href="{{ url_for('auth.login') }}" class="btn btn-outline-secondary btn-lg">
+                                <i class="bi bi-arrow-left me-2"></i>Back to Login
+                            </a>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Help Text -->
+                    <div class="mt-4 pt-4 border-top">
+                        <p class="text-muted small">
+                            <i class="bi bi-question-circle me-1"></i>
+                            Having trouble with payment? Contact us at support@waitlyst.com and we'll help you out.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

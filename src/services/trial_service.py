@@ -146,9 +146,10 @@ class TrialService:
     def get_subscription_url(self) -> str:
         """
         Get the Stripe subscription URL.
-        This should be configurable via environment variables in production.
+        Uses configurable environment variable or fallback.
         """
-        return "https://buy.stripe.com/8x2dR8auRf1JaJSfJodby02"
+        from src.config import Config
+        return Config.STRIPE_PAYMENT_LINK
     
     def create_trial_user(self, email: str, username: str, **kwargs) -> User:
         """

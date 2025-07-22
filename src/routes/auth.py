@@ -10,6 +10,8 @@ import re
 import logging
 import uuid
 from datetime import datetime, timedelta
+from src.services.trial_service import trial_service
+from src.services.payment_service import payment_service
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +165,8 @@ def login():
         # Allow login if either condition is met
         if not within_30_days and not is_subscriber:
             logger.warning(f"Login denied for {email}: trial expired and no active subscription")
-            flash("You do not currently have an active subscription. Please subscribe to continue using the service. <a href='https://buy.stripe.com/8x2dR8auRf1JaJSfJodby02' target='_blank'>Subscribe here</a>", "error")
+            subscribe_url = url_for('payments.subscribe')
+            flash(f"Your free trial has expired. Please subscribe to continue using the service. <a href='{subscribe_url}'>Subscribe here</a>", "error")
             return render_template("login.html")
 
         # --- Proceed with login ---
@@ -172,7 +175,8 @@ def login():
         
         # Show warning if user has less than 3 days left in trial and is not a subscriber
         if within_30_days and days_left <= 3 and not is_subscriber:
-            flash(f"Only {days_left} days left in your trial - to keep access, sign up for a subscription here: <a href='https://buy.stripe.com/8x2dR8auRf1JaJSfJodby02' target='_blank'>Subscribe here</a>", "warning")
+            subscribe_url = url_for('payments.subscribe')
+            flash(f"Only {days_left} days left in your trial - to keep access, sign up for a subscription here: <a href='{subscribe_url}'>Subscribe here</a>", "warning")
         
         logger.info(f"User {email} logged in successfully")
         flash("Login successful!", "success")
