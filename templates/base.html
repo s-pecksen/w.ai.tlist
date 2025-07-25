@@ -44,14 +44,14 @@
                             <span class="navbar-text me-3">
                                 Welcome, {{ current_user.user_name_for_message or current_user.username }}!
                             </span>
-                            <!-- Subscribe button for testing -->
-                            <a href="{{ url_for('payments.subscribe') }}" class="btn btn-success btn-sm me-2">
-                                <i class="bi bi-credit-card me-1"></i>Subscribe
-                            </a>
-                            <!-- Trial Status link for debugging -->
-                            <a href="{{ url_for('payments.trial_status') }}" class="nav-link me-2" title="Trial Status">
-                                <i class="bi bi-info-circle"></i>
-                            </a>
+                            
+                            <!-- Conditional Subscribe/Trial Status button -->
+                            {% if current_user.is_authenticated %}
+                                <a href="{{ url_for('payments.trial_status') }}" class="btn btn-info btn-sm me-2">
+                                    <i class="bi bi-info-circle me-1"></i>Trial Status
+                                </a>
+                            {% endif %}
+                            
                             <a class="nav-link me-2" href="{{ url_for('settings.settings') }}" title="Settings">
                                 <i class="bi bi-gear-fill"></i>
                             </a>

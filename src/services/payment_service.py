@@ -16,8 +16,7 @@ class PaymentService:
     """
     
     def __init__(self):
-        """Initialize Stripe with API key."""
-        stripe.api_key = Config.STRIPE_SECRET_KEY
+        """Initialize payment service."""
         self.logger = logging.getLogger(__name__)
         
         if not Config.STRIPE_SECRET_KEY:

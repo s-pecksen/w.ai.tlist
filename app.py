@@ -14,6 +14,9 @@ from src.routes.main import main_bp
 from src.routes.settings import settings_bp
 from src.routes.payments import payments_bp
 import logging
+import stripe
+import json
+import os
 
 # Configure logging
 Config.setup_logging()
@@ -24,6 +27,18 @@ Config.validate_env_vars()
 
 # Setup directories
 Config.setup_directories()
+
+# Initialize Stripe with API key
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")  # should be sk_test_...
+if stripe.api_key:
+    if stripe.api_key.startswith("sk_test_"):
+        logger.info("Stripe TEST API key loaded successfully")
+    elif stripe.api_key.startswith("sk_live_"):
+        logger.info("Stripe LIVE API key loaded successfully")
+    else:
+        logger.warning("Unknown Stripe key format detected")
+else:
+    logger.warning("STRIPE_SECRET_KEY not found in environment variables")
 
 # Configure Flask app
 app = Flask(__name__)
@@ -66,12 +81,92 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
     logger.info("SQLite database tables created")
+
 # Initialize Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
 login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "error"
+
+# Stripe Webhook Route - Direct on main app for reliability
+@app.route("/webhook", methods=["POST"])
+def stripe_webhook():
+    """
+    Handle Stripe webhook events - Direct route for maximum reliability.
+    This is where Stripe notifies us about payment events automatically!
+    """
+    payload = request.get_data(as_text=True)
+    sig_header = request.headers.get('Stripe-Signature')
+    
+    try:
+        # Verify that this request actually came from Stripe (security!)
+        if Config.STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, Config.STRIPE_WEBHOOK_SECRET
+            )
+        else:
+            # For local testing without webhook secret
+            event = json.loads(payload)
+            logger.warning("Processing webhook without signature verification (local testing only)")
+        
+        logger.info(f"Stripe webhook received: {event['type']}")
+        
+        # Handle the specific events we care about
+        if event['type'] == 'checkout.session.completed':
+            session_obj = event['data']['object']
+            customer_email = session_obj.get('customer_email')
+            subscription_id = session_obj.get('subscription')
+            logger.info(f"Payment completed for {customer_email}, subscription: {subscription_id}")
+            
+        elif event['type'] == 'customer.subscription.created':
+            subscription = event['data']['object']
+            subscription_id = subscription.get('id')
+            status = subscription.get('status')
+            logger.info(f"New subscription created: {subscription_id} with status: {status}")
+            
+        elif event['type'] == 'customer.subscription.updated':
+            subscription = event['data']['object']
+            subscription_id = subscription.get('id')
+            status = subscription.get('status')
+            logger.info(f"Subscription updated: {subscription_id} status: {status}")
+            
+        elif event['type'] == 'customer.subscription.deleted':
+            subscription = event['data']['object']
+            subscription_id = subscription.get('id')
+            logger.warning(f"Subscription cancelled: {subscription_id}")
+            
+        elif event['type'] == 'invoice.payment_failed':
+            invoice = event['data']['object']
+            customer_id = invoice.get('customer')
+            subscription_id = invoice.get('subscription')
+            attempt_count = invoice.get('attempt_count', 0)
+            logger.warning(f"Payment failed for customer: {customer_id}, subscription: {subscription_id}, attempt: {attempt_count}")
+            
+        elif event['type'] == 'invoice.payment_succeeded':
+            invoice = event['data']['object']
+            customer_id = invoice.get('customer')
+            subscription_id = invoice.get('subscription')
+            logger.info(f"Payment succeeded for customer: {customer_id}, subscription: {subscription_id}")
+            
+        else:
+            logger.debug(f"Unhandled webhook type: {event['type']}")
+        
+        return 'success', 200
+        
+    except ValueError as e:
+        logger.error(f"Invalid webhook payload: {e}")
+        return 'Invalid payload', 400
+        
+    except stripe.error.SignatureVerificationError as e:
+        logger.error(f"Invalid webhook signature: {e}")
+        return 'Invalid signature', 400
+        
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return 'Webhook error', 500
+
+# Debug routes removed - no longer needed
 
 # Flask-Login user loader callback
 @login_manager.user_loader
