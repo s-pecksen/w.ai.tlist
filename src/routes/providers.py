@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
+from src.decorators.trial_required import trial_required
 from src.repositories.provider_repository import ProviderRepository
 import logging
 
@@ -8,8 +9,8 @@ logger = logging.getLogger(__name__)
 providers_bp = Blueprint('providers', __name__)
 provider_repo = ProviderRepository()
 
-@providers_bp.route("/providers", methods=["GET"])
-@login_required
+@providers_bp.route("/providers")
+@trial_required
 def list_providers():
     """Display providers management page."""
     providers = provider_repo.get_providers(current_user.id)

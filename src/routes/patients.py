@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
+from src.decorators.trial_required import trial_required
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.provider_repository import ProviderRepository
 from src.services.matching_service import MatchingService
@@ -16,7 +17,7 @@ provider_repo = ProviderRepository()
 matching_service = MatchingService()
 
 @patients_bp.route("/add_patient", methods=["POST"])
-@login_required
+@trial_required
 def add_patient():
     # --- Get Basic Info ---
     name = request.form.get("name")
@@ -91,7 +92,7 @@ def add_patient():
     return redirect(url_for("main.index") + "#add-patient-form")
 
 @patients_bp.route("/remove_patient/<patient_id>", methods=["POST"])
-@login_required
+@trial_required
 def remove_patient(patient_id):
     """Remove a patient from the patients list"""
     success = patient_repo.delete(patient_id, current_user.id)
@@ -102,7 +103,7 @@ def remove_patient(patient_id):
     return redirect(url_for("main.index") + "#waitlist-table")
 
 @patients_bp.route("/update_patient/<patient_id>", methods=["POST"])
-@login_required
+@trial_required
 def update_patient(patient_id):
     """Update a patient's information"""
     patient = patient_repo.get_by_id(patient_id, current_user.id)
@@ -158,7 +159,7 @@ def update_patient(patient_id):
     return redirect(url_for("main.index"))
 
 @patients_bp.route("/edit_patient/<patient_id>", methods=["GET"])
-@login_required
+@trial_required
 def edit_patient(patient_id):
     """Show edit patient form"""
     patient = patient_repo.get_by_id(patient_id, current_user.id)
@@ -184,7 +185,7 @@ def edit_patient(patient_id):
                          appointment_types_data=appointment_types_data)
 
 @patients_bp.route("/upload_csv", methods=["GET", "POST"])
-@login_required
+@trial_required
 def upload_csv():
     if request.method == "POST":
         if "patient_csv" not in request.files:
@@ -263,7 +264,7 @@ def upload_csv():
     return redirect(url_for("main.index") + "#csv-upload-section")
 
 @patients_bp.route("/api/find_matches_for_patient/<patient_id>")
-@login_required
+@trial_required
 def api_find_matches_for_patient(patient_id):
     try:
         # Get matching slots for the patient

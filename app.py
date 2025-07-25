@@ -17,6 +17,7 @@ import logging
 import stripe
 import json
 import os
+from src.decorators.trial_required import trial_required
 
 # Configure logging
 Config.setup_logging()

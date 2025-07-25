@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Payment Successful - Waitlyst{% endblock %}
+{% block title %}Welcome to Waitlyst!{% endblock %}
 
 {% block content %}
 <div class="container mt-5">
@@ -14,42 +14,33 @@
                     </div>
                     
                     <!-- Success Message -->
-                    <h1 class="h2 mb-3 text-success">Payment Successful!</h1>
+                    <h1 class="h2 mb-3 text-success">Welcome to Waitlyst!</h1>
                     <p class="lead mb-4">
-                        Thank you for subscribing to Waitlyst! Your subscription is now active.
+                        Your 30-day free trial has started. Enjoy full access to all features!
                     </p>
                     
-                    <!-- Subscription Details -->
-                    <div class="alert alert-success mb-4">
+                    <!-- Simple Info -->
+                    <div class="alert alert-info mb-4">
                         <h5 class="alert-heading">
-                            <i class="bi bi-shield-check me-2"></i>Subscription Active
+                            <i class="bi bi-clock me-2"></i>Free Trial Active
                         </h5>
                         <p class="mb-0">
-                            You now have unlimited access to all Waitlyst features.
-                            {% if trial_status %}
-                                {% if trial_status.access_type == 'subscription' %}
-                                    Your trial period concerns are now behind you!
-                                {% endif %}
-                            {% endif %}
+                            You have full access to Waitlyst for 30 days. No charges until your trial ends.
                         </p>
                     </div>
                     
-                    <!-- Action Buttons -->
-                    <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                    <!-- Single Action Button -->
+                    <div class="d-grid">
                         <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg">
-                            <i class="bi bi-house-door-fill me-2"></i>Go to Dashboard
-                        </a>
-                        <a href="{{ url_for('payments.trial_status') }}" class="btn btn-outline-info btn-lg">
-                            <i class="bi bi-info-circle me-2"></i>View Account Status
+                            <i class="bi bi-arrow-right me-2"></i>Start Using Waitlyst
                         </a>
                     </div>
                     
-                    <!-- Help Text -->
+                    <!-- Simple Help Text -->
                     <div class="mt-4 pt-4 border-top">
                         <p class="text-muted small">
                             <i class="bi bi-info-circle me-1"></i>
-                            Your subscription is now active! You can view your account details and trial status 
-                            by clicking "View Account Status" above.
+                            Check your trial status anytime from the navigation bar.
                         </p>
                     </div>
                 </div>

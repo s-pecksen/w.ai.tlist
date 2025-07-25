@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, flash, redirect, url_for
 from flask_login import login_required, current_user
+from src.decorators.trial_required import trial_required
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.provider_repository import ProviderRepository
 from src.repositories.slot_repository import SlotRepository
@@ -15,7 +16,7 @@ provider_repo = ProviderRepository()
 slot_repo = SlotRepository()
 
 @main_bp.route("/", methods=["GET"])
-@login_required
+@trial_required
 def index():
     """Main dashboard page."""
     try:

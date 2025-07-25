@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Subscription Required - Waitlyst{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-lg">
+                <div class="card-body text-center p-5">
+                    <!-- Warning Icon -->
+                    <div class="mb-4">
+                        <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 4rem;"></i>
+                    </div>
+                    
+                    <!-- Message -->
+                    <h1 class="h2 mb-3 text-warning">Subscription Required</h1>
+                    <p class="lead mb-4">
+                        Your free trial has expired. Please subscribe to continue using Waitlyst.
+                    </p>
+                    
+                    <!-- Info -->
+                    <div class="alert alert-info mb-4">
+                        <h5 class="alert-heading">
+                            <i class="bi bi-info-circle me-2"></i>Continue Your Journey
+                        </h5>
+                        <p class="mb-0">
+                            Subscribe now to maintain access to all your data and continue managing your patient waitlist efficiently.
+                        </p>
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                        <a href="{{ url_for('payments.subscribe') }}" class="btn btn-success btn-lg me-md-2">
+                            <i class="bi bi-credit-card me-2"></i>Subscribe Now
+                        </a>
+                        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-secondary btn-lg">
+                            <i class="bi bi-box-arrow-right me-2"></i>Logout
+                        </a>
+                    </div>
+                    
+                    <!-- Help Text -->
+                    <div class="mt-4 pt-4 border-top">
+                        <p class="text-muted small">
+                            <i class="bi bi-question-circle me-1"></i>
+                            Questions about pricing or need help? Contact us at support@waitlyst.com
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

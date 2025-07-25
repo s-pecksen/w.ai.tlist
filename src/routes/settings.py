@@ -1,13 +1,33 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file
+from flask_login import login_required, current_user
+from src.decorators.trial_required import trial_required
 from src.utils.data_manager import DataManager
+from src.repositories.user_repository import UserRepository
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import tempfile
+import logging
+
+logger = logging.getLogger(__name__)
 
 settings_bp = Blueprint('settings', __name__)
 data_manager = DataManager()
+user_repo = UserRepository()
 
-@settings_bp.route('/settings', methods=['GET'])
+@settings_bp.route("/settings", methods=["GET", "POST"])
+@trial_required
 def settings():
+    if request.method == 'POST':
+        current_user.username = request.form.get('username')
+        current_user.email = request.form.get('email')
+        if request.form.get('password'):
+            current_user.password = generate_password_hash(request.form.get('password'))
+        try:
+            user_repo.update_user(current_user)
+            flash('Your settings have been updated!', 'success')
+        except Exception as e:
+            flash(f'Failed to update settings: {e}', 'error')
+        return redirect(url_for('settings.settings'))
     return render_template('settings.html')
 
 @settings_bp.route('/settings/download', methods=['POST'])

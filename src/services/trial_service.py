@@ -54,18 +54,21 @@ class TrialService:
             # Check Stripe subscription status
             is_subscriber = self._check_stripe_subscription(user.email)
             
-            # Determine access type and permissions
-            if is_subscriber:
-                access_type = 'subscription'
-                has_access = True
-                requires_payment = False
-                warning_message = None
-            elif days_remaining > 0:
+            # Determine access type and permissions - prioritize trial period over subscription status
+            if days_remaining > 0:
+                # User is still in free trial period (even if they have a Stripe subscription set up)
                 access_type = 'trial'
                 has_access = True
                 requires_payment = days_remaining <= self.WARNING_DAYS
                 warning_message = self._get_trial_warning_message(days_remaining)
+            elif is_subscriber:
+                # Trial expired but has active paid subscription
+                access_type = 'subscription'
+                has_access = True
+                requires_payment = False
+                warning_message = None
             else:
+                # Trial expired and no subscription
                 access_type = 'expired'
                 has_access = False
                 requires_payment = True

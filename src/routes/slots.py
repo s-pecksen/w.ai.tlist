@@ -1,5 +1,6 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import login_required, current_user
+from src.decorators.trial_required import trial_required
 from src.repositories.slot_repository import SlotRepository
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.provider_repository import ProviderRepository
@@ -16,7 +17,7 @@ provider_repo = ProviderRepository()
 matching_service = MatchingService()
 
 @slots_bp.route("/slots", methods=["GET"])
-@login_required
+@trial_required
 def slots():
     logger.info(f"\n\n\nSLOTS REQUEST SENT!\n\n\n")
     """Display slots page with available slots and matching functionality."""
@@ -81,7 +82,7 @@ def slots():
         return redirect(url_for('main.index'))
 
 @slots_bp.route("/add_cancelled_appointment", methods=["POST"])
-@login_required
+@trial_required
 def add_cancelled_appointment():
     """Add a new cancelled appointment (open slot)"""
     provider_id = request.form.get("provider")
@@ -132,7 +133,7 @@ def add_cancelled_appointment():
     return redirect(url_for("slots.slots"))
 
 @slots_bp.route("/remove_cancelled_slot/<appointment_id>", methods=["POST"])
-@login_required
+@trial_required
 def remove_cancelled_slot(appointment_id):
     """Remove a cancelled appointment (open slot)"""
     try:
@@ -147,7 +148,7 @@ def remove_cancelled_slot(appointment_id):
     return redirect(url_for("slots.slots"))
 
 @slots_bp.route("/update_cancelled_slot/<appointment_id>", methods=["POST"])
-@login_required
+@trial_required
 def update_cancelled_slot(appointment_id):
     """Update a cancelled appointment (open slot)"""
     provider_id = request.form.get("provider")
@@ -207,14 +208,14 @@ def update_cancelled_slot(appointment_id):
     return redirect(url_for("slots.slots"))
 
 @slots_bp.route("/find_matches_for_appointment/<appointment_id>", methods=["POST"])
-@login_required
+@trial_required
 def find_matches_for_appointment(appointment_id):
     """Find matching patients for a cancelled appointment"""
     session["current_appointment_id"] = appointment_id
     return redirect(url_for("slots.slots") + "#eligible-patients-section")
 
 @slots_bp.route("/propose_slot/<slot_id>/<patient_id>", methods=["POST"])
-@login_required
+@trial_required
 def propose_slot(slot_id, patient_id):
     """Marks a slot and patient as pending confirmation."""
     try:
@@ -247,7 +248,7 @@ def propose_slot(slot_id, patient_id):
     return redirect(request.referrer or url_for('main.index'))
 
 @slots_bp.route("/confirm_booking/<slot_id>/<patient_id>", methods=["POST"])
-@login_required
+@trial_required
 def confirm_booking(slot_id, patient_id):
     """Confirms the booking, removing the patient and the slot."""
     try:
@@ -273,7 +274,7 @@ def confirm_booking(slot_id, patient_id):
     return redirect(url_for("main.index"))
 
 @slots_bp.route("/cancel_proposal/<slot_id>/<patient_id>", methods=["POST"])
-@login_required
+@trial_required
 def cancel_proposal(slot_id, patient_id):
     """Cancels a pending proposal, making the slot and patient available again."""
     try:

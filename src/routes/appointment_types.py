@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from src.repositories.user_repository import UserRepository
 import json
 import logging
+from src.decorators.trial_required import trial_required
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +11,7 @@ appointment_types_bp = Blueprint('appointment_types', __name__)
 user_repo = UserRepository()
 
 @appointment_types_bp.route("/appointment_types", methods=["GET"])
-@login_required
+@trial_required
 def list_appointment_types():
     """Display appointment types management page."""
     # Get current appointment types from user
@@ -25,7 +26,7 @@ def list_appointment_types():
     return render_template("appointment_types.html", appointment_types=appointment_types_data)
 
 @appointment_types_bp.route("/add_appointment_type", methods=["POST"])
-@login_required
+@trial_required
 def add_appointment_type():
     """Add a new appointment type."""
     appointment_type = request.form.get("appointment_type", "").strip()
@@ -91,7 +92,7 @@ def add_appointment_type():
     return redirect(url_for("appointment_types.list_appointment_types"))
 
 @appointment_types_bp.route("/remove_appointment_type", methods=["POST"])
-@login_required
+@trial_required
 def remove_appointment_type():
     """Remove an appointment type."""
     appointment_type = request.form.get("appointment_type", "").strip()
@@ -137,7 +138,7 @@ def remove_appointment_type():
     return redirect(url_for("appointment_types.list_appointment_types"))
 
 @appointment_types_bp.route("/edit_appointment_type", methods=["POST"])
-@login_required
+@trial_required
 def edit_appointment_type():
     """Edit an existing appointment type."""
     old_appointment_type = request.form.get("old_appointment_type", "").strip()

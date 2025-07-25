@@ -115,15 +115,51 @@ def register():
             flash("Error creating user. Please try again.", "error")
             return render_template("register.html")
 
-        # --- Login User and Redirect ---
-        logger.debug("Logging in new user")
-        login_user(user)
-        logger.info(f"User {email} registered and logged in successfully")
-        flash("Registration successful!", "success")
-        return redirect(url_for("main.index"))
+        # --- Redirect to Stripe Checkout for Free Trial ---
+        logger.info(f"User {email} registered successfully, redirecting to Stripe checkout")
+        
+        # Store user email in session for after Stripe checkout
+        session['pending_user_email'] = email
+        session['just_registered'] = True
+        
+        # Build success and cancel URLs
+        success_url = request.url_root.rstrip('/') + url_for('payments.payment_success')
+        cancel_url = request.url_root.rstrip('/') + url_for('auth.registration_cancelled')
+        
+        # Try to create a checkout session for the free trial
+        checkout_session = payment_service.create_checkout_session(
+            customer_email=email,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+        
+        if checkout_session:
+            logger.info(f"Redirecting {email} to Stripe Checkout for free trial: {checkout_session['session_id']}")
+            return redirect(checkout_session['url'])
+        else:
+            # Fallback to payment link if checkout session creation fails
+            payment_link = payment_service.get_payment_link_url()
+            logger.info(f"Redirecting {email} to payment link for free trial: {payment_link}")
+            return redirect(payment_link)
 
     logger.debug("GET request to /register, rendering form")
     return render_template("register.html")
+
+@auth_bp.route("/registration-cancelled")
+def registration_cancelled():
+    """
+    Handle case where user cancels Stripe checkout after registration.
+    They have an account but haven't completed the required Stripe verification.
+    """
+    # Clear session data
+    if 'pending_user_email' in session:
+        email = session.pop('pending_user_email')
+        logger.info(f"User {email} cancelled Stripe checkout after registration")
+    
+    session.pop('just_registered', None)
+    
+    flash("Registration requires completing the free trial setup. Please try again.", "warning")
+    return redirect(url_for('auth.register'))
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
@@ -151,20 +187,46 @@ def login():
             flash("Invalid email or password", "error")
             return render_template("login.html")
 
-        # --- Check subscription/30-day requirement ---
-        # Check if user is within 30 days of account creation
-        days_since_creation = (datetime.utcnow() - user.created_at).days
-        within_30_days = days_since_creation < 30
-        days_left = 30 - days_since_creation
+        # --- Strict Stripe Verification Required ---
+        # Every user must have completed Stripe checkout (even for free trial)
         
-        # Check if user is a paying subscriber
-        is_subscriber = has_active_subscription(email)
+        # Check if user has a Stripe customer record (indicates they've been through checkout)
+        stripe_customer = payment_service.get_customer_by_email(email)
         
-        logger.info(f"Login check for {email}: {days_since_creation} days since creation, within_30_days={within_30_days}, is_subscriber={is_subscriber}")
+        if not stripe_customer:
+            # User has never completed Stripe checkout - redirect them to do so
+            logger.warning(f"Login denied for {email}: no Stripe customer record found")
+            
+            # Store user email for after checkout
+            session['pending_user_email'] = email
+            session['login_after_checkout'] = True
+            
+            # Build checkout URLs
+            success_url = request.url_root.rstrip('/') + url_for('payments.payment_success')
+            cancel_url = request.url_root.rstrip('/') + url_for('auth.login')
+            
+            # Try to create checkout session
+            checkout_session = payment_service.create_checkout_session(
+                customer_email=email,
+                success_url=success_url,
+                cancel_url=cancel_url
+            )
+            
+            if checkout_session:
+                flash("Please complete the free trial setup to access your account.", "info")
+                return redirect(checkout_session['url'])
+            else:
+                # Fallback to payment link
+                payment_link = payment_service.get_payment_link_url()
+                flash("Please complete the free trial setup to access your account.", "info")
+                return redirect(payment_link)
         
-        # Allow login if either condition is met
-        if not within_30_days and not is_subscriber:
-            logger.warning(f"Login denied for {email}: trial expired and no active subscription")
+        # User has Stripe customer record - now check their subscription status
+        trial_status = trial_service.get_trial_status(user)
+        
+        if not trial_status['has_access']:
+            # Trial expired and no active subscription
+            logger.warning(f"Login denied for {email}: {trial_status['access_type']} - no access")
             subscribe_url = url_for('payments.subscribe')
             flash(f"Your free trial has expired. Please subscribe to continue using the service. <a href='{subscribe_url}'>Subscribe here</a>", "error")
             return render_template("login.html")
@@ -173,12 +235,12 @@ def login():
         login_user(user, remember=remember)
         session.permanent = remember
         
-        # Show warning if user has less than 3 days left in trial and is not a subscriber
-        if within_30_days and days_left <= 3 and not is_subscriber:
+        # Show warning if trial is ending soon and no subscription
+        if trial_status['requires_payment'] and not trial_status['is_subscriber']:
             subscribe_url = url_for('payments.subscribe')
-            flash(f"Only {days_left} days left in your trial - to keep access, sign up for a subscription here: <a href='{subscribe_url}'>Subscribe here</a>", "warning")
+            flash(f"{trial_status['warning_message']} <a href='{subscribe_url}'>Subscribe here</a>", "warning")
         
-        logger.info(f"User {email} logged in successfully")
+        logger.info(f"User {email} logged in successfully - access_type: {trial_status['access_type']}")
         flash("Login successful!", "success")
         return redirect(url_for("main.index"))
 
