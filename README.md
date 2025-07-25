@@ -33,7 +33,7 @@ Designed specifically for dental office front desk staff and practice managers w
 
 - **Frontend**: Flask with Jinja2 templating
 - **Backend**: Python with Flask
-- **Database**: SQLite
+- **Database**: PostgreSQL (Supabase)
 - **Session Management**: Flask-Session with filesystem storage
 - **Authentication**: Flask-Login
 - **ORM**: SQLAlchemy
@@ -41,7 +41,7 @@ Designed specifically for dental office front desk staff and practice managers w
 ## Features
 
 - User authentication and session management
-- SQLite database integration
+- PostgreSQL database integration (Supabase)
 - Secure encrypted sessions
 - SQLAlchemy ORM integration
 
@@ -51,11 +51,11 @@ This application requires the following environment variables:
 
 - `FLASK_APP_ENCRYPTION_KEY`: Encryption key for Flask application data
 - `FLASK_SESSION_SECRET_KEY`: Secret key for Flask session management
-- `LOCAL_DATABASE_URL`: SQLite database URL (optional, defaults to local instance)
+- `DATABASE_URL`: PostgreSQL database URL (required for Supabase connection)
 
 ### Database Setup
 
-This application uses SQLite as the backend database. The app uses SQLAlchemy ORM for database operations and handles:
+This application uses PostgreSQL (Supabase) as the backend database. The app uses SQLAlchemy ORM for database operations and handles:
 
 - User data storage and retrieval
 - Session persistence

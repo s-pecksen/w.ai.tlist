@@ -61,27 +61,26 @@ app.config["SESSION_USE_SIGNER"] = Config.SESSION_USE_SIGNER
 app.config["PERSISTENT_STORAGE_PATH"] = Config.DATA_DIR
 app.config["USERS_DIR"] = Config.USERS_DIR
 
-# Database configuration - SQLite only
-app.config['SQLALCHEMY_DATABASE_URI'] = Config.LOCAL_DATABASE_URL
+# Database configuration - PostgreSQL only
+app.config['SQLALCHEMY_DATABASE_URI'] = Config.DATABASE_URL_FINAL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Add connection timeout and pool settings for PostgreSQL
-if 'postgresql://' in Config.LOCAL_DATABASE_URL:
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_timeout': 10,
-        'pool_recycle': 300,
-        'connect_args': {
-            'connect_timeout': 10
-        }
+# PostgreSQL connection settings
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_timeout': 10,
+    'pool_recycle': 300,
+    'connect_args': {
+        'connect_timeout': 10
     }
+}
 
-logger.info(f"Using database: {Config.LOCAL_DATABASE_URL}")
+logger.info(f"Using database: {Config.DATABASE_URL_FINAL}")
 db.init_app(app)
 
 # Create tables
 with app.app_context():
     db.create_all()
-    logger.info("SQLite database tables created")
+    logger.info("PostgreSQL database tables created")
 
 # Initialize Flask-Login
 login_manager = LoginManager()
@@ -172,7 +171,7 @@ def stripe_webhook():
 # Flask-Login user loader callback
 @login_manager.user_loader
 def load_user(user_id):
-    """Load user by ID from SQLite database."""
+    """Load user by ID from PostgreSQL database."""
     try:
         user = db.session.get(User, user_id)
         if user:

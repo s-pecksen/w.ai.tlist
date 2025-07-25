@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class PatientRepository:
-    """Repository for patient-related database operations with SQLite."""
+    """Repository for patient-related database operations with PostgreSQL."""
     
     def get_waitlist(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all patients in the waitlist for a user."""

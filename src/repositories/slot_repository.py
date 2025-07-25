@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SlotRepository:
-    """Repository for slot-related database operations with SQLite."""
+    """Repository for slot-related database operations with PostgreSQL."""
     
     def get_available_slots(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all available slots for a user."""
@@ -70,7 +70,7 @@ class SlotRepository:
             if slot:
                 for key, value in data.items():
                     if hasattr(slot, key):
-                        # Handle date conversion for SQLite
+                        # Handle date conversion for PostgreSQL
                         if key == 'date' and isinstance(value, str):
                             from datetime import datetime
                             value = datetime.strptime(value, '%Y-%m-%d').date()

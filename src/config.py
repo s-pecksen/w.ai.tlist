@@ -55,12 +55,8 @@ class Config:
         DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
         DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-    # SQLite fallback for local development
-    USE_LOCAL_DB = os.environ.get("USE_LOCAL_DB", "false").lower() == "true"
-    if USE_LOCAL_DB:
-        LOCAL_DATABASE_URL = f"sqlite:///{os.path.join(PROJECT_ROOT, 'instance', 'waitlist.db')}"
-    else:
-        LOCAL_DATABASE_URL = DATABASE_URL
+    # Database URL (PostgreSQL only)
+    DATABASE_URL_FINAL = DATABASE_URL
     
     # File Storage
     DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
@@ -87,9 +83,8 @@ class Config:
     @classmethod
     def setup_directories(cls):
         """Create necessary directories if they don't exist."""
-        # Add instance directory for SQLite database
-        instance_dir = os.path.join(cls.PROJECT_ROOT, 'instance')
-        directories = [cls.DATA_DIR, cls.USERS_DIR, cls.SESSIONS_DIR, cls.DIFF_STORE_DIR, instance_dir]
+        # Create necessary directories
+        directories = [cls.DATA_DIR, cls.USERS_DIR, cls.SESSIONS_DIR, cls.DIFF_STORE_DIR]
         for directory in directories:
             os.makedirs(directory, exist_ok=True)
         
@@ -100,7 +95,6 @@ class Config:
         os.remove(test_file)
         
         logging.info(f"Session directory verified at: {cls.SESSIONS_DIR}")
-        logging.info(f"Instance directory created at: {instance_dir}")
     
     @classmethod
     def get_cipher_suite(cls):

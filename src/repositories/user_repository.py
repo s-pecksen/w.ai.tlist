@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class UserRepository:
-    """Repository for user operations with SQLite database."""
+    """Repository for user operations with PostgreSQL database."""
     
     def get_by_id(self, user_id):
         """Get user by ID."""

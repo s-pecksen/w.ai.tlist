@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ProviderRepository:
-    """Repository for provider-related database operations with SQLite."""
+    """Repository for provider-related database operations with PostgreSQL."""
     
     def get_providers(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all providers for a user."""
