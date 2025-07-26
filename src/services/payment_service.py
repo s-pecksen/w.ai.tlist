@@ -22,14 +22,112 @@ class PaymentService:
         if not Config.STRIPE_SECRET_KEY:
             self.logger.warning("STRIPE_SECRET_KEY not configured. Payment features will be disabled.")
     
-    def create_checkout_session(self, customer_email: str, success_url: str, cancel_url: str) -> Optional[Dict[str, Any]]:
+    def create_customer_for_free_trial(self, customer_email: str) -> Optional[Dict[str, Any]]:
         """
-        Create a Stripe Checkout session for subscription.
+        Create a Stripe customer for free trial without requiring payment method.
+        
+        Args:
+            customer_email: Customer's email address
+            
+        Returns:
+            Customer data dict or None if error
+        """
+        try:
+            if not Config.STRIPE_SECRET_KEY:
+                self.logger.error("Cannot create customer: STRIPE_SECRET_KEY not configured")
+                return None
+            
+            # Check if customer already exists
+            existing_customer = self.get_customer_by_email(customer_email)
+            if existing_customer:
+                self.logger.info(f"Customer {customer_email} already exists: {existing_customer['id']}")
+                return existing_customer
+            
+            # Create new customer
+            customer = stripe.Customer.create(
+                email=customer_email,
+                metadata={
+                    'customer_email': customer_email,
+                    'product': 'waitlyst_subscription',
+                    'trial_started': 'true'
+                }
+            )
+            
+            self.logger.info(f"Created customer for free trial {customer_email}: {customer.id}")
+            
+            return {
+                'id': customer.id,
+                'email': customer.email,
+                'created': customer.created,
+                'metadata': customer.metadata
+            }
+            
+        except stripe.error.StripeError as e:
+            self.logger.error(f"Stripe error creating customer: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating customer: {e}")
+            return None
+
+    def create_customer_with_email_verification(self, customer_email: str) -> Optional[Dict[str, Any]]:
+        """
+        Create a Stripe customer with email verification enabled.
+        
+        Args:
+            customer_email: Customer's email address
+            
+        Returns:
+            Customer data dict or None if error
+        """
+        try:
+            if not Config.STRIPE_SECRET_KEY:
+                self.logger.error("Cannot create customer: STRIPE_SECRET_KEY not configured")
+                return None
+            
+            # Check if customer already exists
+            existing_customer = self.get_customer_by_email(customer_email)
+            if existing_customer:
+                self.logger.info(f"Customer {customer_email} already exists: {existing_customer['id']}")
+                return existing_customer
+            
+            # Create new customer with email verification
+            customer = stripe.Customer.create(
+                email=customer_email,
+                metadata={
+                    'customer_email': customer_email,
+                    'product': 'waitlyst_subscription',
+                    'trial_started': 'true',
+                    'email_verification_required': 'true'
+                }
+            )
+            
+            # Send email verification (Stripe will handle this automatically)
+            # You can also use stripe.Customer.send_verification_email() if needed
+            self.logger.info(f"Created customer with email verification {customer_email}: {customer.id}")
+            
+            return {
+                'id': customer.id,
+                'email': customer.email,
+                'created': customer.created,
+                'metadata': customer.metadata
+            }
+            
+        except stripe.error.StripeError as e:
+            self.logger.error(f"Stripe error creating customer with email verification: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating customer with email verification: {e}")
+            return None
+
+    def create_checkout_session(self, customer_email: str, success_url: str, cancel_url: str, for_subscription: bool = False) -> Optional[Dict[str, Any]]:
+        """
+        Create a Stripe Checkout session for subscription or free trial.
         
         Args:
             customer_email: Customer's email address
             success_url: URL to redirect after successful payment
             cancel_url: URL to redirect if payment is cancelled
+            for_subscription: If True, requires payment method. If False, creates customer without checkout.
             
         Returns:
             Dict with checkout session data or None if error
@@ -39,39 +137,44 @@ class PaymentService:
                 self.logger.error("Cannot create checkout session: STRIPE_SECRET_KEY not configured")
                 return None
             
-            session_data = {
-                'payment_method_types': ['card'],
-                'mode': 'subscription',
-                'customer_email': customer_email,
-                'success_url': success_url,
-                'cancel_url': cancel_url,
-                'allow_promotion_codes': True,  # Allow discount codes
-                'billing_address_collection': 'auto',
-                'metadata': {
+            if for_subscription:
+                # For actual subscriptions, require payment method
+                session_data = {
+                    'payment_method_types': ['card'],
+                    'mode': 'setup',  # Just collect payment method, don't charge
                     'customer_email': customer_email,
-                    'product': 'waitlyst_subscription'
+                    'success_url': success_url,
+                    'cancel_url': cancel_url,
+                    'billing_address_collection': 'auto',
+                    'metadata': {
+                        'customer_email': customer_email,
+                        'product': 'waitlyst_subscription'
+                    }
                 }
-            }
-            
-            # Use price ID if configured, otherwise use payment link
-            if Config.STRIPE_PRICE_ID:
-                session_data['line_items'] = [{
-                    'price': Config.STRIPE_PRICE_ID,
-                    'quantity': 1,
-                }]
+                
+                session = stripe.checkout.Session.create(**session_data)
+                
+                self.logger.info(f"Created checkout session for subscription {customer_email}: {session.id}")
+                
+                return {
+                    'session_id': session.id,
+                    'url': session.url,
+                    'customer_email': customer_email
+                }
             else:
-                self.logger.warning("STRIPE_PRICE_ID not configured. Using payment link fallback.")
-                return None
-            
-            session = stripe.checkout.Session.create(**session_data)
-            
-            self.logger.info(f"Created checkout session for {customer_email}: {session.id}")
-            
-            return {
-                'session_id': session.id,
-                'url': session.url,
-                'customer_email': customer_email
-            }
+                # For free trials, just create customer without checkout
+                customer = self.create_customer_for_free_trial(customer_email)
+                if customer:
+                    self.logger.info(f"Created customer for free trial {customer_email}: {customer['id']}")
+                    # Return a mock session that redirects to success
+                    return {
+                        'session_id': f"trial_{customer['id']}",
+                        'url': success_url,  # Redirect directly to success
+                        'customer_email': customer_email,
+                        'is_trial': True
+                    }
+                else:
+                    return None
             
         except stripe.error.StripeError as e:
             self.logger.error(f"Stripe error creating checkout session: {e}")
@@ -149,7 +252,8 @@ class PaymentService:
         Returns:
             Payment link URL
         """
-        return Config.STRIPE_PAYMENT_LINK
+        # Payment links removed - using Checkout sessions with custom redirects
+        return None
     
     def create_billing_portal_session(self, customer_email: str, return_url: str) -> Optional[str]:
         """

@@ -21,6 +21,16 @@
     .badge.urgency-low { background-color: #0dcaf0; color: black; }
     .slot-pending { background-color: #fff3cd; border-left: 5px solid #ffc107; } /* Yellowish highlight for pending slots */
     .patient-pending { font-style: italic; color: #6c757d; } /* Style for pending patients in waitlist (apply in index.html too) */
+    
+    /* Reduce spacing between Appointment Details and Action columns */
+    .table th:last-child,
+    .table td:last-child {
+        padding-left: 0.5rem;
+    }
+    .table th:nth-last-child(2),
+    .table td:nth-last-child(2) {
+        padding-right: 0.5rem;
+    }
 </style>
 {% endblock %}
 
@@ -105,74 +115,92 @@
                 <div class="card-header">
                     <h5 class="mb-0">Current Open Slots</h5>
                 </div>
-                 <div class="list-group list-group-flush" style="max-height: 400px; overflow-y: auto;"> {# Added scroll for long lists #}
+                <div class="list-group list-group-flush">
                     {% if slots %}
                         {% for appointment in slots %}
                             {# Add slot-pending class if status is pending #}
-                            <div class="list-group-item {% if appointment.status == 'pending' %}slot-pending{% endif %}" id="slot-{{ appointment.id }}">
-                                <div class="d-flex justify-content-between align-items-start">
-                                    <div>
-                                        <strong>{{ appointment.provider | default('Unknown Provider') }}</strong><br>
-                                        <div class="slot-details">
-                                            {% if appointment.date %}
-                                                {{ appointment.date }}
-                                            {% endif %}
-                                            {% if appointment.start_time %} at {{ appointment.start_time }}
-                                            {% endif %}
-                                            <br> Duration: {{ appointment.duration }} minutes
-                                            {% if appointment.notes %} <br>Notes: {{ appointment.notes }} {% endif %}
-                                            {# Display Pending Status #}
+                            <div class="list-group-item {% if appointment.status == 'pending' %}slot-pending{% endif %} border-bottom" id="slot-{{ appointment.id }}">
+                                <div class="row align-items-center">
+                                    <div class="col-md-7">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <strong class="me-3">
+                                                {% if appointment.date %}
+                                                    <span class="date-with-weekday" data-date="{{ appointment.date }}">
+                                                        {{ appointment.date }}
+                                                    </span>
+                                                    {% if appointment.start_time %} at {{ appointment.start_time }}{% endif %}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </strong>
                                             {% if appointment.status == 'pending' %}
-                                                <br><span class="badge bg-warning text-dark">Pending Confirmation: {{ appointment.proposed_patient_name | default('N/A') }}</span>
-                                            {% elif appointment.status == 'filled' %} {# Optional: If you keep filled slots #}
-                                                 <br><span class="badge bg-secondary">Filled</span>
+                                                <span class="badge bg-warning text-dark">Pending: {{ appointment.proposed_patient_name | default('N/A') }}</span>
+                                            {% elif appointment.status == 'filled' %}
+                                                <span class="badge bg-secondary">Filled</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="text-muted">
+                                            <div class="mb-1">
+                                                <small>{{ appointment.provider | default('Unknown Provider') }}</small>
+                                            </div>
+                                            <div class="mb-1">
+                                                <small><strong>Duration:</strong> {{ appointment.duration }} minutes</small>
+                                            </div>
+                                            {% if appointment.notes %}
+                                                <div>
+                                                    <small><strong>Notes:</strong> {{ appointment.notes }}</small>
+                                                </div>
                                             {% endif %}
                                         </div>
                                     </div>
-                                    <div class="text-end action-buttons">
-                                        {% if appointment.status == 'pending' and appointment.proposed_patient_id %}
-                                            {# Pending State Actions #}
-                                            <div class="btn-group-vertical btn-group-sm" role="group" aria-label="Pending Actions">
-                                                <form action="{{ url_for('slots.confirm_booking', slot_id=appointment.id, patient_id=appointment.proposed_patient_id) }}" method="post" class="d-inline">
-                                                    <button type="submit" class="btn btn-success w-100" title="Confirm Booking">
-                                                        <i class="bi bi-check-circle"></i> Confirm
+                                    <div class="col-md-5">
+                                        <div class="text-end action-buttons">
+                                            {% if appointment.status == 'pending' and appointment.proposed_patient_id %}
+                                                {# Pending State Actions #}
+                                                <div class="btn-group-vertical btn-group-sm" role="group" aria-label="Pending Actions">
+                                                    <form action="{{ url_for('slots.confirm_booking', slot_id=appointment.id, patient_id=appointment.proposed_patient_id) }}" method="post" class="d-inline">
+                                                        <button type="submit" class="btn btn-success w-100" title="Confirm Booking">
+                                                            <i class="bi bi-check-circle"></i> Confirm
+                                                        </button>
+                                                    </form>
+                                                    <form action="{{ url_for('slots.cancel_proposal', slot_id=appointment.id, patient_id=appointment.proposed_patient_id) }}" method="post" class="d-inline">
+                                                        <button type="submit" class="btn btn-warning w-100" title="Cancel Proposal">
+                                                            <i class="bi bi-x-circle"></i> Cancel Prop.
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            {% elif appointment.status == 'available' or not appointment.status %} {# Available State Actions #}
+                                                <div class="d-flex flex-column gap-2">
+                                                    {# Find Matches Form #}
+                                                    <form action="{{ url_for('slots.find_matches_for_appointment', appointment_id=appointment.id) }}" method="post">
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary w-100 text-nowrap" title="Find Matches">
+                                                            <i class="bi bi-search"></i> Find Matches
+                                                        </button>
+                                                    </form>
+                                                    {# Edit Button - Triggers Edit Slot Modal #}
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary edit-slot-button w-100"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#editSlotModal"
+                                                            data-slot-id="{{ appointment.id }}"
+                                                            data-provider-name="{{ appointment.provider_name }}"
+                                                            data-duration="{{ appointment.duration }}"
+                                                            data-slot-date="{{ appointment.date }}"
+                                                            data-slot-time="{{ appointment.start_time }}"
+                                                            data-notes="{{ appointment.notes }}"
+                                                            title="Edit Slot">
+                                                         <i class="bi bi-pencil"></i> Edit
                                                     </button>
-                                                </form>
-                                                <form action="{{ url_for('slots.cancel_proposal', slot_id=appointment.id, patient_id=appointment.proposed_patient_id) }}" method="post" class="d-inline">
-                                                    <button type="submit" class="btn btn-warning w-100" title="Cancel Proposal">
-                                                        <i class="bi bi-x-circle"></i> Cancel Prop.
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        {% elif appointment.status == 'available' or not appointment.status %} {# Available State Actions #}
-                                            {# Find Matches Form #}
-                                            <form action="{{ url_for('slots.find_matches_for_appointment', appointment_id=appointment.id) }}" method="post">
-                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Find Matches">
-                                                    <i class="bi bi-search"></i> Find Matches
-                                                </button>
-                                            </form>
-                                            {# Edit Button - Triggers Edit Slot Modal #}
-                                            <button type="button" class="btn btn-sm btn-outline-secondary edit-slot-button"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#editSlotModal"
-                                                    data-slot-id="{{ appointment.id }}"
-                                                    data-provider-name="{{ appointment.provider_name }}"
-                                                    data-duration="{{ appointment.duration }}"
-                                                    data-slot-date="{{ appointment.date }}"
-                                                    data-slot-time="{{ appointment.start_time }}"
-                                                    data-notes="{{ appointment.notes }}"
-                                                    title="Edit Slot">
-                                                 <i class="bi bi-pencil"></i> Edit
-                                            </button>
-                                            {# Remove Form #}
-                                            <form action="{{ url_for('slots.remove_cancelled_slot', appointment_id=appointment.id) }}" method="post" onsubmit="return confirm('Remove this open slot?');">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Slot">
-                                                    <i class="bi bi-trash"></i> Remove
-                                                </button>
-                                            </form>
-                                         {% elif appointment.status == 'filled' %}
-                                             <span class="badge bg-secondary">Filled</span>
-                                        {% endif %}
+                                                    {# Remove Form #}
+                                                    <form action="{{ url_for('slots.remove_cancelled_slot', appointment_id=appointment.id) }}" method="post" onsubmit="return confirm('Remove this open slot?');">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger w-100" title="Remove Slot">
+                                                            <i class="bi bi-trash"></i> Remove
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            {% elif appointment.status == 'filled' %}
+                                                <span class="badge bg-secondary">Filled</span>
+                                            {% endif %}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -180,7 +208,7 @@
                     {% else %}
                         <div class="list-group-item text-center">No open slots available.</div>
                     {% endif %}
-                 </div> {# End scrollable list group #}
+                </div>
             </div>
         </div>
     </div>
@@ -202,6 +230,19 @@
               {% endif %}
             </p>
           </div>
+          
+          {# --- Proposal Message Display --- #}
+          {% if session.get('last_proposal_message') %}
+          <div class="card-body border-bottom">
+            <div class="alert alert-info mb-0">
+              <h6 class="alert-heading"><i class="bi bi-chat-dots me-2"></i>Generated Proposal Message</h6>
+              <p class="mb-2">{{ session.get('last_proposal_message') }}</p>
+              <button class="btn btn-sm btn-outline-primary" onclick="copyToClipboard('{{ session.get('last_proposal_message') | replace("'", "\\'") | replace('"', '\\"') | replace('\n', '\\n') }}')">
+                <i class="bi bi-clipboard me-1"></i>Copy Message
+              </button>
+            </div>
+          </div>
+          {% endif %}
           <div class="card-body p-0">
             {# Check if eligible_patients is defined and not empty #}
             {% if eligible_patients is defined and eligible_patients %}
@@ -281,29 +322,31 @@
                           {% endif %}
                         </div>
                       </td>
-                      <td> {# Action Buttons: Propose + Mark as Proposed #}
+                      <td class="text-end"> {# Action Buttons: Propose + Mark as Proposed #}
                         {% if patient.id and current_appointment.id and current_appointment.date and current_appointment.start_time %}
-                           {# Propose Slot Button (Opens Modal) #}
-                          <button type="button" class="btn btn-sm btn-info propose-slot-btn"
-                                  data-bs-toggle="modal" data-bs-target="#proposeSlotModal"
-                                  data-patient-id="{{ patient.id }}"
-                                  data-patient-name="{{ patient.name }}"
-                                  data-patient-first-name="{{ patient.name.split()[0] }}"
-                                  data-appointment-id="{{ current_appointment.id }}"
-                                  data-slot-weekday="{% if current_appointment.date %}{{ current_appointment.date }}{% else %}Unknown{% endif %}"
-                                  data-slot-date-str="{% if current_appointment.date %}{{ current_appointment.date }}{% else %}Unknown{% endif %}"
-                                  data-slot-time="{{ current_appointment.start_time }}"
-                                  data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}"
-                                  data-provider-name="{{ current_appointment.provider_name | default('the provider') }}"
-                                  data-patient-email="{{ patient.email or '' }}">
-                            <i class="bi bi-send"></i> Propose
-                          </button>
-                          {# Mark as Proposed Button (Submits Form) #}
-                           <form action="{{ url_for('slots.propose_slot', slot_id=current_appointment.id, patient_id=patient.id) }}" method="post" class="d-inline" onsubmit="return confirm('Mark this slot as proposed to {{ patient.name }}?');">
-                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Mark as Proposed">
-                                     <i class="bi bi-bookmark-check"></i> Mark Proposed
-                                </button>
-                            </form>
+                           <div class="d-flex flex-column gap-1">
+                              {# Propose Slot Button (Opens Modal) #}
+                              <button type="button" class="btn btn-sm btn-info propose-slot-btn"
+                                      data-bs-toggle="modal" data-bs-target="#proposeSlotModal"
+                                      data-patient-id="{{ patient.id }}"
+                                      data-patient-name="{{ patient.name }}"
+                                      data-patient-first-name="{{ patient.name.split()[0] }}"
+                                      data-appointment-id="{{ current_appointment.id }}"
+                                      data-slot-weekday="{% if current_appointment.date %}{{ current_appointment.date }}{% else %}Unknown{% endif %}"
+                                      data-slot-date-str="{% if current_appointment.date %}{{ current_appointment.date }}{% else %}Unknown{% endif %}"
+                                      data-slot-time="{{ current_appointment.start_time }}"
+                                      data-appointment-type="{{ format_appointment_type(patient)|replace(':', '')|trim }}"
+                                      data-provider-name="{{ current_appointment.provider_name | default('the provider') }}"
+                                      data-patient-email="{{ patient.email or '' }}">
+                                <i class="bi bi-send"></i> Propose
+                              </button>
+                              {# Mark as Proposed Button (Submits Form) #}
+                               <form action="{{ url_for('slots.propose_slot', slot_id=current_appointment.id, patient_id=patient.id) }}" method="post" class="d-inline" onsubmit="return confirm('Mark this slot as proposed to {{ patient.name }}?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Mark as Proposed">
+                                         <i class="bi bi-bookmark-check"></i> Mark Proposed
+                                    </button>
+                                </form>
+                           </div>
                         {% else %}
                           <button class="btn btn-sm btn-secondary" disabled title="Missing patient/slot data">Error</button>
                         {% endif %}
@@ -608,6 +651,58 @@
             if (!str) return '';
             return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
+
+        // Function to copy proposal message to clipboard
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                // Find the copy button and update its text
+                const copyButton = event.target;
+                const originalText = copyButton.innerHTML;
+                copyButton.innerHTML = '<i class="bi bi-check me-1"></i>Copied!';
+                copyButton.classList.remove('btn-outline-primary');
+                copyButton.classList.add('btn-success');
+                
+                setTimeout(() => {
+                    copyButton.innerHTML = originalText;
+                    copyButton.classList.remove('btn-success');
+                    copyButton.classList.add('btn-outline-primary');
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+                const copyButton = event.target;
+                copyButton.innerHTML = '<i class="bi bi-x me-1"></i>Copy Failed!';
+                setTimeout(() => {
+                    copyButton.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy Message';
+                }, 2000);
+            });
+        }
+
+        // Function to add day of week to date displays
+        function addWeekdayToDates() {
+            const dateElements = document.querySelectorAll('.date-with-weekday');
+            dateElements.forEach(element => {
+                const dateString = element.getAttribute('data-date');
+                if (dateString) {
+                    try {
+                        const date = new Date(dateString + 'T00:00:00');
+                        const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                        const weekday = weekdays[date.getDay()];
+                        const formattedDate = date.toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                        });
+                        element.innerHTML = `<strong>${weekday}</strong>, ${formattedDate}`;
+                    } catch (e) {
+                        console.error('Error formatting date:', e);
+                        // Keep original date if there's an error
+                    }
+                }
+            });
+        }
+
+        // Call the function to add weekdays to dates
+        addWeekdayToDates();
 
     }); // End DOMContentLoaded
 </script>

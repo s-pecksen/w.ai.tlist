@@ -18,6 +18,7 @@ class User(UserMixin, db.Model):
     appointment_types = db.Column(db.Text)  # JSON string
     appointment_types_data = db.Column(db.Text)  # JSON string
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    proposal_message_template = db.Column(db.Text, default='Hi {patient_name}, we have an opening with {provider_name} on {date} at {time}. Would you like to take this slot? Please call us at {clinic_phone} to confirm.')
 
     def to_dict(self):
         """Convert user object to dictionary for storage."""
@@ -29,6 +30,7 @@ class User(UserMixin, db.Model):
             "user_name_for_message": self.user_name_for_message,
             "appointment_types": self.appointment_types,
             "appointment_types_data": self.appointment_types_data,
+            "proposal_message_template": self.proposal_message_template,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
@@ -43,5 +45,6 @@ class User(UserMixin, db.Model):
             clinic_name=data.get("clinic_name"),
             user_name_for_message=data.get("user_name_for_message"),
             appointment_types=data.get("appointment_types"),
-            appointment_types_data=data.get("appointment_types_data")
+            appointment_types_data=data.get("appointment_types_data"),
+            proposal_message_template=data.get("proposal_message_template")
         ) 

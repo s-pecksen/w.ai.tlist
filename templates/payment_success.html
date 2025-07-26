@@ -36,6 +36,15 @@
                         </a>
                     </div>
                     
+                    <!-- Auto-redirect notice -->
+                    <div class="mt-3">
+                        <p class="text-muted small">
+                            <i class="bi bi-clock me-1"></i>
+                            You'll be automatically redirected in <span id="countdown">5</span> seconds...
+                            <a href="{{ url_for('main.index') }}" class="text-decoration-none">(click to go now)</a>
+                        </p>
+                    </div>
+                    
                     <!-- Simple Help Text -->
                     <div class="mt-4 pt-4 border-top">
                         <p class="text-muted small">
@@ -48,4 +57,20 @@
         </div>
     </div>
 </div>
+
+<!-- Auto-redirect JavaScript -->
+<script>
+    let countdown = 5;
+    const countdownElement = document.getElementById('countdown');
+    
+    const timer = setInterval(function() {
+        countdown--;
+        countdownElement.textContent = countdown;
+        
+        if (countdown <= 0) {
+            clearInterval(timer);
+            window.location.href = "{{ url_for('main.index') }}";
+        }
+    }, 1000);
+</script>
 {% endblock %} 

@@ -5,6 +5,7 @@ from src.repositories.slot_repository import SlotRepository
 from src.repositories.patient_repository import PatientRepository
 from src.repositories.provider_repository import ProviderRepository
 from src.services.matching_service import MatchingService
+from src.utils.helpers import generate_proposal_message
 from datetime import datetime, timedelta
 import logging
 
@@ -212,6 +213,8 @@ def update_cancelled_slot(appointment_id):
 def find_matches_for_appointment(appointment_id):
     """Find matching patients for a cancelled appointment"""
     session["current_appointment_id"] = appointment_id
+    # Clear any previous proposal message when starting a new search
+    session.pop("last_proposal_message", None)
     return redirect(url_for("slots.slots") + "#eligible-patients-section")
 
 @slots_bp.route("/propose_slot/<slot_id>/<patient_id>", methods=["POST"])
@@ -221,6 +224,12 @@ def propose_slot(slot_id, patient_id):
     try:
         patient = patient_repo.get_by_id(patient_id, current_user.id)
         patient_name = patient.get("name", "Unknown") if patient else "Unknown"
+        slot = slot_repo.get_by_id(slot_id)
+
+        # Generate proposal message using template
+        if patient and slot:
+            proposal_message = generate_proposal_message(current_user, patient, slot)
+            session['last_proposal_message'] = proposal_message
 
         # Update slot status
         slot_success = slot_repo.update_status(

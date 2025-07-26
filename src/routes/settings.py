@@ -26,6 +26,10 @@ def settings():
         if password:
             update_data['password'] = generate_password_hash(password)
         
+        proposal_template = request.form.get('proposal_message_template')
+        if proposal_template:
+            update_data['proposal_message_template'] = proposal_template
+        
         try:
             user_repo.update(current_user.id, update_data)
             flash('Your settings have been updated!', 'success')

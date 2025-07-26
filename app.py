@@ -86,8 +86,7 @@ with app.app_context():
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
-login_manager.login_message = "Please log in to access this page."
-login_manager.login_message_category = "error"
+# No login message - users will be redirected to login page
 
 # Stripe Webhook Route - Direct on main app for reliability
 @app.route("/webhook", methods=["POST"])
@@ -131,6 +130,11 @@ def stripe_webhook():
             status = subscription.get('status')
             logger.info(f"Subscription updated: {subscription_id} status: {status}")
             
+            # Check if this is a trial subscription that just got a payment method
+            if status == 'active' and subscription.get('trial_end'):
+                customer_id = subscription.get('customer')
+                logger.info(f"Trial subscription {subscription_id} now has payment method and is active")
+            
         elif event['type'] == 'customer.subscription.deleted':
             subscription = event['data']['object']
             subscription_id = subscription.get('id')
@@ -148,6 +152,34 @@ def stripe_webhook():
             customer_id = invoice.get('customer')
             subscription_id = invoice.get('subscription')
             logger.info(f"Payment succeeded for customer: {customer_id}, subscription: {subscription_id}")
+            
+        elif event['type'] == 'invoice.will_be_due':
+            invoice = event['data']['object']
+            customer_id = invoice.get('customer')
+            subscription_id = invoice.get('subscription')
+            due_date = invoice.get('due_date')
+            amount_due = invoice.get('amount_due')
+            logger.info(f"Invoice will be due for customer: {customer_id}, subscription: {subscription_id}, due_date: {due_date}, amount: {amount_due}")
+            
+            # Get customer email to find the user
+            try:
+                customer = stripe.Customer.retrieve(customer_id)
+                customer_email = customer.email
+                logger.info(f"Customer email for invoice.will_be_due: {customer_email}")
+                
+                # Find user in our database
+                from src.repositories.user_repository import UserRepository
+                user_repo = UserRepository()
+                user = user_repo.get_by_email(customer_email)
+                
+                if user:
+                    # Log that this user needs to add payment method
+                    logger.info(f"User {customer_email} needs to add payment method - invoice.will_be_due webhook received")
+                else:
+                    logger.warning(f"No user found for customer email: {customer_email}")
+                    
+            except Exception as e:
+                logger.error(f"Error processing invoice.will_be_due for customer {customer_id}: {e}")
             
         else:
             logger.debug(f"Unhandled webhook type: {event['type']}")
@@ -175,7 +207,6 @@ def load_user(user_id):
     try:
         user = db.session.get(User, user_id)
         if user:
-            logger.debug(f"Loaded user {user_id} - clinic_name: '{user.clinic_name}', user_name_for_message: '{user.user_name_for_message}'")
             return user
         else:
             logger.debug(f"User {user_id} not found in database")

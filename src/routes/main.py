@@ -5,6 +5,7 @@ from src.repositories.patient_repository import PatientRepository
 from src.repositories.provider_repository import ProviderRepository
 from src.repositories.slot_repository import SlotRepository
 from src.utils.helpers import wait_time_to_days
+from src.services.trial_service import trial_service
 import logging
 import json
 
@@ -20,11 +21,6 @@ slot_repo = SlotRepository()
 def index():
     """Main dashboard page."""
     try:
-        # Debug current_user attributes
-        logger.debug(f"Current user ID: {current_user.id}")
-        logger.debug(f"Current user clinic_name: '{current_user.clinic_name}'")
-        logger.debug(f"Current user user_name_for_message: '{current_user.user_name_for_message}'")
-        
         # Get user-specific data
         waitlist = patient_repo.get_waitlist(current_user.id)
         providers = provider_repo.get_providers(current_user.id)
@@ -62,12 +58,9 @@ def index():
         if current_user.appointment_types_data:
             try:
                 appointment_types_data = json.loads(current_user.appointment_types_data)
-                logger.debug(f"Successfully parsed appointment_types_data for user {current_user.id}: {appointment_types_data}")
             except json.JSONDecodeError as e:
                 logger.error(f"Error parsing appointment_types_data for user {current_user.id}: {e}")
                 appointment_types_data = []
-        else:
-            logger.debug(f"No appointment_types_data found for user {current_user.id}")
         
         # Sort waitlist by wait time and urgency
         def sort_key_waitlist(p):
@@ -79,6 +72,9 @@ def index():
         
         waitlist.sort(key=sort_key_waitlist)
         
+        # Get trial status for warnings
+        trial_status = trial_service.get_trial_status(current_user)
+        
         return render_template(
             "index.html",
             waitlist=waitlist,
@@ -86,7 +82,8 @@ def index():
             has_providers=len(providers) > 0,
             appointment_types_data=appointment_types_data,
             current_user_name=current_user.user_name_for_message or "the scheduling team",
-            current_clinic_name=current_user.clinic_name or "our clinic"
+            current_clinic_name=current_user.clinic_name or "our clinic",
+            trial_status=trial_status
         )
     except Exception as e:
         # This is a fallback for unexpected errors.

@@ -30,22 +30,23 @@ def subscribe():
         success_url = request.url_root.rstrip('/') + url_for('payments.payment_success')
         cancel_url = request.url_root.rstrip('/') + url_for('payments.payment_cancelled')
         
-        # Try to create a checkout session (requires STRIPE_PRICE_ID)
+        # Try to create a checkout session for subscription (requires payment method)
         checkout_session = payment_service.create_checkout_session(
             customer_email=current_user.email,
             success_url=success_url,
-            cancel_url=cancel_url
+            cancel_url=cancel_url,
+            for_subscription=True  # Actual subscription - payment method required
         )
         
         if checkout_session:
-            # Redirect to Stripe Checkout
+            # Redirect to Stripe Checkout for subscription
             logger.info(f"Redirecting {current_user.email} to Stripe Checkout: {checkout_session['session_id']}")
             return redirect(checkout_session['url'])
         else:
-            # Fallback to payment link
-            payment_link = payment_service.get_payment_link_url()
-            logger.info(f"Redirecting {current_user.email} to payment link: {payment_link}")
-            return redirect(payment_link)
+            # Checkout session creation failed
+            logger.error(f"Failed to create checkout session for {current_user.email}")
+            flash("There was an error processing your request. Please try again.", "error")
+            return redirect(url_for('main.index'))
             
     except Exception as e:
         logger.error(f"Error in subscribe route for {current_user.email}: {e}")
@@ -60,57 +61,23 @@ def payment_success():
     Handles both new registrations and existing user subscriptions.
     """
     try:
-        # Check if this is from a new registration
-        if 'pending_user_email' in session and 'just_registered' in session:
-            # This is a new registration completing Stripe checkout
-            email = session.pop('pending_user_email')
-            session.pop('just_registered', None)
-            
-            # Find and log in the user
-            from src.repositories.user_repository import UserRepository
-            user_repo = UserRepository()
-            user = user_repo.get_by_email(email)
-            
-            if user:
-                from flask_login import login_user
-                login_user(user)
-                logger.info(f"New user {email} completed Stripe checkout and logged in successfully")
-                flash("Welcome to Waitlyst! Your free trial has started.", "success")
-            else:
-                logger.error(f"Could not find user {email} after Stripe checkout")
-                flash("There was an error with your registration. Please contact support.", "error")
-                return redirect(url_for('auth.register'))
+        # This route is now primarily for subscription payments, not free trial setup
+        # Free trial setup is handled directly in auth routes
         
-        elif 'pending_user_email' in session and 'login_after_checkout' in session:
-            # This is an existing user completing required Stripe checkout at login
-            email = session.pop('pending_user_email')
-            session.pop('login_after_checkout', None)
-            
-            # Find and log in the user
-            from src.repositories.user_repository import UserRepository
-            user_repo = UserRepository()
-            user = user_repo.get_by_email(email)
-            
-            if user:
-                from flask_login import login_user
-                login_user(user)
-                logger.info(f"Existing user {email} completed required Stripe checkout and logged in")
-                flash("Thank you for completing the setup! You now have access to Waitlyst.", "success")
-            else:
-                logger.error(f"Could not find user {email} after Stripe checkout during login")
-                flash("There was an error logging you in. Please try again.", "error")
-                return redirect(url_for('auth.login'))
-        
-        elif current_user.is_authenticated:
+        if current_user.is_authenticated:
             # This is an existing user upgrading/subscribing
             logger.info(f"Existing user {current_user.email} completed payment")
             flash("Thank you! Your subscription has been updated.", "success")
-        
         else:
-            # Something went wrong - no session data and not logged in
-            logger.warning("Payment success accessed without proper session or login")
+            # Something went wrong - not logged in
+            logger.warning("Payment success accessed without login")
             flash("Please log in to access your account.", "info")
             return redirect(url_for('auth.login'))
+        
+        # Clear any accumulated session data
+        session.pop('pending_user_email', None)
+        session.pop('just_registered', None)
+        session.pop('login_after_checkout', None)
         
         # Get trial status for display (user should be logged in by now)
         if current_user.is_authenticated:
@@ -156,6 +123,32 @@ def payment_cancelled():
         return redirect(url_for('main.index'))
 
 # Billing portal removed - was causing errors
+
+@payments_bp.route('/billing-portal')
+@login_required
+def billing_portal():
+    """
+    Redirect user to Stripe billing portal to manage subscription and payment methods.
+    """
+    try:
+        # Create billing portal session
+        return_url = request.url_root.rstrip('/') + url_for('main.index')
+        portal_url = payment_service.create_billing_portal_session(
+            customer_email=current_user.email,
+            return_url=return_url
+        )
+        
+        if portal_url:
+            logger.info(f"Redirecting {current_user.email} to billing portal")
+            return redirect(portal_url)
+        else:
+            flash("Unable to access billing portal. Please contact support.", "error")
+            return redirect(url_for('main.index'))
+            
+    except Exception as e:
+        logger.error(f"Error creating billing portal session for {current_user.email}: {e}")
+        flash("There was an error accessing the billing portal. Please try again.", "error")
+        return redirect(url_for('main.index'))
 
 @payments_bp.route('/trial-status')
 @trial_required

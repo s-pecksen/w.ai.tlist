@@ -69,6 +69,24 @@
     <img src="{{ url_for('static', filename='waitlyst-logo.png') }}" alt="Waitlyst Logo" class="header-logo" style="max-width: 180px;">
 </div>
 
+<!-- Trial Warning Banner -->
+{% if trial_status and trial_status.requires_payment and trial_status.warning_message %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-exclamation-triangle-fill me-2" style="font-size: 1.2rem;"></i>
+        <div class="flex-grow-1">
+            <strong>Trial Expiring Soon:</strong> {{ trial_status.warning_message }}
+        </div>
+        <div class="ms-3">
+            <a href="{{ url_for('payments.subscribe') }}" class="btn btn-success btn-sm">
+                <i class="bi bi-credit-card me-1"></i>Subscribe Now
+            </a>
+        </div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
 <div class="container-fluid mt-3"> {# Use container-fluid for more width #}
 
     <div class="row">
@@ -261,7 +279,8 @@
                                             <button type="button" class="btn btn-sm btn-primary find-slots-btn"
                                                     data-bs-toggle="modal"
                                                     data-bs-target="#findSlotsModal"
-                                                    data-patient-id="{{ patient.id }}">
+                                                    data-patient-id="{{ patient.id }}"
+                                                    data-patient-name="{{ patient.name }}">
                                                 <i class="bi bi-search"></i> Find Slots
                                             </button>
                                             {# Edit Button (goes to edit page) #}
@@ -275,18 +294,20 @@
                                                 <i class="bi bi-trash"></i> Remove
                                             </button>
                                         {% elif patient.status == 'pending' and patient.proposed_slot_id %}
-                                            {% if patient.proposed_slot_details %}
-                                                <div class="pending-details mb-2">
-                                                    <i class="bi bi-clock"></i> {{ patient.proposed_slot_details }}
+                                            <div class="d-flex flex-column">
+                                                {% if patient.proposed_slot_details %}
+                                                    <div class="pending-details mb-2" style="max-width: 100%; white-space: normal;">
+                                                        <i class="bi bi-clock"></i> {{ patient.proposed_slot_details }}
+                                                    </div>
+                                                {% endif %}
+                                                <div class="d-flex justify-content-between">
+                                                    <form action="{{ url_for('slots.confirm_booking', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
+                                                        <button type="submit" class="btn btn-sm btn-success" title="Confirm Booking"><i class="bi bi-check-circle"></i> Confirm</button>
+                                                    </form>
+                                                    <form action="{{ url_for('slots.cancel_proposal', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
+                                                        <button type="submit" class="btn btn-sm btn-warning" title="Cancel Proposal"><i class="bi bi-x-circle"></i> Cancel</button>
+                                                    </form>
                                                 </div>
-                                            {% endif %}
-                                            <div class="btn-group" role="group">
-                                                <form action="{{ url_for('slots.confirm_booking', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
-                                                    <button type="submit" class="btn btn-sm btn-success" title="Confirm Booking"><i class="bi bi-check-circle"></i> Confirm</button>
-                                                </form>
-                                                <form action="{{ url_for('slots.cancel_proposal', slot_id=patient.proposed_slot_id, patient_id=patient.id) }}" method="post" class="d-inline">
-                                                    <button type="submit" class="btn btn-sm btn-warning" title="Cancel Proposal"><i class="bi bi-x-circle"></i> Cancel</button>
-                                                </form>
                                             </div>
                                         {% else %}
                                             <span class="badge bg-secondary">{{ patient.status | capitalize }}</span>
@@ -506,10 +527,17 @@
                 const modalTitle = findSlotsModalElement.querySelector('.modal-title');
                 const patientNameSpan = findSlotsModalElement.querySelector('#find-slots-modal-patient-name');
                 const slotListDiv = findSlotsModalElement.querySelector('#find-slots-modal-list');
+                const modalBody = findSlotsModalElement.querySelector('.modal-body');
 
+                // Set patient name immediately when modal opens
                 modalTitle.textContent = `Matching Slots for ${escapeHTML(patientName)}`;
                 if(patientNameSpan) patientNameSpan.textContent = escapeHTML(patientName);
-                slotListDiv.innerHTML = `<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>`; // Show spinner
+                
+                // Update the searching message to include the patient name
+                const searchingMessage = modalBody.querySelector('p');
+                if(searchingMessage) {
+                    searchingMessage.innerHTML = `Searching for available slots matching <strong>${escapeHTML(patientName)}</strong>'s requirements...`;
+                }
 
                 try {
                     // Fetch matching slots FOR THE PATIENT from the new API endpoint
@@ -520,21 +548,29 @@
                     }
                     const data = await response.json(); // Expect { patient_name: ..., slots: [...] }
 
-                    // Update patient name in modal with value from API response
-                    if (patientNameSpan && data.patient_name) {
-                        patientNameSpan.textContent = escapeHTML(data.patient_name);
+                    // Update patient name in modal with value from API response (in case it's different)
+                    const finalPatientName = data.patient_name || patientName;
+                    if (patientNameSpan) {
+                        patientNameSpan.textContent = escapeHTML(finalPatientName);
                     }
-                    if (modalTitle && data.patient_name) {
-                        modalTitle.textContent = `Matching Slots for ${escapeHTML(data.patient_name)}`;
+                    if (modalTitle) {
+                        modalTitle.textContent = `Matching Slots for ${escapeHTML(finalPatientName)}`;
                     }
 
-                    const patientName = data.patient_name || '';
-                    const patientFirstName = patientName.split(' ')[0];
+                    const patientFirstName = finalPatientName.split(' ')[0];
                     // const patientApptType = ''; // Not present in backend response
 
                     const slots = data.slots || data.matching_slots || [];
                     if (slots.length > 0) {
+                        // Update the searching message to show results
+                        const searchingMessage = modalBody.querySelector('p');
+                        if(searchingMessage) {
+                            searchingMessage.innerHTML = `<i class="bi bi-check-circle text-success"></i> Here are the available slots matching <strong>${escapeHTML(finalPatientName)}</strong>'s requirements.`;
+                        }
+                        
+                        // Clear the slot list and add results
                         slotListDiv.innerHTML = '';
+                        
                         slots.forEach(slot => {
                             const card = document.createElement('div');
                             card.className = 'card mb-3 shadow-sm'; // Add shadow
@@ -571,8 +607,12 @@
                             slotListDiv.appendChild(card);
                         });
                     } else {
-                        const displayName = data.patient_name || patientName;
-                        slotListDiv.innerHTML = `<div class="alert alert-info mb-0">No available slots found matching ${escapeHTML(displayName)}'s requirements.</div>`;
+                        // Update the searching message to show no results
+                        const searchingMessage = modalBody.querySelector('p');
+                        if(searchingMessage) {
+                            searchingMessage.innerHTML = `<i class="bi bi-info-circle text-info"></i> No available slots found matching <strong>${escapeHTML(finalPatientName)}</strong>'s requirements.`;
+                        }
+                        slotListDiv.innerHTML = '';
                     }
                 } catch (error) {
                     console.error('Error fetching matching slots:', error);

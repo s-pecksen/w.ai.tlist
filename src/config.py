@@ -31,7 +31,7 @@ class Config:
     STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
     STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY") 
     STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID")  # For subscription price
-    STRIPE_PAYMENT_LINK = os.environ.get("STRIPE_PAYMENT_LINK", "https://buy.stripe.com/6oU28qfPb06P5pygNsdby03")
+    # Payment Link removed - using Checkout sessions with custom redirects
     STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")  # For webhook validation
     
     # File Storage
